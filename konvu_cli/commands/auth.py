@@ -6,7 +6,7 @@ from konvu_cli.auth.oauth import (
     perform_oauth_login,
     save_credentials,
 )
-from konvu_cli.config import get_credentials_path, get_zitadel_client_id
+from konvu_cli.config import get_credentials_path, get_zitadel_client_id, get_zitadel_domain
 from konvu_cli.output.detection import OutputFormat, detect_output_format
 from konvu_cli.output.formatters import format_json
 from konvu_cli.output.picker import pick
@@ -147,7 +147,10 @@ def login(
             return
 
         # Interactive picker
-        oauth_available = bool(get_zitadel_client_id())
+        zitadel_domain = get_zitadel_domain()
+        oauth_available = bool(
+            get_zitadel_client_id() and zitadel_domain.startswith("https://")
+        )
 
         if not oauth_available:
             # No OAuth configured — go straight to API key
@@ -166,6 +169,10 @@ def login(
 
     except RuntimeError as e:
         typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        typer.echo("If browser login fails, try: konvu login --api-key", err=True)
         raise typer.Exit(1)
     except KeyboardInterrupt:
         typer.echo("\nLogin cancelled.")
