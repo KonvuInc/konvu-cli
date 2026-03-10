@@ -19,6 +19,7 @@ from konvu_cli.errors import (
 from konvu_cli.mapping import (
     AssessmentStatus,
     assessment_to_recommendation,
+    get_assessment_summary,
     recommendation_to_assessment,
 )
 from konvu_cli.output.detection import OutputFormat, detect_output_format
@@ -129,18 +130,22 @@ def _transform_finding(finding: dict[str, Any]) -> dict[str, Any]:
     aliases = vuln.get("aliases") or []
     cve = aliases[0] if aliases else vuln.get("id", "")
 
+    summary, _next_steps = get_assessment_summary(assessment)
+
     return {
         "id": finding.get("id", ""),
         "cve": cve,
         "severity": (vuln.get("severity") or "unknown").lower(),
         "dependency": dep.get("name", ""),
-        "version": dep.get("version") or "",
         "repository": ml.get("vcs_repository_url", ""),
         "manifest": ml.get("location", ""),
         "assessment": assessment.value,
+        "assessment_summary": summary,
         "has_fix": (vuln.get("has_fix") or "unknown").lower(),
         "first_seen": source.get("remote_created_at", ""),
         "state": source.get("state", ""),
+        "source_id": source.get("id", ""),
+        "scanner": source.get("source_name", ""),
     }
 
 
@@ -402,6 +407,7 @@ def list_findings(
                                 "dependency",
                                 "repository",
                                 "assessment",
+                                "assessment_summary",
                                 "first_seen",
                             ],
                             list_key="findings",
@@ -435,6 +441,7 @@ def list_findings(
                                 "dependency",
                                 "repository",
                                 "assessment",
+                                "assessment_summary",
                             ],
                             list_key="findings",
                         )
@@ -454,6 +461,7 @@ def list_findings(
                                 "dependency",
                                 "repository",
                                 "assessment",
+                                "assessment_summary",
                                 "first_seen",
                             ],
                             list_key="findings",
@@ -533,7 +541,6 @@ def get_finding(
                 "cvss": vuln.get("cvss", []),
                 "epss": vuln.get("epss"),
                 "dependency": dep.get("name", ""),
-                "version": dep.get("version"),
                 "repository": ml.get("vcs_repository_url", ""),
                 "manifest": ml.get("location", ""),
                 "assessment": {

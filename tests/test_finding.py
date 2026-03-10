@@ -51,6 +51,7 @@ MOCK_FINDING_LIST_RESPONSE: dict[str, Any] = {
             "dependency": {"name": "lodash", "version": "4.17.20"},
             "source": {
                 "id": "finding-001",
+                "source_name": "dependabot",
                 "state": "open",
                 "remote_created_at": "2026-03-05T10:00:00Z",
             },
@@ -76,6 +77,7 @@ MOCK_FINDING_LIST_RESPONSE: dict[str, Any] = {
             "dependency": {"name": "requests", "version": "2.28.0"},
             "source": {
                 "id": "finding-002",
+                "source_name": "snyk",
                 "state": "open",
                 "remote_created_at": "2026-03-01T08:00:00Z",
             },
@@ -216,6 +218,22 @@ class TestFindingList:
         assert len(data["findings"]) == 2
         assert data["findings"][0]["id"] == "finding-001"
         assert data["findings"][0]["assessment"] == "exploitable"
+        assert data["findings"][0]["scanner"] == "dependabot"
+        assert data["findings"][0]["source_id"] == "finding-001"
+
+    def test_list_json_has_assessment_summary(self) -> None:
+        mock = _mock_client({"/sca_findings": MOCK_FINDING_LIST_RESPONSE})
+        with patch("konvu_cli.commands.finding.KonvuClient", return_value=mock):
+            result = runner.invoke(app, ["finding", "list", "--output", "json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        exploitable = data["findings"][0]
+        assert exploitable["assessment_summary"] == (
+            "A vulnerable function is being executed in your application."
+        )
+        assert "assessment_next_steps" not in exploitable
+        false_positive = data["findings"][1]
+        assert false_positive["assessment_summary"] == "Not exploitable in your context."
 
     def test_list_json_summary_has_assessment_breakdown(self) -> None:
         mock = _mock_client({"/sca_findings": MOCK_FINDING_LIST_RESPONSE})
@@ -398,27 +416,6 @@ class TestFindingHasFix:
         data = json.loads(result.output)
         assert data["findings"][0]["has_fix"] == "fixed"
         assert data["findings"][1]["has_fix"] == "no_fix"
-
-
-class TestFindingVersion:
-    def test_null_version_shows_empty(self) -> None:
-        """When API returns null version, it should show as empty string."""
-        response = {
-            **MOCK_FINDING_LIST_RESPONSE,
-            "items": [
-                {
-                    **MOCK_FINDING_LIST_RESPONSE["items"][0],
-                    "dependency": {"name": "lodash", "version": None},
-                }
-            ],
-            "total": 1,
-        }
-        mock = _mock_client({"/sca_findings": response})
-        with patch("konvu_cli.commands.finding.KonvuClient", return_value=mock):
-            result = runner.invoke(app, ["finding", "list", "--output", "json"])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert data["findings"][0]["version"] == ""
 
 
 # --- finding get ---
