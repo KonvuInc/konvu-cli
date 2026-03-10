@@ -13,6 +13,60 @@ from konvu_cli.output.formatters import format_json
 app = typer.Typer(help="Authentication commands")
 
 
+def _validate_api_key(api_key: str) -> dict[str, str]:
+    """Validate an API key by calling the API.
+
+    Returns company data on success, raises on failure.
+    """
+    with KonvuClient(access_token=api_key) as client:
+        return client.get("/companies/current")
+
+
+def _login_with_api_key(api_key: str | None) -> None:
+    """Handle API key login flow.
+
+    If api_key is None, prompts the user for it (masked input).
+    Validates the key, saves credentials, and shows confirmation.
+    """
+    if not api_key:
+        api_key = typer.prompt("Paste your API key", hide_input=True)
+
+    if not api_key or not api_key.strip():
+        typer.echo("Error: API key cannot be empty.", err=True)
+        raise typer.Exit(1)
+
+    api_key = api_key.strip()
+
+    typer.echo("Validating API key...")
+    try:
+        company = _validate_api_key(api_key)
+    except AuthenticationError:
+        typer.echo("Error: Invalid API key.", err=True)
+        raise typer.Exit(1)
+    except APIError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+    save_credentials({"access_token": api_key})
+    typer.echo(f"Logged in to: {company.get('name', 'Unknown')}")
+
+
+def _login_with_oauth(timeout: int) -> None:
+    """Handle OAuth browser login flow."""
+    typer.echo("Starting browser login...")
+    token_data = perform_oauth_login(timeout=timeout, echo=typer.echo)
+    save_credentials(token_data)
+
+    typer.echo("\nLogin successful!")
+
+    try:
+        with KonvuClient() as client:
+            company = client.get("/companies/current")
+            typer.echo(f"Logged in to: {company.get('name', 'Unknown')}")
+    except (AuthenticationError, APIError):
+        pass
+
+
 @app.command()
 def whoami(
     output: str | None = typer.Option(
@@ -58,23 +112,46 @@ def login(
     timeout: int = typer.Option(
         DEFAULT_LOGIN_TIMEOUT, "--timeout", "-t", help="Login timeout in seconds"
     ),
+    api_key: str | None = typer.Option(
+        None,
+        "--api-key",
+        help="Authenticate with an API key (pass value or omit to prompt)",
+    ),
 ) -> None:
-    """Authenticate with Konvu via OAuth Device Flow."""
+    """Authenticate with Konvu.
+
+    \b
+    When run without flags, presents an interactive choice:
+      1. Browser login (OAuth)
+      2. API key
+
+    \b
+    Examples:
+      konvu login                      # Interactive picker
+      konvu login --api-key api_...    # Direct API key (CI/CD, scripts)
+
+    \b
+    Exit codes:
+      0  Success
+      1  General error
+    """
     try:
-        typer.echo("Starting Konvu login...")
+        # Direct API key via flag
+        if api_key is not None:
+            _login_with_api_key(api_key if api_key else None)
+            return
 
-        token_data = perform_oauth_login(timeout=timeout, echo=typer.echo)
-        save_credentials(token_data)
+        # Interactive picker
+        typer.echo("\nHow would you like to authenticate?\n")
+        typer.echo("  1. Browser login (OAuth)")
+        typer.echo("  2. API key")
+        typer.echo("")
+        choice = typer.prompt("Enter choice", default="1")
 
-        typer.echo("\nLogin successful!")
-
-        # Show company info (optional - don't fail login if this fails)
-        try:
-            with KonvuClient() as client:
-                company = client.get("/companies/current")
-                typer.echo(f"Logged in to: {company.get('name', 'Unknown')}")
-        except (AuthenticationError, APIError):
-            pass  # Token valid but couldn't fetch company info
+        if choice == "2":
+            _login_with_api_key(None)
+        else:
+            _login_with_oauth(timeout)
 
     except RuntimeError as e:
         typer.echo(f"Error: {e}", err=True)
