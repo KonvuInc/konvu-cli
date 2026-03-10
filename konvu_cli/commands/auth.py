@@ -9,6 +9,7 @@ from konvu_cli.auth.oauth import (
 from konvu_cli.config import get_credentials_path, get_zitadel_client_id
 from konvu_cli.output.detection import OutputFormat, detect_output_format
 from konvu_cli.output.formatters import format_json
+from konvu_cli.output.picker import pick
 
 app = typer.Typer(help="Authentication commands")
 
@@ -149,13 +150,12 @@ def login(
             _login_with_api_key(None)
             return
 
-        typer.echo("\nHow would you like to authenticate?\n")
-        typer.echo("  1. Browser login (OAuth)")
-        typer.echo("  2. API key")
-        typer.echo("")
-        choice = typer.prompt("Enter choice", default="1")
+        choice = pick(
+            "How would you like to authenticate?",
+            ["Browser login (OAuth)", "API key"],
+        )
 
-        if choice == "2":
+        if choice == 1:
             _login_with_api_key(None)
         else:
             _login_with_oauth(timeout)

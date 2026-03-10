@@ -50,7 +50,8 @@ def test_login_help() -> None:
 def test_login_interactive_picker_shows_options() -> None:
     """Interactive login should show both auth methods when OAuth is configured."""
     with patch("konvu_cli.commands.auth.get_zitadel_client_id", return_value="some-client-id"):
-        result = runner.invoke(app, ["login"], input="3\n")
+        # Fallback picker (no TTY in test) shows numbered options
+        result = runner.invoke(app, ["login"], input="1\n")
     assert "Browser login (OAuth)" in result.output
     assert "API key" in result.output
 
@@ -115,7 +116,7 @@ def test_login_api_key_invalid() -> None:
 
 
 def test_login_api_key_interactive_prompt(tmp_path: Path) -> None:
-    """Choosing option 2 in interactive picker should prompt for API key."""
+    """Choosing API key option in interactive picker should prompt for key."""
     mock_client = MagicMock()
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
@@ -126,7 +127,7 @@ def test_login_api_key_interactive_prompt(tmp_path: Path) -> None:
         patch("konvu_cli.commands.auth.KonvuClient", return_value=mock_client),
         patch("konvu_cli.commands.auth.save_credentials") as mock_save,
     ):
-        # Pick option 2, then enter the key
+        # Fallback picker: option 2 = "API key", then enter the key
         result = runner.invoke(app, ["login"], input="2\napi_mykey456\n")
 
     assert result.exit_code == 0
