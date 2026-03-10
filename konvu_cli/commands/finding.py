@@ -144,7 +144,7 @@ def _transform_finding(finding: dict[str, Any]) -> dict[str, Any]:
         "has_fix": (vuln.get("has_fix") or "unknown").lower(),
         "first_seen": source.get("remote_created_at", ""),
         "state": source.get("state", ""),
-        "source_id": source.get("id", ""),
+        "source_id": source.get("identifier", ""),
         "scanner": source.get("source_name", ""),
     }
 
@@ -403,12 +403,11 @@ def list_findings(
                             {"findings": flat_for_table},
                             columns=[
                                 "cve",
-                                "severity",
                                 "dependency",
                                 "repository",
-                                "assessment",
+                                "scanner",
+                                "source_id",
                                 "assessment_summary",
-                                "first_seen",
                             ],
                             list_key="findings",
                         )
@@ -457,12 +456,11 @@ def list_findings(
                             result,
                             columns=[
                                 "cve",
-                                "severity",
                                 "dependency",
                                 "repository",
-                                "assessment",
+                                "scanner",
+                                "source_id",
                                 "assessment_summary",
-                                "first_seen",
                             ],
                             list_key="findings",
                         )

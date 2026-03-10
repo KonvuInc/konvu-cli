@@ -51,6 +51,7 @@ MOCK_FINDING_LIST_RESPONSE: dict[str, Any] = {
             "dependency": {"name": "lodash", "version": "4.17.20"},
             "source": {
                 "id": "finding-001",
+                "identifier": "42",
                 "source_name": "dependabot",
                 "state": "open",
                 "remote_created_at": "2026-03-05T10:00:00Z",
@@ -77,6 +78,7 @@ MOCK_FINDING_LIST_RESPONSE: dict[str, Any] = {
             "dependency": {"name": "requests", "version": "2.28.0"},
             "source": {
                 "id": "finding-002",
+                "identifier": "87",
                 "source_name": "snyk",
                 "state": "open",
                 "remote_created_at": "2026-03-01T08:00:00Z",
@@ -219,7 +221,7 @@ class TestFindingList:
         assert data["findings"][0]["id"] == "finding-001"
         assert data["findings"][0]["assessment"] == "exploitable"
         assert data["findings"][0]["scanner"] == "dependabot"
-        assert data["findings"][0]["source_id"] == "finding-001"
+        assert data["findings"][0]["source_id"] == "42"
 
     def test_list_json_has_assessment_summary(self) -> None:
         mock = _mock_client({"/sca_findings": MOCK_FINDING_LIST_RESPONSE})
