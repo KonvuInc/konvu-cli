@@ -48,11 +48,30 @@ def test_login_help() -> None:
 
 
 def test_login_interactive_picker_shows_options() -> None:
-    """Interactive login should show both auth methods."""
-    # Input "3" to trigger an invalid choice, then ctrl-c / EOF
-    result = runner.invoke(app, ["login"], input="3\n")
+    """Interactive login should show both auth methods when OAuth is configured."""
+    with patch("konvu_cli.commands.auth.get_zitadel_client_id", return_value="some-client-id"):
+        result = runner.invoke(app, ["login"], input="3\n")
     assert "Browser login (OAuth)" in result.output
     assert "API key" in result.output
+
+
+def test_login_no_oauth_skips_to_api_key() -> None:
+    """When OAuth is not configured, skip picker and prompt for API key."""
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    mock_client.get = MagicMock(return_value={"name": "Acme Corp"})
+
+    with (
+        patch("konvu_cli.commands.auth.get_zitadel_client_id", return_value=""),
+        patch("konvu_cli.commands.auth.KonvuClient", return_value=mock_client),
+        patch("konvu_cli.commands.auth.save_credentials"),
+    ):
+        result = runner.invoke(app, ["login"], input="api_mykey\n")
+
+    assert result.exit_code == 0
+    assert "Browser login" not in result.output
+    assert "Logged in to: Acme Corp" in result.output
 
 
 def test_login_api_key_direct(tmp_path: Path) -> None:
@@ -103,6 +122,7 @@ def test_login_api_key_interactive_prompt(tmp_path: Path) -> None:
     mock_client.get = MagicMock(return_value={"name": "Acme Corp"})
 
     with (
+        patch("konvu_cli.commands.auth.get_zitadel_client_id", return_value="some-client-id"),
         patch("konvu_cli.commands.auth.KonvuClient", return_value=mock_client),
         patch("konvu_cli.commands.auth.save_credentials") as mock_save,
     ):

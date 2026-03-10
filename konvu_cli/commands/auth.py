@@ -6,7 +6,7 @@ from konvu_cli.auth.oauth import (
     perform_oauth_login,
     save_credentials,
 )
-from konvu_cli.config import get_credentials_path
+from konvu_cli.config import get_credentials_path, get_zitadel_client_id
 from konvu_cli.output.detection import OutputFormat, detect_output_format
 from konvu_cli.output.formatters import format_json
 
@@ -142,6 +142,13 @@ def login(
             return
 
         # Interactive picker
+        oauth_available = bool(get_zitadel_client_id())
+
+        if not oauth_available:
+            # No OAuth configured — go straight to API key
+            _login_with_api_key(None)
+            return
+
         typer.echo("\nHow would you like to authenticate?\n")
         typer.echo("  1. Browser login (OAuth)")
         typer.echo("  2. API key")
