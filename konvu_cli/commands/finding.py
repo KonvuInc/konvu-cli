@@ -144,6 +144,8 @@ def _transform_finding(finding: dict[str, Any]) -> dict[str, Any]:
         "has_fix": (vuln.get("has_fix") or "unknown").lower(),
         "first_seen": source.get("remote_created_at", ""),
         "state": source.get("state", ""),
+        "source_id": source.get("id", ""),
+        "scanner": source.get("source_name", ""),
     }
 
 
