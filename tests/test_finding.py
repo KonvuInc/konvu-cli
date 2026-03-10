@@ -56,6 +56,9 @@ MOCK_FINDING_LIST_RESPONSE: dict[str, Any] = {
                 "state": "open",
                 "remote_created_at": "2026-03-05T10:00:00Z",
             },
+            "analyses": {
+                "qualification_summary": "User input flows to vulnerable merge call.",
+            },
             "calculated_recommendation": "to_fix",
         },
         {
@@ -229,11 +232,11 @@ class TestFindingList:
             result = runner.invoke(app, ["finding", "list", "--output", "json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
+        # Finding with backend qualification_summary uses it
         exploitable = data["findings"][0]
-        assert exploitable["assessment_summary"] == (
-            "A vulnerable function is being executed in your application."
-        )
+        assert exploitable["assessment_summary"] == "User input flows to vulnerable merge call."
         assert "assessment_next_steps" not in exploitable
+        # Finding without qualification_summary falls back to generic mapping
         false_positive = data["findings"][1]
         assert false_positive["assessment_summary"] == "Not exploitable in your context."
 

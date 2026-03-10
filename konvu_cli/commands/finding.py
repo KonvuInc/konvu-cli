@@ -127,10 +127,15 @@ def _transform_finding(finding: dict[str, Any]) -> dict[str, Any]:
     rec = finding.get("calculated_recommendation")
     assessment = recommendation_to_assessment(rec)
 
+    analyses = finding.get("analyses") or {}
+
     aliases = vuln.get("aliases") or []
     cve = aliases[0] if aliases else vuln.get("id", "")
 
-    summary, _next_steps = get_assessment_summary(assessment)
+    # Use the backend's per-finding summary; fall back to generic mapping
+    qualification_summary = analyses.get("qualification_summary") or ""
+    if not qualification_summary:
+        qualification_summary, _ = get_assessment_summary(assessment)
 
     return {
         "id": finding.get("id", ""),
@@ -140,7 +145,7 @@ def _transform_finding(finding: dict[str, Any]) -> dict[str, Any]:
         "repository": ml.get("vcs_repository_url", ""),
         "manifest": ml.get("location", ""),
         "assessment": assessment.value,
-        "assessment_summary": summary,
+        "assessment_summary": qualification_summary,
         "has_fix": (vuln.get("has_fix") or "unknown").lower(),
         "first_seen": source.get("remote_created_at", ""),
         "state": source.get("state", ""),
