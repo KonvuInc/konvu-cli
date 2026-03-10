@@ -30,6 +30,10 @@ def _login_with_api_key(api_key: str | None) -> None:
     Validates the key, saves credentials, and shows confirmation.
     """
     if not api_key:
+        typer.echo(
+            "\nCreate an API key at: https://app.konvu.com/configuration/api_keys\n",
+            err=True,
+        )
         api_key = typer.prompt("Paste your API key", hide_input=True)
 
     if not api_key or not api_key.strip():
