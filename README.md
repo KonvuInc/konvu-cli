@@ -36,13 +36,20 @@ konvu finding get <finding-id> --include evidence
 
 ## Authentication
 
-Konvu CLI uses OAuth Device Flow. Run `konvu login` and follow the browser prompt. Credentials are stored locally and refreshed automatically.
+Konvu CLI supports two authentication methods:
+
+1. **Browser login (OAuth)** — interactive, opens your browser
+2. **API key** — non-interactive, ideal for CI/CD and scripts
 
 ```bash
-konvu login          # authenticate
-konvu whoami         # check current user and company
-konvu logout         # clear stored credentials
+konvu login                      # interactive picker (OAuth or API key)
+konvu login --api-key            # prompt for API key (masked input)
+konvu login --api-key api_...    # pass API key directly
+konvu whoami                     # check current user and company
+konvu logout                     # clear stored credentials
 ```
+
+Create an API key at: https://app.konvu.com/configuration/api_keys
 
 ## Commands
 
@@ -200,9 +207,10 @@ Filter by assessment: `--assessment exploitable`, combine with severity: `--seve
 
 | Environment variable | Default | Description |
 |---|---|---|
+| `KONVU_ACCESS_TOKEN` | — | API key or access token (alternative to `konvu login`) |
 | `KONVU_API_URL` | `https://api.konvu.com` | API base URL |
 | `KONVU_ZITADEL_DOMAIN` | `https://auth.konvu.com` | OAuth provider |
-| `KONVU_ZITADEL_CLIENT_ID` | — | OAuth client ID (required for login) |
+| `KONVU_ZITADEL_CLIENT_ID` | — | OAuth client ID (required for OAuth login) |
 
 ## Development
 
