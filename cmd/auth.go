@@ -107,7 +107,7 @@ var logoutCmd = &cobra.Command{
 }
 
 func promptAPIKey() string {
-	fmt.Fprintln(os.Stderr, "\nCreate an API key at: https://app.konvu.com/configuration/api_keys\n")
+	fmt.Fprint(os.Stderr, "\nCreate an API key at: https://app.konvu.com/configuration/api_keys\n\n")
 	fmt.Fprint(os.Stderr, "Paste your API key: ")
 	scanner := bufio.NewScanner(os.Stdin)
 	if scanner.Scan() {
