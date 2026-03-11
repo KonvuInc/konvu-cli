@@ -150,10 +150,16 @@ def _transform_finding(finding: dict[str, Any]) -> dict[str, Any]:
     aliases = vuln.get("aliases") or []
     cve = aliases[0] if aliases else vuln.get("id", "")
 
-    # Use the backend's per-finding summary; fall back to generic mapping
+    # Use the backend's per-finding summary; fall back to stack analysis or generic
     qualification_summary = analyses.get("qualification_summary") or ""
     if not qualification_summary:
-        qualification_summary, _ = get_assessment_summary(assessment)
+        stack_applicable = analyses.get("stack_analysis_applicable")
+        if stack_applicable is False and assessment == AssessmentStatus.FALSE_POSITIVE:
+            qualification_summary = "Vulnerability not applicable to your dependency stack."
+        elif stack_applicable is True and assessment == AssessmentStatus.EXPLOITABLE:
+            qualification_summary = "Vulnerability applicable to your dependency stack."
+        else:
+            qualification_summary, _ = get_assessment_summary(assessment)
 
     return {
         "id": finding.get("id", ""),
@@ -567,9 +573,12 @@ def get_finding(
             assessment_status = recommendation_to_assessment(rec)
 
             # --- Assessment (Konvu's analysis of this finding) ---
+            carto = analyses.get("carto_evidence") or {}
             qualification_summary = analyses.get("qualification_summary") or ""
             if not qualification_summary:
                 qualification_summary = qual.get("summary", "")
+            if not qualification_summary:
+                qualification_summary = carto.get("summary", "")
 
             checklist = qual.get("checklist", {})
             checklist_items = []
@@ -592,7 +601,6 @@ def get_finding(
                     ]
                 checklist_items.append(entry)
 
-            carto = analyses.get("carto_evidence") or {}
             carto_applicable = carto.get("applicable")
             carto_summary = carto.get("summary", "")
             if carto_applicable is not None or carto_summary:

@@ -6,7 +6,7 @@ from rich.table import Table
 from rich.text import Text
 
 from konvu_cli.api.client import APIError, AuthenticationError, KonvuClient
-from konvu_cli.mapping import get_assessment_color, get_assessment_summary, recommendation_to_assessment
+from konvu_cli.mapping import AssessmentStatus, get_assessment_color, get_assessment_summary, recommendation_to_assessment
 from konvu_cli.output.detection import OutputFormat, detect_output_format
 from konvu_cli.output.formatters import format_json
 
@@ -115,7 +115,13 @@ def get_vulnerability(
 
                 f_summary = f_analyses.get("qualification_summary") or ""
                 if not f_summary:
-                    f_summary, _ = get_assessment_summary(f_assessment)
+                    f_stack = f_analyses.get("stack_analysis_applicable")
+                    if f_stack is False and f_assessment == AssessmentStatus.FALSE_POSITIVE:
+                        f_summary = "Vulnerability not applicable to your dependency stack."
+                    elif f_stack is True and f_assessment == AssessmentStatus.EXPLOITABLE:
+                        f_summary = "Vulnerability applicable to your dependency stack."
+                    else:
+                        f_summary, _ = get_assessment_summary(f_assessment)
 
                 by_assessment[f_assessment.value] = (
                     by_assessment.get(f_assessment.value, 0) + 1
