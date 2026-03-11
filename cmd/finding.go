@@ -657,7 +657,7 @@ Exit codes:
 
 		checklist := getMap(qual, "checklist")
 		checklistRaw := getSlice(checklist, "items")
-		var checklistItems []map[string]any
+		checklistItems := make([]map[string]any, 0)
 		for _, raw := range checklistRaw {
 			item, _ := raw.(map[string]any)
 			entry := map[string]any{
@@ -685,11 +685,11 @@ Exit codes:
 
 		// Carto evidence
 		carto := getMap(analyses, "carto_evidence")
-		cartoApplicable, cartoHasApplicable := carto["applicable"]
+		cartoApplicable := carto["applicable"]
 		cartoSummary := getStr(carto, "summary")
-		if cartoHasApplicable || cartoSummary != "" {
+		if cartoApplicable != nil || cartoSummary != "" {
 			conclusion := ""
-			if cartoHasApplicable {
+			if cartoApplicable != nil {
 				if applicable, ok := cartoApplicable.(bool); ok {
 					if applicable {
 						conclusion = "Applicable"
