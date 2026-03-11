@@ -7,6 +7,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import typer
+from rich.console import Console
+from rich.text import Text
 
 from konvu_cli.api.client import APIError, AuthenticationError, KonvuClient
 from konvu_cli.errors import (
@@ -19,6 +21,7 @@ from konvu_cli.errors import (
 from konvu_cli.mapping import (
     AssessmentStatus,
     assessment_to_recommendation,
+    get_assessment_color,
     get_assessment_summary,
     recommendation_to_assessment,
 )
@@ -32,6 +35,21 @@ from konvu_cli.output.formatters import (
 )
 
 app = typer.Typer(help="Security findings")
+
+DEFAULT_TABLE_COLUMNS = [
+    "cve",
+    "dependency",
+    "repository",
+    "assessment",
+    "assessment_summary",
+]
+
+
+def _style_cell(column: str, value: str) -> Any:
+    """Apply color coding to assessment cells."""
+    if column == "assessment":
+        return Text(value, style=get_assessment_color(value))
+    return value
 
 VALID_COUNTS_GROUP_BY = {"severity", "week", "month"}
 VALID_LIST_GROUP_BY = {"repository", "dependency", "severity", "assessment"}
@@ -406,15 +424,9 @@ def list_findings(
                     typer.echo(
                         format_table(
                             {"findings": flat_for_table},
-                            columns=[
-                                "cve",
-                                "dependency",
-                                "repository",
-                                "scanner",
-                                "source_id",
-                                "assessment_summary",
-                            ],
+                            columns=DEFAULT_TABLE_COLUMNS,
                             list_key="findings",
+                            style_cell=_style_cell,
                         )
                     )
             else:
@@ -451,23 +463,21 @@ def list_findings(
                         )
                     )
                 else:
-                    typer.echo(f"\nShowing {showing} of {total} findings", err=True)
+                    console = Console(stderr=True)
+                    summary_line = Text(f"\nShowing {showing} of {total} findings  ")
                     if assessment_breakdown:
-                        parts = [f"{k}: {v}" for k, v in sorted(assessment_breakdown.items())]
-                        typer.echo(f"  Assessment: {', '.join(parts)}", err=True)
+                        for i, (k, v) in enumerate(sorted(assessment_breakdown.items())):
+                            if i > 0:
+                                summary_line.append(" · ")
+                            summary_line.append(f"{v} {k}", style=get_assessment_color(k))
+                    console.print(summary_line)
                     typer.echo("", err=True)
                     typer.echo(
                         format_table(
                             result,
-                            columns=[
-                                "cve",
-                                "dependency",
-                                "repository",
-                                "scanner",
-                                "source_id",
-                                "assessment_summary",
-                            ],
+                            columns=DEFAULT_TABLE_COLUMNS,
                             list_key="findings",
+                            style_cell=_style_cell,
                         )
                     )
 
@@ -650,12 +660,16 @@ def get_finding(
             if output_format == OutputFormat.JSON:
                 typer.echo(format_json(result))
             else:
+                console = Console(stderr=True)
                 a = result.get("assessment", {})
                 v = result.get("vulnerability", {})
                 f = result.get("finding", {})
 
                 # --- Assessment (most important) ---
-                typer.echo(f"\nAssessment: {a.get('status', 'unknown').upper()}")
+                status = a.get("status", "unknown")
+                label = Text("\nAssessment: ")
+                label.append(status.upper(), style=get_assessment_color(status))
+                console.print(label)
                 if a.get("summary"):
                     typer.echo(f"\n{a['summary']}")
 
