@@ -143,6 +143,54 @@ func (c *Client) Get(path string, params map[string]any) (map[string]any, error)
 	return result, nil
 }
 
+// GetList calls a GET endpoint that returns a JSON array (not an object).
+func (c *Client) GetList(path string, params map[string]any) ([]any, error) {
+	reqURL := c.baseURL + path
+	if len(params) > 0 {
+		values := url.Values{}
+		for k, v := range params {
+			switch val := v.(type) {
+			case []string:
+				for _, s := range val {
+					values.Add(k, s)
+				}
+			case string:
+				values.Set(k, val)
+			default:
+				values.Set(k, fmt.Sprintf("%v", val))
+			}
+		}
+		reqURL += "?" + values.Encode()
+	}
+
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	auth, err := c.authHeader()
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", auth)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if err := c.checkResponse(resp); err != nil {
+		return nil, err
+	}
+
+	var result []any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (c *Client) Post(path string, data map[string]any) (map[string]any, error) {
 	reqURL := c.baseURL + path
 
