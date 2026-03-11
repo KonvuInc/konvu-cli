@@ -127,10 +127,15 @@ def _transform_finding(finding: dict[str, Any]) -> dict[str, Any]:
     rec = finding.get("calculated_recommendation")
     assessment = recommendation_to_assessment(rec)
 
+    analyses = finding.get("analyses") or {}
+
     aliases = vuln.get("aliases") or []
     cve = aliases[0] if aliases else vuln.get("id", "")
 
-    summary, _next_steps = get_assessment_summary(assessment)
+    # Use the backend's per-finding summary; fall back to generic mapping
+    qualification_summary = analyses.get("qualification_summary") or ""
+    if not qualification_summary:
+        qualification_summary, _ = get_assessment_summary(assessment)
 
     return {
         "id": finding.get("id", ""),
@@ -140,7 +145,7 @@ def _transform_finding(finding: dict[str, Any]) -> dict[str, Any]:
         "repository": ml.get("vcs_repository_url", ""),
         "manifest": ml.get("location", ""),
         "assessment": assessment.value,
-        "assessment_summary": summary,
+        "assessment_summary": qualification_summary,
         "has_fix": (vuln.get("has_fix") or "unknown").lower(),
         "first_seen": source.get("remote_created_at", ""),
         "state": source.get("state", ""),
@@ -476,6 +481,7 @@ def get_finding(
     include: list[str] | None = typer.Option(
         None, "--include", "-i", help="Include: evidence, logs"
     ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show all details for each check"),
     output: str | None = typer.Option(None, "--output", "-o", help="Output format: json, table"),
     fields: str | None = typer.Option(None, "--fields", help="Comma-separated fields to include"),
 ) -> None:
@@ -503,6 +509,8 @@ def get_finding(
       4  Authentication failed
     """
     include = include or []
+    if verbose and "evidence" not in include:
+        include.append("evidence")
     output_format = detect_output_format(output)
 
     try:
@@ -530,51 +538,91 @@ def get_finding(
             rec = detail.get("calculated_recommendation")
             assessment_status = recommendation_to_assessment(rec)
 
-            result: dict[str, Any] = {
+            # --- Assessment (Konvu's analysis of this finding) ---
+            qualification_summary = analyses.get("qualification_summary") or ""
+            if not qualification_summary:
+                qualification_summary = qual.get("summary", "")
+
+            checklist = qual.get("checklist", {})
+            checklist_items = []
+            for item in checklist.get("items", []):
+                entry: dict[str, Any] = {
+                    "description": item.get("description", ""),
+                    "status": item.get("status", ""),
+                    "conclusion": item.get("check_conclusion", ""),
+                }
+                if "evidence" in include:
+                    entry["investigation_steps"] = item.get("investigation_steps", [])
+                    entry["proofs"] = [
+                        {
+                            "file": p.get("file", ""),
+                            "line": p.get("line"),
+                            "code": p.get("code", ""),
+                            "comment": p.get("comment", ""),
+                        }
+                        for p in item.get("proofs", [])
+                    ]
+                checklist_items.append(entry)
+
+            carto = analyses.get("carto_evidence") or {}
+            carto_applicable = carto.get("applicable")
+            carto_summary = carto.get("summary", "")
+            if carto_applicable is not None or carto_summary:
+                applicable = carto_applicable
+                if applicable is True:
+                    conclusion = "Applicable"
+                elif applicable is False:
+                    conclusion = "Not applicable"
+                else:
+                    conclusion = str(applicable) if applicable is not None else ""
+                if carto_summary:
+                    conclusion = f"{conclusion} — {carto_summary}" if conclusion else carto_summary
+                stack_entry: dict[str, Any] = {
+                    "description": "Vulnerability applicable to dependency stack",
+                    "status": "completed",
+                    "conclusion": conclusion,
+                }
+                checklist_items.insert(0, stack_entry)
+
+            assessment_section: dict[str, Any] = {
+                "status": assessment_status.value,
+                "summary": qualification_summary,
+                "checklist": checklist_items,
+            }
+
+            # --- Finding (this specific instance) ---
+            source = detail.get("source", {})
+            finding_section: dict[str, Any] = {
                 "id": detail.get("id"),
+                "dependency": dep.get("name", ""),
+                "repository": ml.get("vcs_repository_url", ""),
+                "manifest": ml.get("location", ""),
+                "scanner": source.get("source_name", ""),
+                "source_id": source.get("identifier", ""),
+                "state": source.get("state", ""),
+                "first_seen": source.get("remote_created_at", ""),
+            }
+
+            # --- Vulnerability (fixed for any finding with same vuln ID) ---
+            vuln_section: dict[str, Any] = {
                 "cve": vuln.get("id"),
                 "aliases": vuln.get("aliases", []),
                 "severity": (vuln.get("severity") or "unknown").lower(),
                 "summary": vuln.get("summary", ""),
+                "has_fix": (vuln.get("has_fix") or "unknown").lower(),
                 "cvss": vuln.get("cvss", []),
                 "epss": vuln.get("epss"),
-                "dependency": dep.get("name", ""),
-                "repository": ml.get("vcs_repository_url", ""),
-                "manifest": ml.get("location", ""),
-                "assessment": {
-                    "status": assessment_status.value,
-                    "confidence": latest_rec.get("confidence_score"),
-                    "reason": latest_rec.get("recommendation_reason", ""),
-                },
-                "qualification_summary": qual.get("summary", ""),
+            }
+
+            result: dict[str, Any] = {
+                "assessment": assessment_section,
+                "finding": finding_section,
+                "vulnerability": vuln_section,
             }
 
             if "evidence" in include:
-                checklist = qual.get("checklist", {})
-                checklist_items = []
-                for item in checklist.get("items", []):
-                    checklist_items.append(
-                        {
-                            "description": item.get("description", ""),
-                            "status": item.get("status", ""),
-                            "conclusion": item.get("check_conclusion", ""),
-                            "investigation_steps": item.get("investigation_steps", []),
-                            "proofs": [
-                                {
-                                    "file": p.get("file", ""),
-                                    "line": p.get("line"),
-                                    "code": p.get("code", ""),
-                                    "comment": p.get("comment", ""),
-                                }
-                                for p in item.get("proofs", [])
-                            ],
-                        }
-                    )
                 reachability = analyses.get("runtime_reachability", {})
-                result["evidence"] = {
-                    "checklist": checklist_items,
-                    "reachability": reachability,
-                }
+                result["assessment"]["reachability"] = reachability
 
             if "logs" in include:
                 logs_data = client.get(f"/sca_findings/{finding_id}/logs")
@@ -602,36 +650,19 @@ def get_finding(
             if output_format == OutputFormat.JSON:
                 typer.echo(format_json(result))
             else:
-                typer.echo(f"\n{result.get('cve', 'Unknown')}")
-                typer.echo("=" * len(str(result.get("cve", "Unknown"))))
-                typer.echo(f"Severity: {result.get('severity', 'unknown').upper()}")
-                epss = result.get("epss") or {}
-                if epss.get("score"):
-                    typer.echo(
-                        f"EPSS: {epss['score']} (percentile: {epss.get('percentile', 'N/A')})"
-                    )
-                typer.echo(f"\n{result.get('summary', 'No summary available.')}\n")
-                typer.echo(
-                    f"Dependency: {result.get('dependency', '')} {result.get('version') or ''}"
-                )
-                typer.echo(f"Repository: {result.get('repository', '')}")
-                typer.echo(f"Manifest:   {result.get('manifest', '')}")
-
                 a = result.get("assessment", {})
+                v = result.get("vulnerability", {})
+                f = result.get("finding", {})
+
+                # --- Assessment (most important) ---
                 typer.echo(f"\nAssessment: {a.get('status', 'unknown').upper()}")
-                if a.get("confidence") is not None:
-                    typer.echo(f"  Confidence: {a['confidence']:.2f}")
-                if a.get("reason"):
-                    typer.echo(f"  Reason: {a['reason']}")
+                if a.get("summary"):
+                    typer.echo(f"\n{a['summary']}")
 
-                qs = result.get("qualification_summary")
-                if qs:
-                    typer.echo(f"\n{qs}")
-
-                evidence = result.get("evidence")
-                if evidence:
-                    typer.echo("\n--- Exploitability Checklist ---")
-                    for item in evidence.get("checklist", []):
+                checklist = a.get("checklist", [])
+                if checklist:
+                    typer.echo("\n--- Checklist ---")
+                    for item in checklist:
                         typer.echo(
                             f"\n  [{item.get('status', '?').upper()}] {item.get('description', '')}"
                         )
@@ -639,7 +670,40 @@ def get_finding(
                             typer.echo(f"  Conclusion: {item['conclusion']}")
                         for step in item.get("investigation_steps", []):
                             typer.echo(f"    - {step}")
+                        for proof in item.get("proofs", []):
+                            loc = proof.get("file", "")
+                            if proof.get("line"):
+                                loc += f":{proof['line']}"
+                            typer.echo(f"    {loc}")
+                            if proof.get("code"):
+                                typer.echo(f"      {proof['code']}")
+                            if proof.get("comment"):
+                                typer.echo(f"      # {proof['comment']}")
 
+                # --- Finding instance ---
+                typer.echo(f"\n--- Finding ---")
+                typer.echo(f"ID:         {f.get('id', '')}")
+                typer.echo(f"Dependency: {f.get('dependency', '')}")
+                typer.echo(f"Repository: {f.get('repository', '')}")
+                typer.echo(f"Manifest:   {f.get('manifest', '')}")
+                if f.get("scanner"):
+                    typer.echo(f"Scanner:    {f['scanner']}")
+                if f.get("source_id"):
+                    typer.echo(f"Source ID:  {f['source_id']}")
+
+                # --- Vulnerability ---
+                cve = v.get("cve", "Unknown")
+                typer.echo(f"\n--- Vulnerability ---")
+                typer.echo(f"{cve}")
+                typer.echo(f"Severity: {v.get('severity', 'unknown').upper()}")
+                epss = v.get("epss") or {}
+                if epss.get("score"):
+                    typer.echo(
+                        f"EPSS: {epss['score']} (percentile: {epss.get('percentile', 'N/A')})"
+                    )
+                typer.echo(f"\n{v.get('summary', 'No summary available.')}")
+
+                # --- Logs ---
                 logs = result.get("logs")
                 if logs:
                     typer.echo("\n--- Recommendation History ---")

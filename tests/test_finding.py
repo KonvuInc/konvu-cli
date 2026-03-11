@@ -56,6 +56,9 @@ MOCK_FINDING_LIST_RESPONSE: dict[str, Any] = {
                 "state": "open",
                 "remote_created_at": "2026-03-05T10:00:00Z",
             },
+            "analyses": {
+                "qualification_summary": "User input flows to vulnerable merge call.",
+            },
             "calculated_recommendation": "to_fix",
         },
         {
@@ -106,9 +109,16 @@ MOCK_FINDING_DETAIL: dict[str, Any] = {
         "location": "package.json",
     },
     "dependency": {"name": "lodash", "version": "4.17.20"},
-    "source": {"id": "finding-001", "state": "open"},
+    "source": {
+        "id": "finding-001",
+        "identifier": "42",
+        "source_name": "dependabot",
+        "state": "open",
+        "remote_created_at": "2026-03-05T10:00:00Z",
+    },
     "analyses": {
         "assessment_status": "completed",
+        "qualification_summary": "The vulnerable function is called in production code paths.",
         "qualification": {
             "id": "qual-001",
             "outcome": "applicable",
@@ -133,6 +143,10 @@ MOCK_FINDING_DETAIL: dict[str, Any] = {
             },
         },
         "runtime_reachability": {"some": "data"},
+        "carto_evidence": {
+            "applicable": True,
+            "summary": "lodash is used in the runtime dependency tree",
+        },
     },
     "calculated_recommendation": "to_fix",
     "latest_recommendation": {
@@ -229,11 +243,11 @@ class TestFindingList:
             result = runner.invoke(app, ["finding", "list", "--output", "json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
+        # Finding with backend qualification_summary uses it
         exploitable = data["findings"][0]
-        assert exploitable["assessment_summary"] == (
-            "A vulnerable function is being executed in your application."
-        )
+        assert exploitable["assessment_summary"] == "User input flows to vulnerable merge call."
         assert "assessment_next_steps" not in exploitable
+        # Finding without qualification_summary falls back to generic mapping
         false_positive = data["findings"][1]
         assert false_positive["assessment_summary"] == "Not exploitable in your context."
 
@@ -437,13 +451,25 @@ class TestFindingGet:
             result = runner.invoke(app, ["finding", "get", "finding-001", "--output", "json"])
         assert result.exit_code == 0
         data = _extract_json(result.output)
-        assert data["id"] == "finding-001"
+        # Grouped structure: assessment, finding, vulnerability
+        assert data["finding"]["id"] == "finding-001"
+        assert data["finding"]["scanner"] == "dependabot"
+        assert data["finding"]["source_id"] == "42"
         assert data["assessment"]["status"] == "exploitable"
-        assert data["assessment"]["confidence"] == 0.85
+        assert "confidence" not in data["assessment"]
+        assert "reason" not in data["assessment"]
         assert (
-            data["qualification_summary"]
+            data["assessment"]["summary"]
             == "The vulnerable function is called in production code paths."
         )
+        # Stack analysis is first checklist item
+        checklist = data["assessment"]["checklist"]
+        assert checklist[0]["description"] == "Vulnerability applicable to dependency stack"
+        assert checklist[0]["status"] == "completed"
+        assert "Applicable" in checklist[0]["conclusion"]
+        assert "lodash" in checklist[0]["conclusion"]
+        assert data["vulnerability"]["cve"] == "GHSA-xxxx"
+        assert data["vulnerability"]["severity"] == "high"
 
     def test_get_with_evidence(self) -> None:
         mock = _mock_client()
@@ -454,9 +480,42 @@ class TestFindingGet:
             )
         assert result.exit_code == 0
         data = _extract_json(result.output)
-        assert "evidence" in data
-        assert len(data["evidence"]["checklist"]) == 1
-        assert data["evidence"]["checklist"][0]["proofs"][0]["file"] == "src/handler.js"
+        checklist = data["assessment"]["checklist"]
+        assert len(checklist) == 2
+        # First item is stack analysis (no proofs)
+        assert checklist[0]["description"] == "Vulnerability applicable to dependency stack"
+        # Second item is the qualification check with evidence
+        assert checklist[1]["proofs"][0]["file"] == "src/handler.js"
+        assert "reachability" in data["assessment"]
+
+    def test_get_verbose_includes_evidence(self) -> None:
+        """--verbose should include evidence details and render proofs in text."""
+        mock = _mock_client()
+        mock.get = MagicMock(return_value=MOCK_FINDING_DETAIL)
+        with patch("konvu_cli.commands.finding.KonvuClient", return_value=mock):
+            result = runner.invoke(
+                app, ["finding", "get", "finding-001", "--verbose", "--output", "json"]
+            )
+        assert result.exit_code == 0
+        data = _extract_json(result.output)
+        checklist = data["assessment"]["checklist"]
+        # Qualification check should have investigation_steps and proofs
+        qual_check = checklist[1]
+        assert len(qual_check["investigation_steps"]) > 0
+        assert qual_check["proofs"][0]["file"] == "src/handler.js"
+
+    def test_get_verbose_text_shows_proofs(self) -> None:
+        """--verbose text output should render proof locations and code."""
+        mock = _mock_client()
+        mock.get = MagicMock(return_value=MOCK_FINDING_DETAIL)
+        with patch("konvu_cli.commands.finding.KonvuClient", return_value=mock):
+            result = runner.invoke(
+                app, ["finding", "get", "finding-001", "--verbose", "--output", "table"]
+            )
+        assert result.exit_code == 0
+        assert "src/handler.js:42" in result.output
+        assert "lodash.merge(req.body)" in result.output
+        assert "# Direct user input" in result.output
 
     def test_get_with_logs(self) -> None:
         mock = _mock_client()
@@ -482,11 +541,11 @@ class TestFindingGet:
         with patch("konvu_cli.commands.finding.KonvuClient", return_value=mock):
             result = runner.invoke(
                 app,
-                ["finding", "get", "finding-001", "--fields", "id,assessment", "--output", "json"],
+                ["finding", "get", "finding-001", "--fields", "assessment,finding", "--output", "json"],
             )
         assert result.exit_code == 0
         data = _extract_json(result.output)
-        assert set(data.keys()) == {"id", "assessment"}
+        assert set(data.keys()) == {"assessment", "finding"}
 
     def test_get_handles_null_qualification(self) -> None:
         """Should not crash when analyses.qualification is null."""
@@ -495,6 +554,7 @@ class TestFindingGet:
             "analyses": {
                 "assessment_status": "completed",
                 "qualification": None,
+                "qualification_summary": None,
             },
             "latest_recommendation": None,
         }
@@ -504,7 +564,7 @@ class TestFindingGet:
             result = runner.invoke(app, ["finding", "get", "finding-001", "--output", "json"])
         assert result.exit_code == 0
         data = _extract_json(result.output)
-        assert data["qualification_summary"] == ""
+        assert data["assessment"]["summary"] == ""
 
 
 # --- finding counts ---
