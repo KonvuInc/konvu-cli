@@ -1,10 +1,11 @@
 import csv
 import io
 import json
-from typing import Any
+from typing import Any, Callable
 
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 
 def format_json(data: Any) -> str:
@@ -17,6 +18,7 @@ def format_table(
     columns: list[str],
     list_key: str = "issues",
     title: str | None = None,
+    style_cell: Callable[[str, str], str | Text] | None = None,
 ) -> str:
     """Format data as a rich table.
 
@@ -25,6 +27,7 @@ def format_table(
         columns: Column names to display
         list_key: Key in data containing the list of items
         title: Optional table title
+        style_cell: Optional callback(column, value) -> styled Text or str
     """
     console = Console(force_terminal=True, width=120)
     table = Table(title=title, show_header=True, header_style="bold")
@@ -34,7 +37,12 @@ def format_table(
 
     items = data.get(list_key, [])
     for item in items:
-        row = [str(item.get(col, "")) for col in columns]
+        row: list[str | Text] = []
+        for col in columns:
+            val = str(item.get(col, ""))
+            if style_cell:
+                val = style_cell(col, val)
+            row.append(val)
         table.add_row(*row)
 
     with console.capture() as capture:

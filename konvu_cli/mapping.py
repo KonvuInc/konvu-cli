@@ -60,6 +60,19 @@ def assessment_to_recommendation(assessment: AssessmentStatus) -> list[str]:
     ]
 
 
+ASSESSMENT_COLORS: dict[str, str] = {
+    AssessmentStatus.EXPLOITABLE.value: "red bold",
+    AssessmentStatus.FALSE_POSITIVE.value: "green",
+    AssessmentStatus.INCONCLUSIVE.value: "yellow",
+    AssessmentStatus.NOT_ASSESSED.value: "dim",
+}
+
+
+def get_assessment_color(status: str) -> str:
+    """Return Rich style string for an assessment status."""
+    return ASSESSMENT_COLORS.get(status, "")
+
+
 def get_assessment_summary(assessment: AssessmentStatus) -> tuple[str, str]:
     """Get customer-facing summary and next_steps for an assessment status."""
     if assessment == AssessmentStatus.EXPLOITABLE:
