@@ -13,10 +13,10 @@ The Konvu CLI connects to the Konvu API to let you browse, triage, and act on SC
 ## Installation
 
 ```bash
-pip install konvu-cli
+npm install -g @konvu/cli
 ```
 
-Requires Python 3.11+.
+Or download from [GitHub Releases](https://github.com/KonvuTeam/konvu-cli/releases).
 
 ## Quick start
 
@@ -217,6 +217,7 @@ Filter by assessment: `--assessment exploitable`, combine with severity: `--seve
 ```bash
 git clone git@github.com:KonvuTeam/konvu-cli.git
 cd konvu-cli
-pip install -e ".[dev]"
-pytest
+go build -o konvu .
+go test ./...
+go vet ./...
 ```
