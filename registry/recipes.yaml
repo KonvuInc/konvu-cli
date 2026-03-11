@@ -1,0 +1,20 @@
+# Curated Recipe Registry — Konvu CLI workflows
+recipes:
+  - name: weekly-triage
+    title: Weekly Critical Finding Triage
+    description: "Review and act on this week's critical and exploitable findings."
+    services: [finding, vuln, dismiss]
+    steps:
+      - "List this week's exploitable findings: `konvu finding list --since 7d --assessment exploitable`"
+      - "Review details: `konvu finding get <id> --include evidence`"
+      - "Rate assessment: `konvu finding rate <id> agree` or `disagree --comment 'reason'`"
+      - "Dismiss false positives: `konvu dismiss --assessment false-positive --dry-run`"
+
+  - name: posture-report
+    title: Security Posture Report
+    description: "Generate a security posture summary for stakeholders."
+    services: [metrics, finding]
+    steps:
+      - "Get overall metrics: `konvu metrics --include summary,trends,top_cves -o json`"
+      - "Get assessment breakdown: `konvu finding counts --group-by severity -o json`"
+      - "List exploitable findings by repo: `konvu finding list --assessment exploitable --group-by repository -o json`"
