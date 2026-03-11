@@ -240,6 +240,12 @@ def list_findings(
     dependency: str | None = typer.Option(
         None, "--dependency", "-d", help="Filter by dependency name"
     ),
+    source: str | None = typer.Option(
+        None, "--source", help="Filter by scanner source: snyk, dependabot, etc."
+    ),
+    source_id: str | None = typer.Option(
+        None, "--source-id", help="Filter by external source identifier"
+    ),
     sort: str = typer.Option(
         "recommendation",
         "--sort",
@@ -281,6 +287,10 @@ def list_findings(
 
       # Group exploitable findings by repo to prioritize
       konvu finding list --assessment exploitable --group-by repository
+
+      # Filter by scanner source
+      konvu finding list --source snyk
+      konvu finding list --source dependabot --assessment exploitable
 
       # Pipe finding IDs to detail
       konvu finding list --assessment exploitable -q | xargs -I {} konvu finding get {}
@@ -336,6 +346,8 @@ def list_findings(
                 params["cve"] = [cve]
             if dependency:
                 params["dependency_name"] = [dependency]
+            if source:
+                params["source"] = [source]
 
             data = client.get("/sca_findings", params=params)
             total = data.get("total", 0)
@@ -345,6 +357,12 @@ def list_findings(
                 return
 
             items = data.get("items", [])
+            if source_id:
+                items = [
+                    i for i in items
+                    if str(i.get("source", {}).get("identifier", "")) == source_id
+                ]
+                total = len(items)
             transformed = [_transform_finding(f) for f in items]
 
             if quiet:
@@ -832,6 +850,9 @@ def finding_counts(
         None, "--severity", "-s", help="Filter: critical,high,moderate,low"
     ),
     repo: str | None = typer.Option(None, "--repo", "-r", help="Filter by repository URL or name"),
+    source: str | None = typer.Option(
+        None, "--source", help="Filter by scanner source: snyk, dependabot, etc."
+    ),
     group_by: str | None = typer.Option(
         None, "--group-by", "-g", help="Break down by: severity, week, month"
     ),
@@ -875,6 +896,8 @@ def finding_counts(
                 base_params["severity"] = [s.upper() for s in severity]
             if repo:
                 base_params["vcs_repository_url"] = [repo]
+            if source:
+                base_params["source"] = [source]
 
             if group_by == "severity":
                 severity_levels = ["CRITICAL", "HIGH", "MODERATE", "LOW"]
