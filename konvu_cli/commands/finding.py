@@ -734,6 +734,96 @@ def get_finding(
         _handle_error(e, output_format)
 
 
+@app.command("rate")
+def rate_finding(
+    finding_id: str = typer.Argument(..., help="Finding ID"),
+    rating: str = typer.Argument(..., help="Rating: agree or disagree"),
+    comment: str | None = typer.Option(None, "--comment", "-c", help="Optional feedback comment"),
+    recommendation_id: str | None = typer.Option(
+        None, "--recommendation-id", help="Recommendation ID (skips extra API call)"
+    ),
+    output: str | None = typer.Option(None, "--output", "-o", help="Output format: json, table"),
+) -> None:
+    """Rate Konvu's assessment of a finding.
+
+    \b
+    Examples:
+      konvu finding rate abc-123 agree
+      konvu finding rate abc-123 disagree --comment "Only used in tests"
+
+    \b
+    Exit codes:
+      0  Success
+      1  General error
+      3  Finding not found
+      4  Authentication failed
+    """
+    if rating not in ("agree", "disagree"):
+        typer.echo("Rating must be 'agree' or 'disagree'.", err=True)
+        raise typer.Exit(EXIT_USAGE_ERROR)
+
+    output_format = detect_output_format(output)
+
+    try:
+        with KonvuClient() as client:
+            latest_rec: dict[str, Any] | None = None
+
+            if recommendation_id:
+                rec_id = recommendation_id
+            else:
+                try:
+                    detail = client.get(f"/sca_findings/{finding_id}")
+                except APIError as e:
+                    if "404" in str(e) or "not found" in str(e).lower():
+                        raise CLIError(f"Finding {finding_id} not found.", EXIT_NOT_FOUND)
+                    raise
+
+                latest_rec = detail.get("latest_recommendation")
+                if not latest_rec or not latest_rec.get("id"):
+                    typer.echo(
+                        "This finding has no recommendation to rate yet.", err=True
+                    )
+                    raise typer.Exit(1)
+
+                rec_id = latest_rec["id"]
+            helpful = rating == "agree"
+
+            payload: dict[str, Any] = {
+                "helpful": helpful,
+                "feedback_tags": [],
+                "comment": comment or "",
+            }
+
+            result = client.post(
+                f"/recommendation_decision_history/{rec_id}"
+                f"/integration_issue/{finding_id}/scoring",
+                data=payload,
+            )
+
+            if output_format == OutputFormat.JSON:
+                typer.echo(format_json(result or {"status": "ok"}))
+            else:
+                console = Console(stderr=True)
+                if latest_rec:
+                    assessment = recommendation_to_assessment(
+                        latest_rec.get("raw_recommendation_type")
+                    )
+                    line = Text("Rated assessment ")
+                    line.append(
+                        assessment.value.upper(),
+                        style=get_assessment_color(assessment.value),
+                    )
+                    line.append(f" as: {rating}")
+                else:
+                    line = Text(f"Rated as: {rating}")
+                console.print(line)
+                if comment:
+                    typer.echo(f"Comment: {comment}", err=True)
+
+    except (AuthenticationError, APIError, CLIError) as e:
+        _handle_error(e, output_format)
+
+
 @app.command("counts")
 def finding_counts(
     since: str | None = typer.Option(None, "--since", help="Start date: '7d', '30d', or ISO date"),

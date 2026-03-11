@@ -567,6 +567,77 @@ class TestFindingGet:
         assert data["assessment"]["summary"] == ""
 
 
+# --- finding rate ---
+
+
+MOCK_FINDING_WITH_REC: dict[str, Any] = {
+    **MOCK_FINDING_DETAIL,
+    "latest_recommendation": {
+        "id": "rec-decision-001",
+        "raw_recommendation_type": "to_fix",
+        "recommendation_reason": "ai_qualification_applicable",
+        "confidence_score": 0.85,
+    },
+}
+
+
+class TestFindingRate:
+    def test_help(self) -> None:
+        result = runner.invoke(app, ["finding", "rate", "--help"])
+        assert result.exit_code == 0
+        assert "agree" in result.output
+        assert "--comment" in result.output
+
+    def test_rate_agree_json(self) -> None:
+        mock = _mock_client()
+        mock.get = MagicMock(return_value=MOCK_FINDING_WITH_REC)
+        mock.post = MagicMock(return_value={"id": "score-001", "helpful": True})
+        with patch("konvu_cli.commands.finding.KonvuClient", return_value=mock):
+            result = runner.invoke(
+                app, ["finding", "rate", "finding-001", "agree", "--output", "json"]
+            )
+        assert result.exit_code == 0
+        data = _extract_json(result.output)
+        assert data["helpful"] is True
+        mock.post.assert_called_once()
+        call_args = mock.post.call_args
+        assert "rec-decision-001" in call_args[0][0]
+        assert "finding-001" in call_args[0][0]
+        assert call_args[1]["data"]["helpful"] is True
+
+    def test_rate_disagree_with_comment(self) -> None:
+        mock = _mock_client()
+        mock.get = MagicMock(return_value=MOCK_FINDING_WITH_REC)
+        mock.post = MagicMock(return_value={"id": "score-002", "helpful": False})
+        with patch("konvu_cli.commands.finding.KonvuClient", return_value=mock):
+            result = runner.invoke(
+                app,
+                [
+                    "finding", "rate", "finding-001", "disagree",
+                    "--comment", "Only used in tests",
+                    "--output", "json",
+                ],
+            )
+        assert result.exit_code == 0
+        call_args = mock.post.call_args
+        assert call_args[1]["data"]["helpful"] is False
+        assert call_args[1]["data"]["comment"] == "Only used in tests"
+
+    def test_rate_invalid_rating(self) -> None:
+        result = runner.invoke(app, ["finding", "rate", "finding-001", "maybe"])
+        assert result.exit_code == 2
+        assert "agree" in result.output or "disagree" in result.output
+
+    def test_rate_no_recommendation(self) -> None:
+        detail_no_rec = {**MOCK_FINDING_DETAIL, "latest_recommendation": None}
+        mock = _mock_client()
+        mock.get = MagicMock(return_value=detail_no_rec)
+        with patch("konvu_cli.commands.finding.KonvuClient", return_value=mock):
+            result = runner.invoke(app, ["finding", "rate", "finding-001", "agree"])
+        assert result.exit_code == 1
+        assert "no recommendation" in result.output.lower()
+
+
 # --- finding counts ---
 
 
