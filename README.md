@@ -8,6 +8,7 @@ The Konvu CLI connects to the Konvu API to let you browse, triage, and act on SC
 - Which repositories have the most open vulnerabilities?
 - Are we making progress — how does this week compare to last week?
 - What's the evidence behind this assessment?
+- Do I agree with this recommendation?
 
 ## Installation
 
@@ -77,11 +78,14 @@ konvu finding list --assessment exploitable -q | xargs -I {} konvu finding get {
 
 ### `konvu finding get` — Inspect a finding
 
-Get full details on a finding, including AI qualification evidence and recommendation history.
+Get full details on a finding, structured into three sections: **Assessment** (Konvu's analysis), **Finding** (this specific instance), and **Vulnerability** (CVE details).
 
 ```bash
 # Basic detail
 konvu finding get <id>
+
+# Verbose — full evidence for each checklist item
+konvu finding get <id> --verbose
 
 # With exploitability evidence (checklist, proofs, reachability)
 konvu finding get <id> --include evidence
@@ -91,6 +95,21 @@ konvu finding get <id> --include logs
 
 # Both, as JSON
 konvu finding get <id> --include evidence --include logs --output json
+```
+
+### `konvu finding rate` — Rate an assessment
+
+Provide feedback on Konvu's assessment to improve future recommendations.
+
+```bash
+# Agree with the assessment
+konvu finding rate <id> agree
+
+# Disagree with a comment
+konvu finding rate <id> disagree --comment "Only used in test environment"
+
+# Skip the extra API call if you already have the recommendation ID
+konvu finding rate <id> agree --recommendation-id <rec-id>
 ```
 
 ### `konvu finding counts` — Assessment metrics
@@ -116,15 +135,20 @@ konvu finding counts --repo github:org/repo --group-by severity
 
 ### `konvu vuln` — Look up a vulnerability
 
+Shows vulnerability details and Konvu's assessment across your repositories, with color-coded exploitability status.
+
 ```bash
 konvu vuln CVE-2021-44228
-konvu vuln GHSA-xxxx-yyyy --output json
+konvu vuln GHSA-xxxx-yyyy --include remediation --output json
 ```
 
 ### `konvu metrics` — Security posture
 
+Dashboard-style overview with summary, trends, top CVEs, and new vs closed counts.
+
 ```bash
-konvu metrics --since 30d
+konvu metrics
+konvu metrics --include top_cves,new_vs_closed
 konvu metrics --since 90d --interval month --output json
 ```
 
