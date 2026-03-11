@@ -13,10 +13,10 @@ The Konvu CLI connects to the Konvu API to let you browse, triage, and act on SC
 ## Installation
 
 ```bash
-pip install konvu-cli
+npm install -g @konvu/cli
 ```
 
-Requires Python 3.11+.
+Or download from [GitHub Releases](https://github.com/KonvuTeam/konvu-cli/releases).
 
 ## Quick start
 
@@ -73,11 +73,14 @@ konvu finding list --assessment exploitable --group-by dependency
 # Just the count
 konvu finding list --assessment not-assessed --count
 
+# Filter by scanner source
+konvu finding list --source snyk --assessment exploitable
+
 # Pipe IDs to other commands
 konvu finding list --assessment exploitable -q | xargs -I {} konvu finding get {}
 ```
 
-**Filters:** `--severity`, `--assessment`, `--state`, `--has-fix`, `--repo`, `--cve`, `--dependency`, `--since`, `--until`
+**Filters:** `--severity`, `--assessment`, `--state`, `--has-fix`, `--repo`, `--cve`, `--dependency`, `--source`, `--source-id`, `--since`, `--until`
 
 **Grouping:** `--group-by repository|dependency|severity|assessment`
 
@@ -169,6 +172,40 @@ konvu dismiss --assessment false-positive --severity low --dry-run
 konvu dismiss --assessment false-positive --severity low --reason "Accepted risk"
 ```
 
+### `konvu skills path` — Locate bundled skills
+
+Returns the path to the bundled Claude Code skills directory. Useful for configuring your AI assistant.
+
+```bash
+konvu skills path
+```
+
+### `konvu version` — Show version
+
+```bash
+konvu version
+```
+
+### `konvu --help-all` — Full CLI reference
+
+Prints a complete reference of all commands, flags, and examples in a single view.
+
+```bash
+konvu --help-all
+```
+
+## Claude Code integration
+
+Konvu CLI ships with bundled [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills that teach AI agents how to use the CLI effectively. To make them available, add the skills path to your `.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "additionalDirectories": ["<output of konvu skills path>"]
+  }
+}
+```
+
 ## Output formats
 
 The CLI auto-detects output format: **table** when running interactively, **JSON** when piped. Override with `--output`:
@@ -217,6 +254,7 @@ Filter by assessment: `--assessment exploitable`, combine with severity: `--seve
 ```bash
 git clone git@github.com:KonvuTeam/konvu-cli.git
 cd konvu-cli
-pip install -e ".[dev]"
-pytest
+go build -o konvu .
+go test ./...
+go vet ./...
 ```
