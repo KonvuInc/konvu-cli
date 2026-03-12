@@ -30,12 +30,6 @@ Set a custom install directory with `KONVU_INSTALL_DIR`:
 curl -sSL https://raw.githubusercontent.com/KonvuTeam/konvu-cli/main/scripts/install.sh | KONVU_INSTALL_DIR=~/.local/bin sh
 ```
 
-### npm
-
-```bash
-npm install -g @konvu/cli
-```
-
 ### Manual download
 
 Download the binary for your platform from [GitHub Releases](https://github.com/KonvuTeam/konvu-cli/releases).
