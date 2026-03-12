@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 )
 
 // Skill directories are copied from skills/ at the repo root.
@@ -16,38 +17,53 @@ import (
 //go:embed konvu-shared recipe-weekly-triage
 var embedded embed.FS
 
-// SkillDirs maps embed directory names to their install directory names.
-var SkillDirs = map[string]string{
-	"konvu-shared":         "konvu-shared",
-	"recipe-weekly-triage": "konvu-recipe-weekly-triage",
+// skillDir pairs an embed directory name with its install directory name.
+type skillDir struct {
+	EmbedName   string
+	InstallName string
 }
+
+// skillDirs lists the skills to embed and their install names.
+var skillDirs = []skillDir{
+	{EmbedName: "konvu-shared", InstallName: "konvu-shared"},
+	{EmbedName: "recipe-weekly-triage", InstallName: "konvu-recipe-weekly-triage"},
+}
+
+var (
+	embeddedHashOnce sync.Once
+	embeddedHash     string
+)
 
 // ComputeEmbeddedHash returns a deterministic SHA-256 hex digest of all
 // embedded skill files. Files are sorted by path to ensure determinism.
+// The result is cached after the first call.
 func ComputeEmbeddedHash() string {
-	h := sha256.New()
+	embeddedHashOnce.Do(func() {
+		h := sha256.New()
 
-	var paths []string
-	fs.WalkDir(embedded, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
+		var paths []string
+		fs.WalkDir(embedded, ".", func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			paths = append(paths, path)
+			return nil
+		})
+
+		sort.Strings(paths)
+
+		for _, p := range paths {
+			data, err := embedded.ReadFile(p)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(h, "%s\n%d\n", p, len(data))
+			h.Write(data)
 		}
-		paths = append(paths, path)
-		return nil
+
+		embeddedHash = fmt.Sprintf("%x", h.Sum(nil))
 	})
-
-	sort.Strings(paths)
-
-	for _, p := range paths {
-		data, err := embedded.ReadFile(p)
-		if err != nil {
-			continue
-		}
-		fmt.Fprintf(h, "%s\n%d\n", p, len(data))
-		h.Write(data)
-	}
-
-	return fmt.Sprintf("%x", h.Sum(nil))
+	return embeddedHash
 }
 
 // InstallDir returns the path to ~/.agents/skills, creating it if needed.
@@ -67,11 +83,11 @@ const versionFileName = ".konvu-skills-version"
 
 // InstalledHash reads the installed version hash, or returns "" if not found.
 func InstalledHash() string {
-	dir, err := InstallDir()
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	data, err := os.ReadFile(filepath.Join(dir, versionFileName))
+	data, err := os.ReadFile(filepath.Join(home, ".agents", "skills", versionFileName))
 	if err != nil {
 		return ""
 	}
@@ -96,20 +112,27 @@ func Install(force bool) (int, error) {
 		return 0, err
 	}
 
+	hash := ComputeEmbeddedHash()
+
 	count := 0
-	for embedName, installName := range SkillDirs {
-		destDir := filepath.Join(dir, installName)
+	for _, sd := range skillDirs {
+		destDir := filepath.Join(dir, sd.InstallName)
 
 		// Remove old version if present.
-		os.RemoveAll(destDir)
+		if err := os.RemoveAll(destDir); err != nil {
+			return count, fmt.Errorf("removing old %s: %w", sd.InstallName, err)
+		}
 
-		err := fs.WalkDir(embedded, embedName, func(path string, d fs.DirEntry, err error) error {
+		err := fs.WalkDir(embedded, sd.EmbedName, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
 
 			// Compute relative path within the embed dir, then map to install dir.
-			rel, _ := filepath.Rel(embedName, path)
+			rel, err := filepath.Rel(sd.EmbedName, path)
+			if err != nil {
+				return fmt.Errorf("computing relative path for %s: %w", path, err)
+			}
 			dest := filepath.Join(destDir, rel)
 
 			if d.IsDir() {
@@ -128,13 +151,13 @@ func Install(force bool) (int, error) {
 			return nil
 		})
 		if err != nil {
-			return count, fmt.Errorf("extracting %s: %w", embedName, err)
+			return count, fmt.Errorf("extracting %s: %w", sd.EmbedName, err)
 		}
 	}
 
 	// Write version file.
 	versionPath := filepath.Join(dir, versionFileName)
-	if err := os.WriteFile(versionPath, []byte(ComputeEmbeddedHash()), 0o644); err != nil {
+	if err := os.WriteFile(versionPath, []byte(hash), 0o644); err != nil {
 		return count, fmt.Errorf("writing version file: %w", err)
 	}
 
