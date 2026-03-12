@@ -13,6 +13,12 @@ var rootCmd = &cobra.Command{
 	Long:  "Konvu CLI for security vulnerability management from your terminal.",
 }
 
+// RootCmd returns the root cobra command, allowing external modules
+// (e.g. konvu-admin-cli) to import and extend the command tree.
+func RootCmd() *cobra.Command {
+	return rootCmd
+}
+
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/KonvuTeam/konvu-cli/internal/mapping"
+	"github.com/KonvuTeam/konvu-cli/pkg/mapping"
 )
 
 // StyleCellFunc optionally styles a cell value. Return value is printed as-is.
