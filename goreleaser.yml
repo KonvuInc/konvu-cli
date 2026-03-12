@@ -32,6 +32,19 @@ archives:
       - skills/**/*
       - registry/**/*
 
+brews:
+  - repository:
+      owner: KonvuTeam
+      name: homebrew-tap
+    homepage: "https://konvu.com"
+    description: "Security vulnerability management from your terminal"
+    license: "Proprietary"
+    install: |
+      bin.install "konvu"
+      # Install bundled skills and registry alongside the binary.
+      prefix.install "skills" if File.directory?("skills")
+      prefix.install "registry" if File.directory?("registry")
+
 checksum:
   name_template: "checksums.txt"
 

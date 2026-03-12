@@ -12,11 +12,27 @@ The Konvu CLI connects to the Konvu API to let you browse, triage, and act on SC
 
 ## Installation
 
+### Homebrew (macOS / Linux)
+
 ```bash
-npm install -g @konvu/cli
+brew install KonvuTeam/tap/konvu
 ```
 
-Or download from [GitHub Releases](https://github.com/KonvuTeam/konvu-cli/releases).
+### Shell script
+
+```bash
+curl -sSL https://raw.githubusercontent.com/KonvuTeam/konvu-cli/main/scripts/install.sh | sh
+```
+
+Set a custom install directory with `KONVU_INSTALL_DIR`:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/KonvuTeam/konvu-cli/main/scripts/install.sh | KONVU_INSTALL_DIR=~/.local/bin sh
+```
+
+### Manual download
+
+Download the binary for your platform from [GitHub Releases](https://github.com/KonvuTeam/konvu-cli/releases).
 
 ## Quick start
 
