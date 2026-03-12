@@ -17,16 +17,21 @@ import (
 //go:embed konvu-shared recipe-weekly-triage
 var embedded embed.FS
 
-// skillDir pairs an embed directory name with its install directory name.
-type skillDir struct {
+// SkillDir pairs an embed directory name with its install directory name.
+type SkillDir struct {
 	EmbedName   string
 	InstallName string
 }
 
 // skillDirs lists the skills to embed and their install names.
-var skillDirs = []skillDir{
+var skillDirs = []SkillDir{
 	{EmbedName: "konvu-shared", InstallName: "konvu-shared"},
 	{EmbedName: "recipe-weekly-triage", InstallName: "konvu-recipe-weekly-triage"},
+}
+
+// SkillDirs returns the list of skill directories that are embedded.
+func SkillDirs() []SkillDir {
+	return skillDirs
 }
 
 var (
