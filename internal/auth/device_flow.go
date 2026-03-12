@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -129,15 +130,20 @@ func pollForToken(zitadelDomain, clientID, deviceCode string, pollInterval int, 
 	return nil, fmt.Errorf("login timed out. Please try again.\nYou can also set KONVU_ACCESS_TOKEN environment variable manually.")
 }
 
-func openBrowser(url string) {
+func openBrowser(rawURL string) {
+	// Only open HTTP(S) URLs to prevent command injection via malicious schemes.
+	if !strings.HasPrefix(rawURL, "https://") && !strings.HasPrefix(rawURL, "http://") {
+		return
+	}
+
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", url)
+		cmd = exec.Command("open", rawURL)
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL)
 	default:
-		cmd = exec.Command("xdg-open", url)
+		cmd = exec.Command("xdg-open", rawURL)
 	}
 	cmd.Start()
 }

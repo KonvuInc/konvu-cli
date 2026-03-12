@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Downloads the correct pre-built binary for the current platform
 // and verifies its SHA256 checksum before extracting.
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
@@ -43,7 +43,7 @@ const binPath = path.join(
 
 console.log(`Downloading konvu ${version} for ${platform}-${arch}...`);
 
-// Follow one redirect (GitHub releases always 302 to the CDN).
+// Follow redirects (GitHub releases 302 to the CDN).
 function download(url) {
   return new Promise((resolve, reject) => {
     const request = https.get(url, { timeout: 60000 }, (response) => {
@@ -114,15 +114,17 @@ async function main() {
   console.log("Checksum verified.");
 
   // Write archive, extract, and clean up.
+  // Uses execFileSync with argument arrays to prevent command injection.
   const archivePath = path.join(binDir, filename);
   fs.writeFileSync(archivePath, archiveData);
 
   if (platform === "windows") {
-    execSync(
-      `powershell -command "Expand-Archive -Path '${archivePath}' -DestinationPath '${binDir}' -Force"`
-    );
+    execFileSync("powershell", [
+      "-command",
+      `Expand-Archive -Path '${archivePath}' -DestinationPath '${binDir}' -Force`,
+    ]);
   } else {
-    execSync(`tar -xzf "${archivePath}" -C "${binDir}"`);
+    execFileSync("tar", ["-xzf", archivePath, "-C", binDir]);
   }
 
   fs.unlinkSync(archivePath);
