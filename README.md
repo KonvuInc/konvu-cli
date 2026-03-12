@@ -12,7 +12,36 @@ The Konvu CLI connects to the Konvu API to let you browse, triage, and act on SC
 
 ## Installation
 
-### Shell script
+### Build from source
+
+Requires [Go 1.25+](https://go.dev/dl/) and git access to the repository.
+
+```bash
+git clone git@github.com:KonvuTeam/konvu-cli.git
+cd konvu-cli
+go build -o konvu .
+```
+
+Then move the binary somewhere in your `$PATH`:
+
+```bash
+# Option A: system-wide (may need sudo)
+sudo mv konvu /usr/local/bin/
+
+# Option B: user-local
+mv konvu ~/.local/bin/
+```
+
+Verify it works:
+
+```bash
+konvu version
+```
+
+> **Note:** If you install to a custom directory, make sure it's in your `$PATH`.
+> For example, add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile.
+
+### Shell script (requires public repo access)
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/KonvuTeam/konvu-cli/main/scripts/install.sh | sh
@@ -26,9 +55,9 @@ curl -sSL https://raw.githubusercontent.com/KonvuTeam/konvu-cli/main/scripts/ins
 
 ### Manual download
 
-Download the binary for your platform from [GitHub Releases](https://github.com/KonvuTeam/konvu-cli/releases).
+Download the binary for your platform from [GitHub Releases](https://github.com/KonvuTeam/konvu-cli/releases) (requires repository access).
 
-### Homebrew (macOS / Linux) - Coming soon
+### Homebrew (macOS / Linux) — Coming soon
 
 ## Quick start
 
@@ -264,8 +293,6 @@ Filter by assessment: `--assessment exploitable`, combine with severity: `--seve
 ## Development
 
 ```bash
-git clone git@github.com:KonvuTeam/konvu-cli.git
-cd konvu-cli
 go build -o konvu .
 go test ./...
 go vet ./...
