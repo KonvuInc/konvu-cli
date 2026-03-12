@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/KonvuTeam/konvu-cli/internal/api"
-	"github.com/KonvuTeam/konvu-cli/internal/auth"
-	"github.com/KonvuTeam/konvu-cli/internal/config"
-	"github.com/KonvuTeam/konvu-cli/internal/output"
+	"github.com/KonvuTeam/konvu-cli/pkg/api"
+	"github.com/KonvuTeam/konvu-cli/pkg/auth"
+	"github.com/KonvuTeam/konvu-cli/pkg/config"
+	"github.com/KonvuTeam/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
 )
 

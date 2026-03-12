@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/KonvuTeam/konvu-cli/internal/api"
-	clierrors "github.com/KonvuTeam/konvu-cli/internal/errors"
-	"github.com/KonvuTeam/konvu-cli/internal/mapping"
-	"github.com/KonvuTeam/konvu-cli/internal/output"
+	"github.com/KonvuTeam/konvu-cli/pkg/api"
+	clierrors "github.com/KonvuTeam/konvu-cli/pkg/errors"
+	"github.com/KonvuTeam/konvu-cli/pkg/mapping"
+	"github.com/KonvuTeam/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
 )
 

@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/KonvuTeam/konvu-cli/internal/config"
+	"github.com/KonvuTeam/konvu-cli/pkg/config"
 )
 
 type AuthenticationError struct {
