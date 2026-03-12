@@ -237,14 +237,18 @@ konvu --help-all
 
 ## Claude Code integration
 
-Konvu CLI ships with bundled [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills that teach AI agents how to use the CLI effectively. To make them available, add the skills path to your `.claude/settings.json`:
+Konvu CLI ships with bundled [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills. They're installed automatically when you run `konvu login`, or you can install them manually:
 
-```json
-{
-  "permissions": {
-    "additionalDirectories": ["<output of konvu skills path>"]
-  }
-}
+```bash
+konvu skills install
+```
+
+Skills are installed to `~/.agents/skills/` where Claude Code discovers them automatically — no configuration needed.
+
+To check the skills directory:
+
+```bash
+konvu skills path
 ```
 
 ## Output formats
