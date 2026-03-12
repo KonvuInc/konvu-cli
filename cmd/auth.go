@@ -143,6 +143,11 @@ func loginWithAPIKey(apiKey string) error {
 	}
 
 	fmt.Printf("Logged in to: %v\n", company["name"])
+
+	// Install bundled Claude Code skills
+	fmt.Fprintln(os.Stderr, "\nInstalling bundled Claude Code skills...")
+	RunSkillsInstall(false, true)
+
 	return nil
 }
 
@@ -174,6 +179,10 @@ func loginWithOAuth(timeout int) error {
 	if company, err := client.Get("/companies/current", nil); err == nil {
 		fmt.Printf("Logged in to: %v\n", company["name"])
 	}
+
+	// Install bundled Claude Code skills
+	fmt.Fprintln(os.Stderr, "\nInstalling bundled Claude Code skills...")
+	RunSkillsInstall(false, true)
 
 	return nil
 }
