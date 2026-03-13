@@ -1,6 +1,6 @@
 ---
 name: recipe-weekly-triage
-version: 1.0.0
+version: 2.0.0
 description: "Guided triage workflow for Konvu security findings. Use this skill whenever the user wants to triage, review, or go through their security findings — even if they say something casual like 'let's review findings', 'triage time', 'what needs my attention', 'go through my vulns', or 'weekly security review'. Also trigger when the user asks to rate, agree/disagree with, or act on multiple findings in bulk."
 metadata:
   requires:
@@ -10,157 +10,223 @@ metadata:
 
 > **PREREQUISITE:** Read `../konvu-shared/SKILL.md` for auth and global flags.
 
-A guided workflow that walks you through recent security findings, groups them intelligently, and lets you act on each one — agree, disagree, flag for deeper review, create tickets, or dismiss. The goal is to replace a series of manual CLI commands with an opinionated conversational loop.
+A guided triage workflow with two distinct phases: **Validate** (review all findings and record your judgment) then **Act** (execute all actions in batch). No actions are taken until the user confirms at the end.
 
-## Workflow Overview
+## Progress Bar
+
+Every message must start with a progress bar. This prevents the "where am I?" feeling:
 
 ```
-Start → Choose timeframe
-  → Phase 1: Exploitable findings (grouped)
-    → Per group/finding: Agree (+ offer ticket) | Disagree (+ offer dismiss) | Flag for review | Exit
-  → Phase 2: False positive findings (grouped)
-    → Per group/finding: Agree (+ offer dismiss) | Disagree (→ auto-flag for review) | Flag for review | Exit
-  → Phase 3: Deep review of flagged findings (with full evidence)
-    → Per finding: Agree | Disagree | Skip | Exit
-  → Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📍 Step 2/6 · Validate Exploitable · Group 1/3
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-The user can exit at any point — the summary shows everything done so far.
+The steps are:
+1. **Setup** — auth check, timeframe, overview
+2. **Validate Exploitable** — review exploitable findings
+3. **Validate False Positives** — review false-positive findings
+4. **Review Flagged** — deep dive into findings that need more context
+5. **Action Plan** — present all pending actions for confirmation
+6. **Execute** — run the actions and show results
 
-## Phase 0: Setup
+When a step has no findings, skip it: "Step 2: No exploitable findings — skipping."
 
-Ask the user for the review timeframe using AskUserQuestion. Default to 7 days.
+Within a step, show group progress ("Group 2/3") and within a breakdown ("Finding 3/5").
 
-Example:
-> "Ready to triage your recent findings. Review the last 7 days?"
-> Options: "Last 7 days" / "Last 14 days" / "Last 30 days" / "Custom"
+## Workflow
 
-If they pick custom, ask for a specific period.
+```
+Setup → Validate Exploitable → Validate False Positives → Review Flagged → Action Plan → Execute
+```
 
-Verify authentication first — run `konvu whoami -o json`. If it fails with exit code 4, tell the user to run `konvu login` and stop.
+The user can exit at any point — show the action plan for whatever was validated so far.
 
-## Phase 1: Exploitable Findings
+## Step 1: Setup
 
-Fetch all exploitable findings for the period:
+Verify authentication — run `konvu whoami -o json`. If exit code 4, tell the user to run `konvu login` and stop.
+
+Ask for the review timeframe (default 7 days), then fetch both categories upfront:
 
 ```bash
 konvu finding list --since <period> --assessment exploitable -o json --limit 1000
-```
-
-If zero results, tell the user and move to Phase 2.
-
-### Grouping
-
-Before presenting findings one-by-one, analyze the batch and group findings that can reasonably be acted on together. Use your judgment — common grouping patterns:
-
-- Same CVE across multiple repositories or manifests
-- Same dependency with multiple CVEs that share similar exploitability reasoning
-- Findings with nearly identical assessment summaries
-- Same vulnerability class in the same repository
-
-Present each group with a summary of what the findings have in common and how many there are. Use AskUserQuestion:
-
-> "I found 4 exploitable findings related to `lodash` prototype pollution (CVE-2020-28500) across 3 repos — all with similar assessment reasoning. Act on these as a group, or break down individually?"
-> Options: "Act as group" / "Break down"
-
-Findings that don't fit any group get presented individually.
-
-### Per finding (or group) actions
-
-Present the finding's key details: CVE, severity, dependency, repository, and the **assessment summary** (not full evidence — that's for Phase 3). Use AskUserQuestion with these options:
-
-- **Agree** — Run `konvu finding rate <id> agree`. Then ask if they want to create a ticket. If yes, ask where (based on available tools — Linear, GitHub Issues, etc.). Prefill the ticket with finding details (CVE, severity, dependency, repo, assessment summary).
-- **Disagree** — Run `konvu finding rate <id> disagree`. Ask for an optional comment. Then offer to dismiss: `konvu dismiss --issues <id> --reason "<comment>"`.
-- **Flag for deeper review** — Save the finding ID and context for Phase 3.
-- **Exit triage** — Jump straight to the Summary.
-
-When acting on a group, apply the same action to all findings in the group. For tickets, create one ticket that references all findings in the group.
-
-When breaking down a group, present each finding individually but keep the group context visible (e.g., "Finding 2 of 4 in the lodash prototype pollution group").
-
-### Tracking
-
-Keep a running log of every action taken:
-- Finding ID, CVE, dependency, repository
-- Action: agreed / disagreed / flagged / dismissed / ticket created
-- Any comments provided
-
-## Phase 2: False Positive Findings
-
-Fetch all false positive findings for the same period:
-
-```bash
 konvu finding list --since <period> --assessment false-positive -o json --limit 1000
 ```
 
-If zero results, tell the user and move to Phase 3.
+Show an overview before diving in:
 
-Apply the same grouping logic as Phase 1. Then per finding/group, use AskUserQuestion:
+> "Last 7 days: 3 exploitable, 8 false positives. Let's validate them."
 
-- **Agree** — Run `konvu finding rate <id> agree`. Then offer to dismiss: `konvu dismiss --issues <id> --reason "Confirmed false positive"`.
-- **Disagree** — Run `konvu finding rate <id> disagree`. Ask for an optional comment. Automatically flag for deeper review in Phase 3 (the user thinks this is actually exploitable, so it needs evidence review).
-- **Flag for deeper review** — Save for Phase 3.
-- **Exit triage** — Jump to Summary.
+If a category is empty, say so upfront.
 
-## Phase 3: Deep Review
+## Step 2: Validate Exploitable
 
-This phase covers all findings flagged during Phases 1 and 2. If nothing was flagged, skip to Summary.
+If zero, skip: "Step 2: No exploitable findings — moving on."
 
-Tell the user how many findings are queued for deep review. For each one, fetch full evidence:
+### Grouping
+
+Group findings before presenting:
+- Same CVE across multiple repositories or manifests
+- Same dependency with multiple CVEs and similar reasoning
+- Findings with nearly identical assessment summaries
+
+### Assessment context
+
+The assessment summary is the most valuable piece of information for triage — it tells the user *why* something is or isn't exploitable. Always display it prominently.
+
+The `assessment_summary` field from `finding list` is sometimes specific and useful (e.g., "Prototype pollution reachable via user input in request parsing") but sometimes generic and unhelpful (e.g., "Not exploitable in your context."). When the summary is generic like this, make **one** `konvu finding get <id> -o json` call for a representative finding in the group and pull the checklist conclusion instead — that's where the real reasoning lives (e.g., "your app is a React frontend on Unix, and this vulnerability affects backend components only").
+
+Only one `get` call per group is needed — findings in the same group share the same reasoning.
+
+### Presenting groups
+
+Present each group as a compact table with the assessment reasoning below:
+
+```
+📦 Group 1/3: lodash prototype pollution (CVE-2020-28500) — 4 findings
+
+| Repo | Dep | Severity | Fix |
+|------|-----|----------|-----|
+| org/app-a | lodash 4.17.20 | high | available |
+| org/app-b | lodash 4.17.20 | high | available |
+| org/api   | lodash 4.17.21 | high | available |
+| org/web   | lodash 4.17.20 | high | available |
+
+Why exploitable: Prototype pollution reachable via user input in request parsing.
+```
+
+The "Why exploitable" / "Why false positive" line is not optional — it's the most important line in the group presentation. Without it the user is making decisions blind.
+
+### Validation options
+
+Use AskUserQuestion. During validation, nothing is executed — just recording the user's judgment:
+
+- **Agree** — You confirm the exploitable assessment. (Will rate as agree + offer ticket in Action Plan)
+- **Disagree** — You disagree with the assessment. (Will rate as disagree in Action Plan)
+- **Review individually** — Break the group apart and validate each finding separately.
+- **Skip** — No judgment, move on.
+
+"Skip", "pass", "next", "move on" all mean the same thing — move forward without recording a judgment.
+
+When breaking down a group, show position: "Finding 2/4 in the lodash group".
+
+## Step 3: Validate False Positives
+
+Same structure as Step 2, but for false-positive findings.
+
+Validation options:
+- **Agree** — You confirm it's a false positive. (Will rate as agree + offer dismiss in Action Plan)
+- **Disagree** — You think this IS exploitable. (Will rate as disagree + auto-flag for Step 4)
+- **Review individually** — Break down the group.
+- **Skip** — Move on.
+
+## Step 4: Review Flagged
+
+Covers findings flagged from Steps 2–3 (disagreed false positives, or individual findings the user wants more context on).
+
+If nothing was flagged, skip: "Step 4: Nothing flagged — moving to action plan."
+
+For each flagged finding, fetch full evidence:
 
 ```bash
 konvu finding get <id> --include evidence -o json
 ```
 
-Present the full evidence: assessment summary, checklist items with conclusions, proofs (code snippets, file paths, line numbers), and reachability analysis. Give enough context for the user to make an informed call.
+Present readably:
+- **Assessment summary** and reasoning
+- **Reachability**: dependency-level and function-level (call sites, imports)
+- **Runtime evidence**: if available
+- **Checklist items**: each with conclusion and proof snippets
+- **EPSS score** and CVSS vector
 
-Use AskUserQuestion — no more deferring:
+Final validation (no more deferring):
+- **Agree** — Confirm the original assessment
+- **Disagree** — Override with your judgment
+- **Skip** — No action
 
-- **Agree** — Rate and follow the same action logic as the finding's original phase (offer ticket for exploitables, offer dismiss for false positives).
-- **Disagree** — Rate with comment, offer dismiss for exploitables, flag for deeper review is not available here.
-- **Skip** — Move to next finding, no action taken.
-- **Exit triage** — Jump to Summary.
+## Step 5: Action Plan
 
-## Summary
-
-Always show the summary when the triage ends, whether completed or exited early.
-
-Present two things:
-
-**1. Counts:**
-A quick overview — e.g., "Reviewed 18 findings: 12 agreed, 3 disagreed, 2 dismissed, 1 ticket created, 4 skipped, 2 remaining."
-
-**2. Action log:**
-List each finding that had an action, grouped by action type:
+Present everything that will happen, grouped by action type. Nothing has been executed yet — this is the user's chance to review and confirm before anything runs.
 
 ```
-Agreed (12):
-  - CVE-2024-1234 | lodash 4.17.20 | github:org/repo-a | exploitable
-  - CVE-2024-1234 | lodash 4.17.20 | github:org/repo-b | exploitable
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📍 Step 5/6 · Action Plan
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Here's what I'll do based on your validation:
+
+Rate as AGREE (12):
+  - CVE-2024-1234 | lodash 4.17.20 | org/app-a | exploitable
+  - CVE-2024-1234 | lodash 4.17.20 | org/app-b | exploitable
   ...
 
-Disagreed (3):
-  - CVE-2024-5678 | express 4.18.1 | github:org/api | false-positive → flagged for review
+Rate as DISAGREE (3):
+  - CVE-2024-5678 | express 4.18.1 | org/api | false-positive
   ...
 
-Dismissed (2):
-  - CVE-2024-9999 | moment 2.29.1 | github:org/legacy | "Not used in production"
+Dismiss (2):
+  - CVE-2024-9999 | moment 2.29.1 | org/legacy | "Confirmed false positive"
   ...
 
-Tickets created (1):
-  - CVE-2024-1234 | lodash prototype pollution | LINEAR-123
-  ...
-
-Skipped (4):
+No action / skipped (4):
   - ...
 ```
 
-If there are remaining unreviewed findings (because the user exited early), mention how many are left.
+Then ask via AskUserQuestion:
+
+- **Execute all** — Run everything as shown
+- **Create tickets too** — Execute all + create tickets for agreed exploitables (ask where: Linear, GitHub Issues, etc.)
+- **Edit** — Let the user modify specific items before executing
+- **Cancel** — Don't execute anything, just show summary
+
+For agreed exploitable findings, proactively offer ticket creation — group related findings into a single ticket per CVE or dependency.
+
+For agreed false positives, proactively offer dismissal.
+
+## Step 6: Execute
+
+Run all confirmed actions:
+
+```bash
+# Rate findings
+konvu finding rate <id> agree
+konvu finding rate <id> disagree --comment "<comment>"
+
+# Dismiss confirmed false positives
+konvu dismiss --issues <id1>,<id2> --reason "Confirmed false positive"
+```
+
+Show progress as actions execute. Then present the final summary:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📍 Step 6/6 · Done
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Completed: 12 rated agree, 3 rated disagree, 2 dismissed, 1 ticket created.
+Skipped: 4 findings with no action.
+Remaining: 2 findings not reviewed (exited early).
+```
+
+If any action fails, report the error and continue with the rest.
+
+## Tracking
+
+Keep a running log throughout the triage:
+- Finding ID, CVE, dependency, repository
+- Validation: agreed / disagreed / flagged / skipped
+- Planned action: rate agree / rate disagree / dismiss / create ticket / none
+- Execution result: success / failed / not executed
+
+This log powers both the Action Plan and the final summary.
 
 ## Interaction Style
 
-- Use **AskUserQuestion for every decision point**. The whole value of this skill is the guided, conversational flow.
-- Keep finding presentations concise — CVE, severity, dependency, repo, and the one-liner assessment summary. Don't dump raw JSON at the user.
-- When showing evidence in Phase 3, format it readably — use markdown headers, code blocks for proof snippets, and clear labels.
-- Be conversational between phases: "That's all the exploitable findings. Moving on to false positives — there are 6 to review."
-- Respect early exit gracefully — don't guilt the user, just show the summary.
+- **Progress bar on every message.** Never skip it.
+- **Compact tables over prose.** Show finding details in tables, not paragraphs.
+- **AskUserQuestion for every decision.** The guided flow is the whole point.
+- **Respect "move on" / "skip" / "pass" / "next".** Move forward without asking again.
+- **Brief between steps.** "All exploitable validated. 8 false positives next." is enough.
+- **Never dump raw JSON.** Always format into readable tables and summaries.
+- **No actions during validation.** The whole point of the validate-then-act pattern is that the user sees everything before anything runs.
+- **Graceful exit.** "stop", "done", "exit" → jump to Action Plan for whatever was validated so far.
