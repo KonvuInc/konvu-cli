@@ -12,7 +12,9 @@ import (
 )
 
 // Skill directories are copied from skills/ at the repo root.
-// Keep in sync: cp -R ../../skills/konvu-shared ../../skills/recipe-weekly-triage .
+// Run "go generate ./internal/skills" to sync them.
+//
+//go:generate sh -c "cp -R ../../skills/konvu-shared ../../skills/recipe-weekly-triage ."
 //
 //go:embed konvu-shared recipe-weekly-triage
 var embedded embed.FS
