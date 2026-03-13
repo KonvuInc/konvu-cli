@@ -7,7 +7,7 @@ The CLI also bundles AI skills (Claude Code, Cursor, etc.) directly in the binar
 ## Quick Reference
 
 ```bash
-go build -o konvu .       # Build
+go install ./cmd/konvu    # Build & install
 go test ./... -v           # Test all packages
 go vet ./...               # Lint
 go generate ./internal/skills  # Sync embedded skills from skills/ → internal/skills/
