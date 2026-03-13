@@ -1,0 +1,8 @@
+{
+  "name": "konvu",
+  "description": "Security vulnerability management skills for the Konvu CLI",
+  "author": {
+    "name": "Konvu Team"
+  },
+  "repository": "https://github.com/KonvuTeam/konvu-cli"
+}
