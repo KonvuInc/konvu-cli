@@ -7,7 +7,7 @@ This CLI bundles AI skills in the binary itself. On `konvu login` or `konvu skil
 ## Build & Verify
 
 ```bash
-go build -o konvu .        # Build binary
+go install ./cmd/konvu      # Build & install binary
 go test ./... -v            # Run all tests
 go vet ./...                # Static analysis
 go generate ./internal/skills  # Sync skills before committing

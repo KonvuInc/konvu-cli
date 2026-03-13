@@ -17,20 +17,10 @@ The Konvu CLI connects to the Konvu API to let you browse, triage, and act on SC
 Requires [Go 1.25+](https://go.dev/dl/) and git access to the repository.
 
 ```bash
-git clone git@github.com:KonvuTeam/konvu-cli.git
-cd konvu-cli
-go build -o konvu .
+go install github.com/KonvuTeam/konvu-cli/cmd/konvu@latest
 ```
 
-Then move the binary somewhere in your `$PATH`:
-
-```bash
-# Option A: system-wide (may need sudo)
-sudo mv konvu /usr/local/bin/
-
-# Option B: user-local
-mv konvu ~/.local/bin/
-```
+This places the `konvu` binary in `$GOBIN` (defaults to `~/go/bin`).
 
 Verify it works:
 
@@ -38,8 +28,8 @@ Verify it works:
 konvu version
 ```
 
-> **Note:** If you install to a custom directory, make sure it's in your `$PATH`.
-> For example, add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile.
+> **Note:** Make sure `$GOBIN` is in your `$PATH`.
+> For example, add `export PATH="$(go env GOPATH)/bin:$PATH"` to your shell profile.
 
 ### Shell script (requires public repo access)
 
@@ -240,8 +230,7 @@ konvu --help-all
 After pulling new changes, rebuild and reinstall skills:
 
 ```bash
-go build -o konvu .
-sudo mv konvu /usr/local/bin/    # or wherever you installed it
+go install github.com/KonvuTeam/konvu-cli/cmd/konvu@latest
 konvu skills install
 ```
 
@@ -309,7 +298,7 @@ Filter by assessment: `--assessment exploitable`, combine with severity: `--seve
 ## Development
 
 ```bash
-go build -o konvu .
+go install ./cmd/konvu
 go test ./...
 go vet ./...
 ```

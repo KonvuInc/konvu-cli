@@ -1,7 +1,8 @@
 version: 2
 
 builds:
-  - binary: konvu
+  - main: ./cmd/konvu
+    binary: konvu
     env:
       - CGO_ENABLED=0
     goos:

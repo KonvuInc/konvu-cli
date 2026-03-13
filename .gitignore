@@ -1,12 +1,34 @@
-# Go
-konvu
+# Binaries for programs and plugins
+/konvu
 *.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Code coverage profiles and other test artifacts
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Build output
 bin/
 dist/
 
 # npm
 node_modules/
 
+# env file
+.env
+
 # OS
 .DS_Store
-*.egg-info/
+Thumbs.db
