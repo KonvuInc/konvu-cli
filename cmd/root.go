@@ -3,9 +3,11 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/KonvuTeam/konvu-cli/skills"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var rootCmd = &cobra.Command{
@@ -27,83 +29,37 @@ func Execute() {
 	}
 }
 
-var helpAllText = `konvu-cli — Security vulnerability management
+// printCmdHelp recursively prints usage for a command and its subcommands.
+func printCmdHelp(cmd *cobra.Command, prefix string) {
+	if cmd.Hidden {
+		return
+	}
 
-AUTHENTICATION
-  konvu login                          Authenticate with Konvu (opens browser)
-    -t, --timeout INT    Login timeout in seconds [default: 300]
-    --api-key TEXT        Authenticate with an API key
-  konvu logout                         Clear stored credentials
-  konvu whoami [-o json]               Show current user and company
+	if cmd.Runnable() {
+		fmt.Printf("  %s%s\n", prefix, cmd.Use)
+		cmd.Flags().VisitAll(func(f *pflag.Flag) {
+			if f.Hidden {
+				return
+			}
+			short := ""
+			if f.Shorthand != "" {
+				short = fmt.Sprintf("-%s, ", f.Shorthand)
+			}
+			def := ""
+			if f.DefValue != "" && f.DefValue != "false" && f.DefValue != "[]" {
+				def = fmt.Sprintf(" [default: %s]", f.DefValue)
+			}
+			fmt.Printf("    %s--%s    %s%s\n", short, f.Name, f.Usage, def)
+		})
+		fmt.Println()
+	}
 
-FINDINGS
-  konvu finding list [OPTIONS]         List security findings
-    --since TEXT          Start date: '7d', '30d', or ISO date
-    --until TEXT          End date: 'now' or ISO date
-    -s, --severity TEXT   Filter: critical, high, moderate, low
-    -a, --assessment TEXT Filter: exploitable, false-positive, inconclusive, not-assessed
-    --state TEXT          Filter: open, dismissed, fixed, muted
-    --has-fix TEXT        Filter: fixed, no_fix
-    -r, --repo TEXT       Filter by repository URL or name
-    --cve TEXT            Filter by CVE ID
-    -d, --dependency TEXT Filter by dependency name
-    --source TEXT         Filter by scanner source: snyk, dependabot, etc.
-    --source-id TEXT      Filter by external source identifier
-    --sort TEXT           Sort: severity, recommendation, first_seen_at, updated_at, dependency_name, cve [default: recommendation]
-    --order TEXT          Order: asc, desc [default: desc]
-    -n, --limit INT       Max findings [default: 50]
-    --offset INT          Skip N results [default: 0]
-    -o, --output TEXT     Format: json, table, csv
-    -q, --quiet           Output bare finding IDs only
-    --count               Output only the total count
-    -g, --group-by TEXT   Group by: repository, dependency, severity, assessment
-    --fields TEXT         Comma-separated fields to include
+	for _, sub := range cmd.Commands() {
+		printCmdHelp(sub, prefix+cmd.Name()+" ")
+	}
+}
 
-  konvu finding get FINDING_ID [OPTIONS]  Get finding detail
-    -i, --include TEXT    Include: evidence, logs
-    -v, --verbose         Show all details for each check
-    -o, --output TEXT     Format: json, table
-    --fields TEXT         Comma-separated fields to include
-
-  konvu finding rate FINDING_ID RATING   Rate a finding (agree/disagree)
-    -c, --comment TEXT    Optional feedback comment
-    --recommendation-id   Recommendation ID (skips extra API call)
-    -o, --output TEXT     Format: json, table
-
-  konvu finding counts [OPTIONS]       Assessment counts
-    --since TEXT          Start date: '7d', '30d', or ISO date
-    --until TEXT          End date: 'now' or ISO date
-    -s, --severity TEXT   Filter: critical, high, moderate, low
-    -r, --repo TEXT       Filter by repository
-    --source TEXT         Filter by scanner source
-    -g, --group-by TEXT   Break down by: severity, week, month
-    -o, --output TEXT     Format: json, table
-
-VULNERABILITY LOOKUP
-  konvu vuln VULN_ID [OPTIONS]         Look up a CVE/GHSA
-    -i, --include TEXT    Include: summary, technical, exploitability, remediation, references
-    -o, --output TEXT     Format: json, table
-
-METRICS
-  konvu metrics [OPTIONS]              Security posture summary
-    --since TEXT          Start date [default: 30d]
-    --until TEXT          End date [default: now]
-    --interval TEXT       Aggregation: day, week, month [default: week]
-    -i, --include TEXT    Include: summary, trends, breakdown, top_cves, new_vs_closed
-    --compare TEXT        Compare to: previous_period, 30d_ago, 90d_ago
-    -o, --output TEXT     Format: json, table
-
-DISMISS
-  konvu dismiss [OPTIONS]              Dismiss security issues
-    --issues TEXT         Comma-separated issue IDs
-    -a, --assessment TEXT Filter: dismiss all with this assessment
-    -s, --severity TEXT   Filter by severity
-    -r, --repo TEXT       Filter by repository
-    --reason TEXT         Reason [default: "Dismissed via Konvu CLI"]
-    --dry-run             Preview without executing
-    -o, --output TEXT     Format: json, table
-
-EXAMPLES
+const helpAllFooter = `EXAMPLES
   konvu finding list --since 7d --assessment exploitable
   konvu finding list --severity critical --sort first_seen_at -o json
   konvu finding list --assessment exploitable --group-by repository
@@ -128,12 +84,25 @@ EXIT CODES
   3  Not found
   4  Authentication failed`
 
+func printHelpAll() {
+	fmt.Println("konvu — Security vulnerability management")
+	fmt.Println()
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Hidden {
+			continue
+		}
+		fmt.Println(strings.ToUpper(cmd.Name()))
+		printCmdHelp(cmd, "konvu ")
+	}
+	fmt.Println(helpAllFooter)
+}
+
 var helpAllCmd = &cobra.Command{
 	Use:    "help-all",
 	Short:  "Print full CLI reference",
 	Hidden: true,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(helpAllText)
+		printHelpAll()
 	},
 }
 
@@ -159,7 +128,7 @@ func init() {
 	// treats --help-all as --help due to prefix matching.
 	for _, arg := range os.Args[1:] {
 		if arg == "--help-all" {
-			fmt.Println(helpAllText)
+			printHelpAll()
 			os.Exit(0)
 		}
 	}
