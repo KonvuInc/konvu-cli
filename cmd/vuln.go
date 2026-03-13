@@ -21,7 +21,9 @@ var vulnCmd = &cobra.Command{
 var vulnGetCmd = &cobra.Command{
 	Use:   "get [vuln-id]",
 	Short: "Get detailed information about a vulnerability",
-	Long: "Get detailed information about a vulnerability.",
+	Long: `Get detailed information about a vulnerability.
+
+Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 	Example: `  konvu vuln get CVE-2024-1234
   konvu vuln get GHSA-xxxx --include remediation --output json`,
 	Args: cobra.ExactArgs(1),

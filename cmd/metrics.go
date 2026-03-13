@@ -20,7 +20,9 @@ var metricsCmd = &cobra.Command{
 var metricsShowCmd = &cobra.Command{
 	Use:   "show",
 	Short: "Show security posture metrics",
-	Long: "Show security posture metrics.",
+	Long: `Show security posture metrics.
+
+Exit codes: 0 success, 1 general error, 4 auth failed`,
 	Example: `  konvu metrics show
   konvu metrics show --include top_cves,new_vs_closed
   konvu metrics show --include summary --output json`,

@@ -19,7 +19,9 @@ var dismissCmd = &cobra.Command{
 var dismissRunCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Dismiss security issues",
-	Long: "Dismiss security issues.",
+	Long: `Dismiss security issues.
+
+Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 	Example: `  # Preview dismissals
   konvu dismiss run --assessment false-positive --dry-run
 

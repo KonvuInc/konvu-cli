@@ -241,7 +241,9 @@ func maxInt(a, b int) int {
 var findingListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List security findings",
-	Long: "List security findings with filtering and sorting.",
+	Long: `List security findings with filtering and sorting.
+
+Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 	Example: `  # This week's exploitable findings
   konvu finding list --since 7d --assessment exploitable
 
@@ -565,7 +567,9 @@ var findingListCmd = &cobra.Command{
 var findingGetCmd = &cobra.Command{
 	Use:   "get [finding-id]",
 	Short: "Get detailed information about a finding",
-	Long: "Get detailed information about a finding.",
+	Long: `Get detailed information about a finding.
+
+Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 	Example: `  # Basic finding detail
   konvu finding get abc-123
 
@@ -882,7 +886,9 @@ var findingGetCmd = &cobra.Command{
 var findingRateCmd = &cobra.Command{
 	Use:   "rate [finding-id] [rating]",
 	Short: "Rate Konvu's assessment of a finding",
-	Long: "Rate Konvu's assessment of a finding.",
+	Long: `Rate Konvu's assessment of a finding.
+
+Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 	Example: `  konvu finding rate abc-123 agree
   konvu finding rate abc-123 disagree --comment "Only used in tests"`,
 	Args: cobra.ExactArgs(2),
@@ -974,7 +980,9 @@ var findingRateCmd = &cobra.Command{
 var findingCountsCmd = &cobra.Command{
 	Use:   "counts",
 	Short: "Show assessment counts",
-	Long: "Show assessment counts (exploitable, false-positive, etc.).",
+	Long: `Show assessment counts (exploitable, false-positive, etc.).
+
+Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 	Example: `  konvu finding counts
   konvu finding counts --since 7d
   konvu finding counts --severity critical --output json
