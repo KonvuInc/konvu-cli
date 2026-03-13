@@ -235,16 +235,32 @@ Prints a complete reference of all commands, flags, and examples in a single vie
 konvu --help-all
 ```
 
+## Updating
+
+After pulling new changes, rebuild and reinstall skills:
+
+```bash
+go build -o konvu .
+sudo mv konvu /usr/local/bin/    # or wherever you installed it
+konvu skills install
+```
+
+The CLI will warn you if bundled skills are newer than what's installed.
+
 ## Claude Code integration
 
-Konvu CLI ships with bundled [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills that teach AI agents how to use the CLI effectively. To make them available, add the skills path to your `.claude/settings.json`:
+Konvu CLI ships with bundled [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills. They're installed automatically when you run `konvu login`, or you can install them manually:
 
-```json
-{
-  "permissions": {
-    "additionalDirectories": ["<output of konvu skills path>"]
-  }
-}
+```bash
+konvu skills install
+```
+
+Skills are installed to `~/.claude/skills/` where Claude Code discovers them automatically — no configuration needed.
+
+To check the skills directory:
+
+```bash
+konvu skills path
 ```
 
 ## Output formats

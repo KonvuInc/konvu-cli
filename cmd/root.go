@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/KonvuTeam/konvu-cli/internal/skills"
 	"github.com/spf13/cobra"
 )
 
@@ -137,6 +138,21 @@ var helpAllCmd = &cobra.Command{
 }
 
 func init() {
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		// Skip warning for skills commands (they handle their own logic)
+		if cmd.Parent() != nil && cmd.Parent().Name() == "skills" {
+			return
+		}
+		// Skip for help/version/completion commands
+		if cmd.Name() == "help-all" || cmd.Name() == "help" || cmd.Name() == "version" {
+			return
+		}
+
+		if skills.NeedsUpdate() && skills.InstalledHash() != "" {
+			fmt.Fprintln(os.Stderr, "Skills update available — run 'konvu skills install' to update.")
+		}
+	}
+
 	rootCmd.AddCommand(helpAllCmd)
 
 	// Check for --help-all in os.Args since cobra's flag parsing

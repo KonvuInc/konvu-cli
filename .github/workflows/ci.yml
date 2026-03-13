@@ -13,6 +13,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
+      - name: Check embedded skills are in sync
+        run: |
+          go generate ./internal/skills
+          git diff --exit-code -- 'internal/skills/*.md' 'internal/skills/**/*.md' || {
+            echo "::error::Embedded skills are out of sync. Run 'go generate ./internal/skills' and commit."
+            exit 1
+          }
       - run: go test ./... -v
       - run: go vet ./...
 
