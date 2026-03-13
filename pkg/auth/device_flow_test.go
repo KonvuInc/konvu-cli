@@ -9,6 +9,11 @@ import (
 	"testing"
 )
 
+func TestMain(m *testing.M) {
+	os.Setenv("KONVU_ZITADEL_CLIENT_ID", "test")
+	os.Exit(m.Run())
+}
+
 func TestPerformDeviceFlowLogin(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
