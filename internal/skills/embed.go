@@ -14,9 +14,9 @@ import (
 // Skill directories are copied from skills/ at the repo root.
 // Run "go generate ./internal/skills" to sync them.
 //
-//go:generate sh -c "cp -R ../../skills/konvu-shared ../../skills/recipe-weekly-triage ../../skills/recipe-investigate ../../skills/recipe-posture ../../skills/recipe-posture-report ."
+//go:generate sh -c "cp -R ../../skills/konvu-shared ../../skills/recipe-weekly-triage ../../skills/recipe-investigate ../../skills/recipe-posture ../../skills/recipe-posture-report ../../skills/recipe-configure ."
 //
-//go:embed konvu-shared recipe-weekly-triage recipe-investigate recipe-posture recipe-posture-report
+//go:embed konvu-shared recipe-weekly-triage recipe-investigate recipe-posture recipe-posture-report recipe-configure
 var embedded embed.FS
 
 // SkillDir pairs an embed directory name with its install directory name.
@@ -32,6 +32,7 @@ var skillDirs = []SkillDir{
 	{EmbedName: "recipe-investigate", InstallName: "konvu-recipe-investigate"},
 	{EmbedName: "recipe-posture", InstallName: "konvu-recipe-posture"},
 	{EmbedName: "recipe-posture-report", InstallName: "konvu-recipe-posture-report"},
+	{EmbedName: "recipe-configure", InstallName: "konvu-recipe-configure"},
 }
 
 // SkillDirs returns the list of skill directories that are embedded.

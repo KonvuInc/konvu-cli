@@ -12,3 +12,5 @@
 !recipe-posture/**
 !recipe-posture-report/
 !recipe-posture-report/**
+!recipe-configure/
+!recipe-configure/**
