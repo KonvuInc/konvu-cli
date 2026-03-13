@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/KonvuTeam/konvu-cli/pkg/api"
+	clierrors "github.com/KonvuTeam/konvu-cli/pkg/errors"
 	"github.com/KonvuTeam/konvu-cli/pkg/mapping"
 	"github.com/KonvuTeam/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
@@ -44,7 +45,7 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 
 	if issuesList == "" && len(assessments) == 0 {
 		fmt.Fprintln(os.Stderr, "Error: Must specify --issues or --assessment filter")
-		os.Exit(1)
+		os.Exit(clierrors.ExitUsageError)
 	}
 
 	client := api.NewClient("", "")
@@ -79,7 +80,7 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 				}
 				if !valid {
 					fmt.Fprintf(os.Stderr, "Invalid assessment: %s\n", a)
-					os.Exit(1)
+					os.Exit(clierrors.ExitUsageError)
 				}
 				recommendations = append(recommendations, mapping.AssessmentToRecommendation(status)...)
 			}
@@ -104,7 +105,7 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			if _, ok := err.(*api.AuthenticationError); ok {
 				fmt.Fprintln(os.Stderr, "Error:", err)
-				os.Exit(1)
+				os.Exit(clierrors.ExitAuthFailed)
 			}
 			fmt.Fprintln(os.Stderr, "API Error:", err)
 			os.Exit(1)
@@ -238,7 +239,7 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			if _, ok := err.(*api.AuthenticationError); ok {
 				fmt.Fprintln(os.Stderr, "Error:", err)
-				os.Exit(1)
+				os.Exit(clierrors.ExitAuthFailed)
 			}
 			failed = append(failed, failedItem{ID: issueID, Error: err.Error()})
 		} else {

@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/KonvuTeam/konvu-cli/pkg/api"
+	clierrors "github.com/KonvuTeam/konvu-cli/pkg/errors"
 	"github.com/KonvuTeam/konvu-cli/pkg/mapping"
 	"github.com/KonvuTeam/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
@@ -51,7 +52,7 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 		if err != nil {
 			if _, ok := err.(*api.AuthenticationError); ok {
 				fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-				os.Exit(4)
+				os.Exit(clierrors.ExitAuthFailed)
 			}
 			fmt.Fprintf(os.Stderr, "API Error: %s\n", err)
 			os.Exit(1)
@@ -60,7 +61,7 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 		items, _ := issuesData["items"].([]any)
 		if len(items) == 0 {
 			fmt.Fprintf(os.Stderr, "Vulnerability %s not found or you are not affected.\n", vulnID)
-			os.Exit(1)
+			os.Exit(clierrors.ExitNotFound)
 		}
 
 		// Vulnerability info from first issue
@@ -126,7 +127,7 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 		if err != nil {
 			if _, ok := err.(*api.AuthenticationError); ok {
 				fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-				os.Exit(4)
+				os.Exit(clierrors.ExitAuthFailed)
 			}
 			fmt.Fprintf(os.Stderr, "API Error: %s\n", err)
 			os.Exit(1)

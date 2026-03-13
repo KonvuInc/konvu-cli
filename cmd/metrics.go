@@ -7,6 +7,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/KonvuTeam/konvu-cli/pkg/api"
+	clierrors "github.com/KonvuTeam/konvu-cli/pkg/errors"
 	"github.com/KonvuTeam/konvu-cli/pkg/mapping"
 	"github.com/KonvuTeam/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
@@ -304,7 +305,7 @@ Exit codes: 0 success, 1 general error, 4 auth failed`,
 func handleMetricsError(err error) {
 	if _, ok := err.(*api.AuthenticationError); ok {
 		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(4)
+		os.Exit(clierrors.ExitAuthFailed)
 	}
 	fmt.Fprintln(os.Stderr, "API Error:", err)
 	os.Exit(1)

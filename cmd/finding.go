@@ -888,7 +888,7 @@ var findingRateCmd = &cobra.Command{
 	Short: "Rate Konvu's assessment of a finding",
 	Long: `Rate Konvu's assessment of a finding.
 
-Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
+Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth failed`,
 	Example: `  konvu finding rate abc-123 agree
   konvu finding rate abc-123 disagree --comment "Only used in tests"`,
 	Args: cobra.ExactArgs(2),
