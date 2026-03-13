@@ -6,3 +6,5 @@
 !konvu-shared/**
 !recipe-weekly-triage/
 !recipe-weekly-triage/**
+!recipe-investigate/
+!recipe-investigate/**
