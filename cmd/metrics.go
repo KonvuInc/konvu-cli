@@ -20,17 +20,10 @@ var metricsCmd = &cobra.Command{
 var metricsShowCmd = &cobra.Command{
 	Use:   "show",
 	Short: "Show security posture metrics",
-	Long: `Show security posture metrics.
-
-Examples:
-  konvu metrics show
+	Long: "Show security posture metrics.",
+	Example: `  konvu metrics show
   konvu metrics show --include top_cves,new_vs_closed
-  konvu metrics show --include summary --output json
-
-Exit codes:
-  0  Success
-  1  General error
-  4  Authentication failed`,
+  konvu metrics show --include summary --output json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		since, _ := cmd.Flags().GetString("since")
 		until, _ := cmd.Flags().GetString("until")

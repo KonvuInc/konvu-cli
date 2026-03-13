@@ -19,23 +19,15 @@ var dismissCmd = &cobra.Command{
 var dismissRunCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Dismiss security issues",
-	Long: `Dismiss security issues.
-
-Examples:
-  # Preview dismissals
+	Long: "Dismiss security issues.",
+	Example: `  # Preview dismissals
   konvu dismiss run --assessment false-positive --dry-run
 
   # Dismiss specific issues
   konvu dismiss run --issues id1,id2 --reason "Not applicable"
 
   # Dismiss all false positives in a repo
-  konvu dismiss run --assessment false-positive --repo github:org/repo
-
-Exit codes:
-  0  Success
-  1  General error
-  2  Invalid arguments
-  4  Authentication failed`,
+  konvu dismiss run --assessment false-positive --repo github:org/repo`,
 	RunE: runDismiss,
 }
 

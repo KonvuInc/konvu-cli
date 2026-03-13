@@ -21,17 +21,9 @@ var vulnCmd = &cobra.Command{
 var vulnGetCmd = &cobra.Command{
 	Use:   "get [vuln-id]",
 	Short: "Get detailed information about a vulnerability",
-	Long: `Get detailed information about a vulnerability.
-
-Examples:
-  konvu vuln get CVE-2024-1234
-  konvu vuln get GHSA-xxxx --include remediation --output json
-
-Exit codes:
-  0  Success
-  1  General error
-  3  Vulnerability not found
-  4  Authentication failed`,
+	Long: "Get detailed information about a vulnerability.",
+	Example: `  konvu vuln get CVE-2024-1234
+  konvu vuln get GHSA-xxxx --include remediation --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		vulnID := args[0]
