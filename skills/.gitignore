@@ -10,3 +10,5 @@
 !recipe-investigate/**
 !recipe-posture/
 !recipe-posture/**
+!recipe-posture-report/
+!recipe-posture-report/**
