@@ -10,21 +10,19 @@ The CLI also bundles AI skills (Claude Code, Cursor, etc.) directly in the binar
 go install ./cmd/konvu    # Build & install
 go test ./... -v           # Test all packages
 go vet ./...               # Lint
-go generate ./internal/skills  # Sync embedded skills from skills/ → internal/skills/
 ```
 
 ## Project Structure
 
 ```
 cmd/               # Cobra commands (one file per command group)
-internal/skills/   # Embedded skills (go:embed) — copies of skills/, do NOT edit directly
+skills/            # Embedded skills (go:embed) + Claude Code plugin skills
 pkg/api/           # HTTP client for Konvu API
 pkg/auth/          # OAuth device flow + credential storage
 pkg/config/        # Config dir, env vars, defaults
 pkg/errors/        # Structured CLI errors with exit codes
 pkg/output/        # Table/JSON/CSV formatting, interactive picker
 pkg/mapping/       # Field mapping utilities
-skills/            # Source of truth for Claude Code skills — edit here
 scripts/           # Install script
 ```
 
@@ -45,18 +43,6 @@ scripts/           # Install script
 - Use `pkg/output` for all formatted output — never `fmt.Println` raw data
 - Tests use the standard `testing` package, no external test frameworks
 - Keep dependencies minimal — only cobra and golang.org/x/term
-
-## Skills Sync
-
-Skills live in `skills/` (source of truth) and are copied to `internal/skills/` for embedding.
-
-```bash
-# After editing any file in skills/:
-go generate ./internal/skills
-# Then commit both skills/ and internal/skills/ changes
-```
-
-CI fails if these are out of sync.
 
 ## Environment Variables
 

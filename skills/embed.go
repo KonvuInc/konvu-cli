@@ -11,11 +11,6 @@ import (
 	"sync"
 )
 
-// Skill directories are copied from skills/ at the repo root.
-// Run "go generate ./internal/skills" to sync them.
-//
-//go:generate sh -c "cp -R ../../skills/konvu-shared ../../skills/recipe-weekly-triage ../../skills/recipe-investigate ../../skills/recipe-posture ../../skills/recipe-posture-report ../../skills/recipe-configure ."
-//
 //go:embed konvu-shared recipe-weekly-triage recipe-investigate recipe-posture recipe-posture-report recipe-configure
 var embedded embed.FS
 
