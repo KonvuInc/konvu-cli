@@ -101,11 +101,11 @@ const versionFileName = ".konvu-skills-version"
 // InstalledHash reads the installed version hash from the primary directory,
 // or returns "" if not found.
 func InstalledHash() string {
-	home, err := os.UserHomeDir()
+	dir, err := InstallDir()
 	if err != nil {
 		return ""
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".claude", "skills", versionFileName))
+	data, err := os.ReadFile(filepath.Join(dir, versionFileName))
 	if err != nil {
 		return ""
 	}
