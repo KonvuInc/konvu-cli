@@ -21,7 +21,7 @@ func TestSkillsPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot get home dir: %v", err)
 	}
-	want := filepath.Join(home, ".agents", "skills")
+	want := filepath.Join(home, ".claude", "skills")
 	if got != want {
 		t.Errorf("skills path = %q, want %q", got, want)
 	}

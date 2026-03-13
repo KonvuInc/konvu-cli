@@ -35,25 +35,29 @@ func TestInstall(t *testing.T) {
 		t.Fatal("expected at least one file installed")
 	}
 
-	// Verify skill directories exist with expected install names.
-	for _, name := range []string{"konvu-shared", "konvu-recipe-weekly-triage"} {
-		dir := filepath.Join(tmpDir, ".agents", "skills", name)
-		info, err := os.Stat(dir)
-		if err != nil {
-			t.Fatalf("expected directory %s: %v", dir, err)
-		}
-		if !info.IsDir() {
-			t.Fatalf("expected %s to be a directory", dir)
-		}
-		// Each skill directory should contain a SKILL.md.
-		skillFile := filepath.Join(dir, "SKILL.md")
-		if _, err := os.Stat(skillFile); err != nil {
-			t.Fatalf("expected SKILL.md in %s: %v", dir, err)
+	// Verify skill directories exist in both target locations.
+	for _, base := range []string{
+		filepath.Join(tmpDir, ".claude", "skills"),
+		filepath.Join(tmpDir, ".agents", "skills"),
+	} {
+		for _, name := range []string{"konvu-shared", "konvu-recipe-weekly-triage"} {
+			dir := filepath.Join(base, name)
+			info, err := os.Stat(dir)
+			if err != nil {
+				t.Fatalf("expected directory %s: %v", dir, err)
+			}
+			if !info.IsDir() {
+				t.Fatalf("expected %s to be a directory", dir)
+			}
+			skillFile := filepath.Join(dir, "SKILL.md")
+			if _, err := os.Stat(skillFile); err != nil {
+				t.Fatalf("expected SKILL.md in %s: %v", dir, err)
+			}
 		}
 	}
 
-	// Version file should exist.
-	versionFile := filepath.Join(tmpDir, ".agents", "skills", ".konvu-skills-version")
+	// Version file should exist in primary directory (~/.claude/skills).
+	versionFile := filepath.Join(tmpDir, ".claude", "skills", ".konvu-skills-version")
 	data, err := os.ReadFile(versionFile)
 	if err != nil {
 		t.Fatalf("expected version file: %v", err)

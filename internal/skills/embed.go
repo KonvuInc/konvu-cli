@@ -71,28 +71,39 @@ func ComputeEmbeddedHash() string {
 	return embeddedHash
 }
 
-// InstallDir returns the path to ~/.agents/skills, creating it if needed.
-func InstallDir() (string, error) {
+// installDirs returns the target directories for skill installation.
+// Claude Code reads from ~/.claude/skills/ (primary).
+// ~/.agents/skills/ is the cross-agent convention (Cursor, OpenCode, etc.).
+func installDirs() ([]string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("cannot determine home directory: %w", err)
+		return nil, fmt.Errorf("cannot determine home directory: %w", err)
 	}
-	dir := filepath.Join(home, ".agents", "skills")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("cannot create skills directory: %w", err)
+	return []string{
+		filepath.Join(home, ".claude", "skills"),
+		filepath.Join(home, ".agents", "skills"),
+	}, nil
+}
+
+// InstallDir returns the primary skills directory (~/.claude/skills).
+func InstallDir() (string, error) {
+	dirs, err := installDirs()
+	if err != nil {
+		return "", err
 	}
-	return dir, nil
+	return dirs[0], nil
 }
 
 const versionFileName = ".konvu-skills-version"
 
-// InstalledHash reads the installed version hash, or returns "" if not found.
+// InstalledHash reads the installed version hash from the primary directory,
+// or returns "" if not found.
 func InstalledHash() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".agents", "skills", versionFileName))
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "skills", versionFileName))
 	if err != nil {
 		return ""
 	}
@@ -104,66 +115,69 @@ func NeedsUpdate() bool {
 	return InstalledHash() != ComputeEmbeddedHash()
 }
 
-// Install extracts embedded skills to ~/.agents/skills/konvu-*.
+// Install extracts embedded skills to both ~/.claude/skills/ and ~/.agents/skills/.
 // If force is false and the installed hash matches, it returns 0 files.
-// Returns the number of files written.
+// Returns the number of skill directories written (per target).
 func Install(force bool) (int, error) {
 	if !force && !NeedsUpdate() {
 		return 0, nil
 	}
 
-	dir, err := InstallDir()
+	dirs, err := installDirs()
 	if err != nil {
 		return 0, err
 	}
 
 	hash := ComputeEmbeddedHash()
-
 	count := 0
-	for _, sd := range skillDirs {
-		destDir := filepath.Join(dir, sd.InstallName)
 
-		// Remove old version if present.
-		if err := os.RemoveAll(destDir); err != nil {
-			return count, fmt.Errorf("removing old %s: %w", sd.InstallName, err)
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return count, fmt.Errorf("cannot create %s: %w", dir, err)
 		}
 
-		err := fs.WalkDir(embedded, sd.EmbedName, func(path string, d fs.DirEntry, err error) error {
+		for _, sd := range skillDirs {
+			destDir := filepath.Join(dir, sd.InstallName)
+
+			// Remove old version if present.
+			if err := os.RemoveAll(destDir); err != nil {
+				return count, fmt.Errorf("removing old %s: %w", sd.InstallName, err)
+			}
+
+			err := fs.WalkDir(embedded, sd.EmbedName, func(path string, d fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+
+				rel, err := filepath.Rel(sd.EmbedName, path)
+				if err != nil {
+					return fmt.Errorf("computing relative path for %s: %w", path, err)
+				}
+				dest := filepath.Join(destDir, rel)
+
+				if d.IsDir() {
+					return os.MkdirAll(dest, 0o755)
+				}
+
+				data, err := embedded.ReadFile(path)
+				if err != nil {
+					return err
+				}
+
+				return os.WriteFile(dest, data, 0o644)
+			})
 			if err != nil {
-				return err
+				return count, fmt.Errorf("extracting %s to %s: %w", sd.EmbedName, dir, err)
 			}
-
-			// Compute relative path within the embed dir, then map to install dir.
-			rel, err := filepath.Rel(sd.EmbedName, path)
-			if err != nil {
-				return fmt.Errorf("computing relative path for %s: %w", path, err)
-			}
-			dest := filepath.Join(destDir, rel)
-
-			if d.IsDir() {
-				return os.MkdirAll(dest, 0o755)
-			}
-
-			data, err := embedded.ReadFile(path)
-			if err != nil {
-				return err
-			}
-
-			if err := os.WriteFile(dest, data, 0o644); err != nil {
-				return err
-			}
-			count++
-			return nil
-		})
-		if err != nil {
-			return count, fmt.Errorf("extracting %s: %w", sd.EmbedName, err)
 		}
-	}
 
-	// Write version file.
-	versionPath := filepath.Join(dir, versionFileName)
-	if err := os.WriteFile(versionPath, []byte(hash), 0o644); err != nil {
-		return count, fmt.Errorf("writing version file: %w", err)
+		// Write version file per target directory.
+		versionPath := filepath.Join(dir, versionFileName)
+		if err := os.WriteFile(versionPath, []byte(hash), 0o644); err != nil {
+			return count, fmt.Errorf("writing version file in %s: %w", dir, err)
+		}
+
+		count += len(skillDirs)
 	}
 
 	return count, nil

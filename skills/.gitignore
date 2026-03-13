@@ -1,0 +1,8 @@
+# Only track konvu-specific skills. Third-party skills (e.g. gws-*)
+# may be installed here by external tools — don't commit them.
+*
+!.gitignore
+!konvu-shared/
+!konvu-shared/**
+!recipe-weekly-triage/
+!recipe-weekly-triage/**

@@ -30,7 +30,7 @@ var skillsPathCmd = &cobra.Command{
 
 var skillsInstallCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Install bundled skills to ~/.agents/skills/",
+	Short: "Install bundled skills to ~/.claude/skills/ and ~/.agents/skills/",
 	Run: func(cmd *cobra.Command, args []string) {
 		RunSkillsInstall(skillsForceFlag, true)
 	},
