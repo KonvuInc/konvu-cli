@@ -2,6 +2,8 @@
 
 Cross-agent instructions for AI coding assistants (Claude Code, Cursor, Copilot, OpenCode).
 
+This CLI bundles AI skills in the binary itself. On `konvu login` or `konvu skills install`, skills are extracted to `~/.claude/skills/` (Claude Code) and `~/.agents/skills/` (cross-agent convention). This gives agents zero-config access to guided workflows like security triage.
+
 ## Build & Verify
 
 ```bash

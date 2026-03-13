@@ -2,6 +2,8 @@
 
 Go CLI for security vulnerability management. Connects to the Konvu API for browsing, triaging, and acting on SCA findings.
 
+The CLI also bundles AI skills (Claude Code, Cursor, etc.) directly in the binary using `go:embed`. When users run `konvu login` or `konvu skills install`, skills are extracted to `~/.claude/skills/` and `~/.agents/skills/` so AI agents can use the CLI effectively without any manual setup.
+
 ## Quick Reference
 
 ```bash
