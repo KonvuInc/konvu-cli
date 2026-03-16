@@ -243,8 +243,8 @@ var findingListCmd = &cobra.Command{
 	Short: "List security findings",
 	Long: `List security findings with filtering and sorting.
 
-Examples:
-  # This week's exploitable findings
+Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
+	Example: `  # This week's exploitable findings
   konvu finding list --since 7d --assessment exploitable
 
   # Critical findings sorted by recency
@@ -263,13 +263,7 @@ Examples:
   konvu finding list --source snyk
 
   # Pipe finding IDs to detail
-  konvu finding list --assessment exploitable -q | xargs -I {} konvu finding get {}
-
-Exit codes:
-  0  Success
-  1  General error
-  2  Invalid arguments
-  4  Authentication failed`,
+  konvu finding list --assessment exploitable -q | xargs -I {} konvu finding get {}`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		outputFlag, _ := cmd.Flags().GetString("output")
 		format := output.DetectOutputFormat(outputFlag)
@@ -575,8 +569,8 @@ var findingGetCmd = &cobra.Command{
 	Short: "Get detailed information about a finding",
 	Long: `Get detailed information about a finding.
 
-Examples:
-  # Basic finding detail
+Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
+	Example: `  # Basic finding detail
   konvu finding get abc-123
 
   # Include evidence (exploitability checklist, reachability)
@@ -586,13 +580,7 @@ Examples:
   konvu finding get abc-123 --include logs
 
   # Both
-  konvu finding get abc-123 --include evidence --include logs --output json
-
-Exit codes:
-  0  Success
-  1  General error
-  3  Finding not found
-  4  Authentication failed`,
+  konvu finding get abc-123 --include evidence --include logs --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		findingID := args[0]
@@ -900,15 +888,9 @@ var findingRateCmd = &cobra.Command{
 	Short: "Rate Konvu's assessment of a finding",
 	Long: `Rate Konvu's assessment of a finding.
 
-Examples:
-  konvu finding rate abc-123 agree
-  konvu finding rate abc-123 disagree --comment "Only used in tests"
-
-Exit codes:
-  0  Success
-  1  General error
-  3  Finding not found
-  4  Authentication failed`,
+Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth failed`,
+	Example: `  konvu finding rate abc-123 agree
+  konvu finding rate abc-123 disagree --comment "Only used in tests"`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		findingID := args[0]
@@ -1000,19 +982,13 @@ var findingCountsCmd = &cobra.Command{
 	Short: "Show assessment counts",
 	Long: `Show assessment counts (exploitable, false-positive, etc.).
 
-Examples:
-  konvu finding counts
+Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
+	Example: `  konvu finding counts
   konvu finding counts --since 7d
   konvu finding counts --severity critical --output json
   konvu finding counts --group-by severity
   konvu finding counts --group-by week
-  konvu finding counts --group-by month --since 180d
-
-Exit codes:
-  0  Success
-  1  General error
-  2  Invalid arguments
-  4  Authentication failed`,
+  konvu finding counts --group-by month --since 180d`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		outputFlag, _ := cmd.Flags().GetString("output")
 		format := output.DetectOutputFormat(outputFlag)

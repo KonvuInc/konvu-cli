@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/KonvuTeam/konvu-cli/pkg/api"
+	clierrors "github.com/KonvuTeam/konvu-cli/pkg/errors"
 	"github.com/KonvuTeam/konvu-cli/pkg/mapping"
 	"github.com/KonvuTeam/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
@@ -23,15 +24,9 @@ var vulnGetCmd = &cobra.Command{
 	Short: "Get detailed information about a vulnerability",
 	Long: `Get detailed information about a vulnerability.
 
-Examples:
-  konvu vuln get CVE-2024-1234
-  konvu vuln get GHSA-xxxx --include remediation --output json
-
-Exit codes:
-  0  Success
-  1  General error
-  3  Vulnerability not found
-  4  Authentication failed`,
+Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
+	Example: `  konvu vuln get CVE-2024-1234
+  konvu vuln get GHSA-xxxx --include remediation --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		vulnID := args[0]
@@ -57,7 +52,7 @@ Exit codes:
 		if err != nil {
 			if _, ok := err.(*api.AuthenticationError); ok {
 				fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-				os.Exit(4)
+				os.Exit(clierrors.ExitAuthFailed)
 			}
 			fmt.Fprintf(os.Stderr, "API Error: %s\n", err)
 			os.Exit(1)
@@ -66,7 +61,7 @@ Exit codes:
 		items, _ := issuesData["items"].([]any)
 		if len(items) == 0 {
 			fmt.Fprintf(os.Stderr, "Vulnerability %s not found or you are not affected.\n", vulnID)
-			os.Exit(1)
+			os.Exit(clierrors.ExitNotFound)
 		}
 
 		// Vulnerability info from first issue
@@ -132,7 +127,7 @@ Exit codes:
 		if err != nil {
 			if _, ok := err.(*api.AuthenticationError); ok {
 				fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-				os.Exit(4)
+				os.Exit(clierrors.ExitAuthFailed)
 			}
 			fmt.Fprintf(os.Stderr, "API Error: %s\n", err)
 			os.Exit(1)

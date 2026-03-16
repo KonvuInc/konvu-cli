@@ -7,6 +7,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/KonvuTeam/konvu-cli/pkg/api"
+	clierrors "github.com/KonvuTeam/konvu-cli/pkg/errors"
 	"github.com/KonvuTeam/konvu-cli/pkg/mapping"
 	"github.com/KonvuTeam/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
@@ -22,15 +23,10 @@ var metricsShowCmd = &cobra.Command{
 	Short: "Show security posture metrics",
 	Long: `Show security posture metrics.
 
-Examples:
-  konvu metrics show
+Exit codes: 0 success, 1 general error, 4 auth failed`,
+	Example: `  konvu metrics show
   konvu metrics show --include top_cves,new_vs_closed
-  konvu metrics show --include summary --output json
-
-Exit codes:
-  0  Success
-  1  General error
-  4  Authentication failed`,
+  konvu metrics show --include summary --output json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		since, _ := cmd.Flags().GetString("since")
 		until, _ := cmd.Flags().GetString("until")
@@ -309,7 +305,7 @@ Exit codes:
 func handleMetricsError(err error) {
 	if _, ok := err.(*api.AuthenticationError); ok {
 		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(4)
+		os.Exit(clierrors.ExitAuthFailed)
 	}
 	fmt.Fprintln(os.Stderr, "API Error:", err)
 	os.Exit(1)
