@@ -259,13 +259,17 @@ func FormatTable(data map[string]any, columns []string, listKey string, styleCel
 	return sb.String()
 }
 
-// DefaultStyleCell applies color to the assessment column and strips the github: prefix from repositories.
+// DefaultStyleCell applies color to the assessment column and strips the konvu VCS URL prefix from repositories.
 func DefaultStyleCell(column, value string) string {
 	switch column {
 	case "assessment":
 		return mapping.Colorize(value, mapping.AssessmentStatus(value))
 	case "repository":
-		return strings.TrimPrefix(value, "github:")
+		for _, prefix := range []string{"github:", "gitlab:"} {
+			if strings.HasPrefix(value, prefix) {
+				return strings.TrimPrefix(value, prefix)
+			}
+		}
 	}
 	return value
 }
