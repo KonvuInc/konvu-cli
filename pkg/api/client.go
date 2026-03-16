@@ -36,6 +36,10 @@ func NewClient(baseURL, accessToken string) *Client {
 	if baseURL == "" {
 		baseURL = config.GetAPIBaseURL()
 	}
+	if err := config.ValidateURL(baseURL); err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(1)
+	}
 	return &Client{
 		baseURL:       baseURL,
 		explicitToken: accessToken,

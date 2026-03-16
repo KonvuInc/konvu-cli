@@ -1,9 +1,11 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 const AppName = "konvu"
@@ -11,7 +13,7 @@ const AppName = "konvu"
 const (
 	DefaultAPIBaseURL      = "https://api.konvu.com"
 	DefaultZitadelDomain   = "https://auth.konvu.com"
-	DefaultZitadelClientID = ""
+	DefaultZitadelClientID = "362950727238234934"
 )
 
 func GetConfigDir() string {
@@ -63,4 +65,19 @@ func GetZitadelClientID() string {
 		return v
 	}
 	return DefaultZitadelClientID
+}
+
+// IsProductionClientID returns true when the active Zitadel client ID is
+// the production one baked into the binary.
+func IsProductionClientID() bool {
+	return GetZitadelClientID() == DefaultZitadelClientID
+}
+
+// ValidateURL checks that the URL uses HTTPS when the production client ID
+// is in use, preventing tokens from being sent over plaintext.
+func ValidateURL(rawURL string) error {
+	if IsProductionClientID() && !strings.HasPrefix(rawURL, "https://") {
+		return fmt.Errorf("HTTPS required when using production credentials (got %s)", rawURL)
+	}
+	return nil
 }

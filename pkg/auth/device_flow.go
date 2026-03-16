@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/KonvuTeam/konvu-cli/pkg/config"
 )
 
 const (
@@ -20,6 +22,9 @@ const (
 func PerformDeviceFlowLogin(zitadelDomain, clientID string, timeout float64, echo func(string)) (map[string]any, error) {
 	if clientID == "" {
 		return nil, fmt.Errorf("Zitadel client ID not configured. Set KONVU_ZITADEL_CLIENT_ID.")
+	}
+	if err := config.ValidateURL(zitadelDomain); err != nil {
+		return nil, err
 	}
 
 	deviceAuthURL := zitadelDomain + "/oauth/v2/device_authorization"
