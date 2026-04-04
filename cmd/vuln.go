@@ -171,19 +171,15 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 				fSource = map[string]any{}
 			}
 
-			fRec, _ := finding["calculated_recommendation"].(string)
-			fAssessment := mapping.RecommendationToAssessment(fRec)
-
-			fAnalyses, _ := finding["analyses"].(map[string]any)
-			var fSummaryStr string
-			if fAnalyses != nil {
-				fSummaryStr, _ = fAnalyses["qualification_summary"].(string)
+			fAssessMap, _ := finding["assessment"].(map[string]any)
+			if fAssessMap == nil {
+				fAssessMap = map[string]any{}
 			}
-			if fSummaryStr == "" {
-				fSummaryStr, _ = mapping.GetAssessmentSummary(fAssessment)
-			}
+			fAssessResult := normalizeAssessmentResult(getStr(fAssessMap, "result"))
+			fSummaryStr := getStr(fAssessMap, "summary")
+			fNextSteps := getStr(fAssessMap, "next_steps")
 
-			byAssessment[string(fAssessment)]++
+			byAssessment[fAssessResult]++
 
 			repo, _ := fML["vcs_repository_url"].(string)
 			if repo != "" {
@@ -201,26 +197,38 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 				"repository":         repo,
 				"scanner":            fScanner,
 				"source_id":          fSourceID,
-				"assessment":         string(fAssessment),
+				"assessment":         fAssessResult,
 				"assessment_summary": fSummaryStr,
+				"next_steps":         fNextSteps,
 			})
 		}
 
-		// Overall assessment
-		var overall, overallSummary, nextSteps string
-		if byAssessment["exploitable"] > 0 {
-			overall = "exploitable"
-			count := byAssessment["exploitable"]
-			overallSummary = fmt.Sprintf("You have %d exploitable instance(s) of this vulnerability.", count)
-			nextSteps = "Prioritize remediation."
-		} else if byAssessment["false-positive"] > 0 {
-			overall = "false-positive"
-			overallSummary = "Not exploitable in your context."
-			nextSteps = "You may deprioritize remediation."
-		} else {
-			overall = "inconclusive"
-			overallSummary = "Unable to determine exploitability."
-			nextSteps = "Review manually."
+		// Overall assessment: worst-wins status, pick summary/next_steps
+		// from the first finding with that status.
+		var overall string
+		statusPriority := []mapping.AssessmentStatus{
+			mapping.Exploitable,
+			mapping.NeedsInput,
+			mapping.Inconclusive,
+			mapping.FalsePositive,
+			mapping.NotAssessed,
+		}
+		for _, s := range statusPriority {
+			if byAssessment[string(s)] > 0 {
+				overall = string(s)
+				break
+			}
+		}
+		if overall == "" {
+			overall = string(mapping.NotAssessed)
+		}
+		var overallSummary, nextSteps string
+		for _, f := range findingsList {
+			if f["assessment"] == overall {
+				overallSummary, _ = f["assessment_summary"].(string)
+				nextSteps, _ = f["next_steps"].(string)
+				break
+			}
 		}
 
 		// Build sorted repos list

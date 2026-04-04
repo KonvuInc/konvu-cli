@@ -5,11 +5,12 @@ type AssessmentStatus string
 const (
 	Exploitable   AssessmentStatus = "exploitable"
 	FalsePositive AssessmentStatus = "false-positive"
+	NeedsInput    AssessmentStatus = "needs-input"
 	Inconclusive  AssessmentStatus = "inconclusive"
 	NotAssessed   AssessmentStatus = "not-assessed"
 )
 
-var AllStatuses = []AssessmentStatus{Exploitable, FalsePositive, Inconclusive, NotAssessed}
+var AllStatuses = []AssessmentStatus{Exploitable, FalsePositive, NeedsInput, Inconclusive, NotAssessed}
 
 const (
 	RecToFix            = "to_fix"
@@ -21,19 +22,6 @@ const (
 	RecNoQualification  = "no_qualification"
 )
 
-func RecommendationToAssessment(rec string) AssessmentStatus {
-	switch rec {
-	case RecToFix:
-		return Exploitable
-	case RecToDismiss:
-		return FalsePositive
-	case RecNoQualification:
-		return NotAssessed
-	default:
-		return Inconclusive
-	}
-}
-
 func AssessmentToRecommendation(a AssessmentStatus) []string {
 	switch a {
 	case Exploitable:
@@ -42,6 +30,8 @@ func AssessmentToRecommendation(a AssessmentStatus) []string {
 		return []string{RecToDismiss}
 	case NotAssessed:
 		return []string{RecNoQualification, RecNoRecommendation}
+	case NeedsInput, Inconclusive:
+		return []string{RecMonitoring, RecInstallRuntime, RecInstallGithub}
 	default:
 		return []string{RecMonitoring, RecInstallRuntime, RecInstallGithub}
 	}
@@ -50,7 +40,8 @@ func AssessmentToRecommendation(a AssessmentStatus) []string {
 var assessmentColors = map[AssessmentStatus]string{
 	Exploitable:   "\033[1;31m",
 	FalsePositive: "\033[32m",
-	Inconclusive:  "\033[33m",
+	NeedsInput:    "\033[34m",
+	Inconclusive:  "\033[2m",
 	NotAssessed:   "\033[2m",
 }
 
@@ -72,19 +63,3 @@ func Colorize(text string, status AssessmentStatus) string {
 	return c + text + colorReset
 }
 
-func GetAssessmentSummary(a AssessmentStatus) (summary, nextSteps string) {
-	switch a {
-	case Exploitable:
-		return "A vulnerable function is being executed in your application.",
-			"Prioritize remediation of this vulnerability."
-	case FalsePositive:
-		return "Not exploitable in your context.",
-			"You may deprioritize remediation of this vulnerability."
-	case NotAssessed:
-		return "This vulnerability has not been assessed yet.",
-			"Additional analysis may be required."
-	default:
-		return "Unable to determine exploitability with high confidence.",
-			"Review the exploitability conditions manually."
-	}
-}
