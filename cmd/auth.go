@@ -144,9 +144,16 @@ func loginWithAPIKey(apiKey string) error {
 
 	fmt.Printf("Logged in to: %v\n", company["name"])
 
-	// Install bundled Claude Code skills
-	fmt.Fprintln(os.Stderr, "\nInstalling bundled Claude Code skills...")
-	RunSkillsInstall(false, true)
+	// Offer to install bundled Claude Code skills
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Konvu ships with Claude Code skills for AI-assisted security triage.")
+	fmt.Fprintln(os.Stderr, "This installs the weekly triage skill to ~/.claude/skills/.")
+	fmt.Fprintln(os.Stderr)
+	if output.Confirm("Install bundled skills?", true) {
+		RunSkillsInstall(false, true)
+	} else {
+		fmt.Fprintln(os.Stderr, "Skipped. You can install later with: konvu skills install")
+	}
 
 	return nil
 }
@@ -180,9 +187,16 @@ func loginWithOAuth(timeout int) error {
 		fmt.Printf("Logged in to: %v\n", company["name"])
 	}
 
-	// Install bundled Claude Code skills
-	fmt.Fprintln(os.Stderr, "\nInstalling bundled Claude Code skills...")
-	RunSkillsInstall(false, true)
+	// Offer to install bundled Claude Code skills
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Konvu ships with Claude Code skills for AI-assisted security triage.")
+	fmt.Fprintln(os.Stderr, "This installs the weekly triage skill to ~/.claude/skills/.")
+	fmt.Fprintln(os.Stderr)
+	if output.Confirm("Install bundled skills?", true) {
+		RunSkillsInstall(false, true)
+	} else {
+		fmt.Fprintln(os.Stderr, "Skipped. You can install later with: konvu skills install")
+	}
 
 	return nil
 }

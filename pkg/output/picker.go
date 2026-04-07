@@ -74,6 +74,25 @@ func renderPicker(title string, options []string, selected int) {
 	}
 }
 
+// Confirm asks a yes/no question. Returns true for yes. defaultYes controls the default on Enter.
+func Confirm(prompt string, defaultYes bool) bool {
+	hint := "[y/N]"
+	if defaultYes {
+		hint = "[Y/n]"
+	}
+	fmt.Fprintf(os.Stderr, "%s %s ", prompt, hint)
+
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() {
+		text := strings.TrimSpace(strings.ToLower(scanner.Text()))
+		if text == "" {
+			return defaultYes
+		}
+		return text == "y" || text == "yes"
+	}
+	return defaultYes
+}
+
 // FallbackPick is a numbered prompt fallback for non-TTY or when interactive fails.
 func FallbackPick(title string, options []string, defaultIdx int, reader io.Reader) int {
 	fmt.Fprintf(os.Stderr, "\n%s\n\n", title)
