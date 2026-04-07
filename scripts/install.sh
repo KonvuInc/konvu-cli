@@ -1,9 +1,9 @@
 #!/bin/sh
 # Konvu CLI installer
-# Usage: curl -sSL https://raw.githubusercontent.com/KonvuTeam/konvu-cli/main/scripts/install.sh | sh
+# Usage: curl -sSL https://raw.githubusercontent.com/KonvuInc/konvu-cli/main/scripts/install.sh | sh
 set -e
 
-REPO="KonvuTeam/konvu-cli"
+REPO="KonvuInc/konvu-cli"
 INSTALL_DIR="${KONVU_INSTALL_DIR:-/usr/local/bin}"
 
 # Detect OS and architecture.

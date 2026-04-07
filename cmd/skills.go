@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/KonvuTeam/konvu-cli/skills"
+	"github.com/KonvuInc/konvu-cli/skills"
 	"github.com/spf13/cobra"
 )
 

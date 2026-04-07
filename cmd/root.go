@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/KonvuTeam/konvu-cli/skills"
+	"github.com/KonvuInc/konvu-cli/skills"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
