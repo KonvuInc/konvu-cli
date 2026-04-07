@@ -146,8 +146,13 @@ func loginWithAPIKey(apiKey string) error {
 
 	// Offer to install bundled Claude Code skills
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Konvu ships with Claude Code skills for AI-assisted security triage.")
-	fmt.Fprintln(os.Stderr, "This installs the weekly triage skill to ~/.claude/skills/.")
+	fmt.Fprintln(os.Stderr, "Konvu ships with Claude Code skills for AI-assisted security workflows.")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "  Weekly Triage — guided review of your security findings with inline")
+	fmt.Fprintln(os.Stderr, "  rating, bulk dismiss, and ticket creation. Run it in Claude Code")
+	fmt.Fprintln(os.Stderr, "  with: /konvu-recipe-weekly-triage")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Skills are installed to ~/.claude/skills/.")
 	fmt.Fprintln(os.Stderr)
 	if output.Confirm("Install bundled skills?", true) {
 		RunSkillsInstall(false, true)
@@ -189,8 +194,13 @@ func loginWithOAuth(timeout int) error {
 
 	// Offer to install bundled Claude Code skills
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Konvu ships with Claude Code skills for AI-assisted security triage.")
-	fmt.Fprintln(os.Stderr, "This installs the weekly triage skill to ~/.claude/skills/.")
+	fmt.Fprintln(os.Stderr, "Konvu ships with Claude Code skills for AI-assisted security workflows.")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "  Weekly Triage — guided review of your security findings with inline")
+	fmt.Fprintln(os.Stderr, "  rating, bulk dismiss, and ticket creation. Run it in Claude Code")
+	fmt.Fprintln(os.Stderr, "  with: /konvu-recipe-weekly-triage")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Skills are installed to ~/.claude/skills/.")
 	fmt.Fprintln(os.Stderr)
 	if output.Confirm("Install bundled skills?", true) {
 		RunSkillsInstall(false, true)
