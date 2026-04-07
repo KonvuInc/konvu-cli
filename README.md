@@ -17,7 +17,7 @@ The Konvu CLI connects to the Konvu API to let you browse, triage, and act on SC
 Requires [Go 1.25+](https://go.dev/dl/) and git access to the repository.
 
 ```bash
-go install github.com/KonvuTeam/konvu-cli/cmd/konvu@latest
+go install github.com/KonvuInc/konvu-cli/cmd/konvu@latest
 ```
 
 This places the `konvu` binary in `$GOBIN` (defaults to `~/go/bin`).
@@ -34,18 +34,18 @@ konvu version
 ### Shell script (requires public repo access)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/KonvuTeam/konvu-cli/main/scripts/install.sh | sh
+curl -sSL https://raw.githubusercontent.com/KonvuInc/konvu-cli/main/scripts/install.sh | sh
 ```
 
 Set a custom install directory with `KONVU_INSTALL_DIR`:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/KonvuTeam/konvu-cli/main/scripts/install.sh | KONVU_INSTALL_DIR=~/.local/bin sh
+curl -sSL https://raw.githubusercontent.com/KonvuInc/konvu-cli/main/scripts/install.sh | KONVU_INSTALL_DIR=~/.local/bin sh
 ```
 
 ### Manual download
 
-Download the binary for your platform from [GitHub Releases](https://github.com/KonvuTeam/konvu-cli/releases) (requires repository access).
+Download the binary for your platform from [GitHub Releases](https://github.com/KonvuInc/konvu-cli/releases) (requires repository access).
 
 ### Homebrew (macOS / Linux) — Coming soon
 
@@ -230,7 +230,7 @@ konvu --help-all
 After pulling new changes, rebuild and reinstall skills:
 
 ```bash
-go install github.com/KonvuTeam/konvu-cli/cmd/konvu@latest
+go install github.com/KonvuInc/konvu-cli/cmd/konvu@latest
 konvu skills install
 ```
 
@@ -238,7 +238,7 @@ The CLI will warn you if bundled skills are newer than what's installed.
 
 ## Claude Code integration
 
-Konvu CLI ships with bundled [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills. They're installed automatically when you run `konvu login`, or you can install them manually:
+Konvu CLI ships with bundled [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills. After `konvu login`, you'll be prompted to install them. You can also install them manually anytime:
 
 ```bash
 konvu skills install
