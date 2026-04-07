@@ -354,7 +354,10 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			return nil
 		}
 
-		total := int(data["total"].(float64))
+		var total int
+		if t, ok := data["total"].(float64); ok {
+			total = int(t)
+		}
 
 		if count {
 			fmt.Println(total)
