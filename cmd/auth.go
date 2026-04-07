@@ -153,8 +153,9 @@ func loginWithAPIKey(apiKey string) error {
 	fmt.Fprintln(os.Stderr, "  with: /konvu-recipe-weekly-triage")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Skills are installed to ~/.claude/skills/.")
+	fmt.Fprintln(os.Stderr, "You can always install or update them later with: konvu skills install")
 	fmt.Fprintln(os.Stderr)
-	if output.Confirm("Install bundled skills?", true) {
+	if output.Confirm("Install now?", true) {
 		RunSkillsInstall(false, true)
 	} else {
 		fmt.Fprintln(os.Stderr, "Skipped. You can install later with: konvu skills install")
@@ -201,8 +202,9 @@ func loginWithOAuth(timeout int) error {
 	fmt.Fprintln(os.Stderr, "  with: /konvu-recipe-weekly-triage")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Skills are installed to ~/.claude/skills/.")
+	fmt.Fprintln(os.Stderr, "You can always install or update them later with: konvu skills install")
 	fmt.Fprintln(os.Stderr)
-	if output.Confirm("Install bundled skills?", true) {
+	if output.Confirm("Install now?", true) {
 		RunSkillsInstall(false, true)
 	} else {
 		fmt.Fprintln(os.Stderr, "Skipped. You can install later with: konvu skills install")
