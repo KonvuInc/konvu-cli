@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/KonvuTeam/konvu-cli/pkg/mapping"
+	"github.com/KonvuInc/konvu-cli/pkg/mapping"
 	"golang.org/x/term"
 )
 

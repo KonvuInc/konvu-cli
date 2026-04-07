@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/KonvuTeam/konvu-cli/pkg/config"
+	"github.com/KonvuInc/konvu-cli/pkg/config"
 )
 
 const (

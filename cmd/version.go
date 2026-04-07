@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/KonvuTeam/konvu-cli/pkg/config"
-	"github.com/KonvuTeam/konvu-cli/pkg/output"
+	"github.com/KonvuInc/konvu-cli/pkg/config"
+	"github.com/KonvuInc/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
 )
 

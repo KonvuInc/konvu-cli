@@ -1,4 +1,4 @@
-module github.com/KonvuTeam/konvu-cli
+module github.com/KonvuInc/konvu-cli
 
 go 1.25.5
 

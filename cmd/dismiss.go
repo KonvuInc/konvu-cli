@@ -5,10 +5,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/KonvuTeam/konvu-cli/pkg/api"
-	clierrors "github.com/KonvuTeam/konvu-cli/pkg/errors"
-	"github.com/KonvuTeam/konvu-cli/pkg/mapping"
-	"github.com/KonvuTeam/konvu-cli/pkg/output"
+	"github.com/KonvuInc/konvu-cli/pkg/api"
+	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
+	"github.com/KonvuInc/konvu-cli/pkg/mapping"
+	"github.com/KonvuInc/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
 )
 

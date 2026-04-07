@@ -20,7 +20,7 @@ builds:
       - goos: windows
         goarch: arm64
     ldflags:
-      - -s -w -X github.com/KonvuTeam/konvu-cli/cmd.Version={{.Version}}
+      - -s -w -X github.com/KonvuInc/konvu-cli/cmd.Version={{.Version}}
 
 archives:
   - format: tar.gz
@@ -34,7 +34,7 @@ archives:
 
 brews:
   - repository:
-      owner: KonvuTeam
+      owner: KonvuInc
       name: homebrew-tap
     homepage: "https://konvu.com"
     description: "Security vulnerability management from your terminal"
