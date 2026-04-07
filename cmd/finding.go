@@ -65,29 +65,28 @@ func getFloat(m map[string]any, key string) (float64, bool) {
 	return v, ok
 }
 
+func normalizeAssessmentResult(result string) string {
+	if result == "" {
+		return string(mapping.NotAssessed)
+	}
+	// API uses underscores ("false_positive"), CLI uses hyphens ("false-positive")
+	return strings.ReplaceAll(result, "_", "-")
+}
+
 func transformFinding(finding map[string]any) map[string]any {
 	vuln := getMap(finding, "vulnerability")
 	ml := getMap(finding, "manifest_location")
 	dep := getMap(finding, "dependency")
 	source := getMap(finding, "source")
-	rec := getStr(finding, "calculated_recommendation")
-	assessment := mapping.RecommendationToAssessment(rec)
+	assess := getMap(finding, "assessment")
 
-	analyses := getMap(finding, "analyses")
-
-	aliases := getSlice(vuln, "aliases")
-	cve := ""
-	if len(aliases) > 0 {
-		cve, _ = aliases[0].(string)
-	}
+	cve := getStr(vuln, "display_id")
 	if cve == "" {
 		cve = getStr(vuln, "id")
 	}
 
-	qualSummary := getStr(analyses, "qualification_summary")
-	if qualSummary == "" {
-		qualSummary, _ = mapping.GetAssessmentSummary(assessment)
-	}
+	assessmentResult := normalizeAssessmentResult(getStr(assess, "result"))
+	assessmentSummary := getStr(assess, "summary")
 
 	severity := strings.ToLower(getStr(vuln, "severity"))
 	if severity == "" {
@@ -105,8 +104,8 @@ func transformFinding(finding map[string]any) map[string]any {
 		"dependency":         getStr(dep, "name"),
 		"repository":         getStr(ml, "vcs_repository_url"),
 		"manifest":           getStr(ml, "location"),
-		"assessment":         string(assessment),
-		"assessment_summary": qualSummary,
+		"assessment":         assessmentResult,
+		"assessment_summary": assessmentSummary,
 		"has_fix":            hasFix,
 		"first_seen":         getStr(source, "remote_created_at"),
 		"state":              getStr(source, "state"),
@@ -355,7 +354,10 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			return nil
 		}
 
-		total := int(data["total"].(float64))
+		var total int
+		if t, ok := data["total"].(float64); ok {
+			total = int(t)
+		}
 
 		if count {
 			fmt.Println(total)
@@ -633,15 +635,10 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 		dep := getMap(detail, "dependency")
 		analyses := getMap(detail, "analyses")
 		qual := getMap(analyses, "qualification")
-		_ = getMap(detail, "latest_recommendation") // available but not needed for output
-		rec := getStr(detail, "calculated_recommendation")
-		assessmentStatus := mapping.RecommendationToAssessment(rec)
+		assess := getMap(detail, "assessment")
 
-		// --- Assessment section ---
-		qualSummary := getStr(analyses, "qualification_summary")
-		if qualSummary == "" {
-			qualSummary = getStr(qual, "summary")
-		}
+		assessmentResult := normalizeAssessmentResult(getStr(assess, "result"))
+		qualSummary := getStr(assess, "summary")
 
 		checklist := getMap(qual, "checklist")
 		checklistRaw := getSlice(checklist, "items")
@@ -705,7 +702,7 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 		}
 
 		assessmentSection := map[string]any{
-			"status":    string(assessmentStatus),
+			"status":    assessmentResult,
 			"summary":   qualSummary,
 			"checklist": checklistItems,
 		}
@@ -908,8 +905,8 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth
 		client := api.NewClient("", "")
 		defer client.Close()
 
-		var latestRec map[string]any
 		recID := recommendationID
+		var rateAssessResult string
 
 		if recID == "" {
 			detail, err := client.Get(fmt.Sprintf("/sca_findings/%s", findingID), nil)
@@ -928,12 +925,13 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth
 				return nil
 			}
 
-			latestRec = getMap(detail, "latest_recommendation")
+			latestRec := getMap(detail, "latest_recommendation")
 			recID = getStr(latestRec, "id")
 			if recID == "" {
 				fmt.Fprintln(os.Stderr, "This finding has no recommendation to rate yet.")
 				os.Exit(1)
 			}
+			rateAssessResult = normalizeAssessmentResult(getStr(getMap(detail, "assessment"), "result"))
 		}
 
 		helpful := rating == "agree"
@@ -958,12 +956,10 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth
 			}
 			fmt.Println(output.FormatJSON(result))
 		} else {
-			if len(latestRec) > 0 {
-				rawRecType := getStr(latestRec, "raw_recommendation_type")
-				assessmentVal := mapping.RecommendationToAssessment(rawRecType)
-				color := mapping.GetAssessmentColor(string(assessmentVal))
+			if rateAssessResult != "" && rateAssessResult != string(mapping.NotAssessed) {
+				color := mapping.GetAssessmentColor(rateAssessResult)
 				fmt.Fprintf(os.Stderr, "Rated assessment %s%s%s as: %s\n",
-					color, strings.ToUpper(string(assessmentVal)), mapping.ColorReset(), rating)
+					color, strings.ToUpper(rateAssessResult), mapping.ColorReset(), rating)
 			} else {
 				fmt.Fprintf(os.Stderr, "Rated as: %s\n", rating)
 			}
