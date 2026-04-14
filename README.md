@@ -50,25 +50,26 @@ Download the binary for your platform from [GitHub Releases](https://github.com/
 ### Docker
 
 ```bash
-docker run --rm \
-  -v konvu-config:/root/.config/konvu \
-  -v ~/.claude/skills:/root/.claude/skills \
-  ghcr.io/konvuinc/konvu-cli <command>
+docker run --rm -v konvu-config:/root/.config/konvu ghcr.io/konvuinc/konvu-cli <command>
 ```
 
-The `konvu-config` volume persists credentials between runs. The `~/.claude/skills` bind mount lets skills install directly on your host where Claude Code reads them.
+The `konvu-config` volume persists credentials between runs.
 
 ```bash
-# Login (credentials stored in the volume, skills installed on host)
-docker run --rm \
+# Interactive login (OAuth — requires -it for TTY, skills prompt installs to host)
+docker run --rm -it \
   -v konvu-config:/root/.config/konvu \
   -v ~/.claude/skills:/root/.claude/skills \
-  ghcr.io/konvuinc/konvu-cli login --api-key
+  ghcr.io/konvuinc/konvu-cli login
+
+# Non-interactive login with API key
+docker run --rm -v konvu-config:/root/.config/konvu ghcr.io/konvuinc/konvu-cli login --api-key api_...
 
 # Subsequent commands reuse the credentials
-docker run --rm \
-  -v konvu-config:/root/.config/konvu \
-  ghcr.io/konvuinc/konvu-cli finding list
+docker run --rm -v konvu-config:/root/.config/konvu ghcr.io/konvuinc/konvu-cli finding list
+
+# Install skills to your host so Claude Code can find them
+docker run --rm -v ~/.claude/skills:/root/.claude/skills ghcr.io/konvuinc/konvu-cli skills install
 ```
 
 Or pass an API key via environment variable to skip login entirely:
