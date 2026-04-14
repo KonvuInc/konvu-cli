@@ -47,6 +47,36 @@ curl -sSL https://raw.githubusercontent.com/KonvuInc/konvu-cli/main/scripts/inst
 
 Download the binary for your platform from [GitHub Releases](https://github.com/KonvuInc/konvu-cli/releases) (requires repository access).
 
+### Docker
+
+```bash
+docker run --rm \
+  -v konvu-config:/root/.config/konvu \
+  -v ~/.claude/skills:/root/.claude/skills \
+  ghcr.io/konvuinc/konvu-cli <command>
+```
+
+The `konvu-config` volume persists credentials between runs. The `~/.claude/skills` bind mount lets skills install directly on your host where Claude Code reads them.
+
+```bash
+# Login (credentials stored in the volume, skills installed on host)
+docker run --rm \
+  -v konvu-config:/root/.config/konvu \
+  -v ~/.claude/skills:/root/.claude/skills \
+  ghcr.io/konvuinc/konvu-cli login --api-key
+
+# Subsequent commands reuse the credentials
+docker run --rm \
+  -v konvu-config:/root/.config/konvu \
+  ghcr.io/konvuinc/konvu-cli finding list
+```
+
+Or pass an API key via environment variable to skip login entirely:
+
+```bash
+docker run --rm -e KONVU_ACCESS_TOKEN=api_... ghcr.io/konvuinc/konvu-cli finding list
+```
+
 ### Homebrew (macOS / Linux) — Coming soon
 
 ## Quick start

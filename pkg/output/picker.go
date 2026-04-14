@@ -76,6 +76,9 @@ func renderPicker(title string, options []string, selected int) {
 
 // Confirm asks a yes/no question. Returns true for yes. defaultYes controls the default on Enter.
 func Confirm(prompt string, defaultYes bool) bool {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return false
+	}
 	hint := "[y/N]"
 	if defaultYes {
 		hint = "[Y/n]"
