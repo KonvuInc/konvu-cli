@@ -47,6 +47,37 @@ curl -sSL https://raw.githubusercontent.com/KonvuInc/konvu-cli/main/scripts/inst
 
 Download the binary for your platform from [GitHub Releases](https://github.com/KonvuInc/konvu-cli/releases) (requires repository access).
 
+### Docker
+
+```bash
+docker run --rm -v konvu-config:/root/.config/konvu ghcr.io/konvuinc/konvu-cli <command>
+```
+
+The `konvu-config` volume persists credentials between runs.
+
+```bash
+# Interactive login (OAuth — requires -it for TTY, skills prompt installs to host)
+docker run --rm -it \
+  -v konvu-config:/root/.config/konvu \
+  -v ~/.claude/skills:/root/.claude/skills \
+  ghcr.io/konvuinc/konvu-cli login
+
+# Non-interactive login with API key
+docker run --rm -v konvu-config:/root/.config/konvu ghcr.io/konvuinc/konvu-cli login --api-key api_...
+
+# Subsequent commands reuse the credentials
+docker run --rm -v konvu-config:/root/.config/konvu ghcr.io/konvuinc/konvu-cli finding list
+
+# Install skills to your host so Claude Code can find them
+docker run --rm -v ~/.claude/skills:/root/.claude/skills ghcr.io/konvuinc/konvu-cli skills install
+```
+
+Or pass an API key via environment variable to skip login entirely:
+
+```bash
+docker run --rm -e KONVU_ACCESS_TOKEN=api_... ghcr.io/konvuinc/konvu-cli finding list
+```
+
 ### Homebrew (macOS / Linux) — Coming soon
 
 ## Quick start

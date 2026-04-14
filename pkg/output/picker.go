@@ -11,10 +11,17 @@ import (
 	"golang.org/x/term"
 )
 
+// IsInteractive returns true when stdin is a terminal.
+func IsInteractive() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
+}
+
 // Pick presents an interactive picker. Falls back to numbered prompt for non-TTY.
 func Pick(title string, options []string, defaultIdx int) int {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return FallbackPick(title, options, defaultIdx, os.Stdin)
+		fmt.Fprintf(os.Stderr, "Non-interactive mode, defaulting to: %s\n", options[defaultIdx])
+		fmt.Fprintf(os.Stderr, "Use --api-key to authenticate non-interactively.\n")
+		return defaultIdx
 	}
 	idx, err := interactivePick(title, options, defaultIdx)
 	if err != nil {
@@ -76,6 +83,10 @@ func renderPicker(title string, options []string, selected int) {
 
 // Confirm asks a yes/no question. Returns true for yes. defaultYes controls the default on Enter.
 func Confirm(prompt string, defaultYes bool) bool {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Fprintf(os.Stderr, "Non-interactive mode, skipping: %s\n", prompt)
+		return false
+	}
 	hint := "[y/N]"
 	if defaultYes {
 		hint = "[Y/n]"

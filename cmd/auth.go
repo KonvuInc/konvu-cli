@@ -147,20 +147,24 @@ func loginWithAPIKey(apiKey string) error {
 
 	// Offer to install bundled Claude Code skills (skip if already up to date)
 	if skills.NeedsUpdate() {
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Konvu ships with Claude Code skills for AI-assisted security workflows.")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "  Weekly Triage — guided review of your security findings with inline")
-		fmt.Fprintln(os.Stderr, "  rating, bulk dismiss, and ticket creation. Run it in Claude Code")
-		fmt.Fprintln(os.Stderr, "  with: /konvu-recipe-weekly-triage")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Skills are installed to ~/.claude/skills/.")
-		fmt.Fprintln(os.Stderr, "You can always install or update them later with: konvu skills install")
-		fmt.Fprintln(os.Stderr)
-		if output.Confirm("Install now?", true) {
-			RunSkillsInstall(false, true)
+		if !output.IsInteractive() {
+			fmt.Fprintln(os.Stderr, "Run 'konvu skills install' to install Claude Code skills.")
 		} else {
-			fmt.Fprintln(os.Stderr, "Skipped. You can install later with: konvu skills install")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, "Konvu ships with Claude Code skills for AI-assisted security workflows.")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, "  Weekly Triage — guided review of your security findings with inline")
+			fmt.Fprintln(os.Stderr, "  rating, bulk dismiss, and ticket creation. Run it in Claude Code")
+			fmt.Fprintln(os.Stderr, "  with: /konvu-recipe-weekly-triage")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, "Skills are installed to ~/.claude/skills/.")
+			fmt.Fprintln(os.Stderr, "You can always install or update them later with: konvu skills install")
+			fmt.Fprintln(os.Stderr)
+			if output.Confirm("Install now?", true) {
+				RunSkillsInstall(false, true)
+			} else {
+				fmt.Fprintln(os.Stderr, "Skipped. You can install later with: konvu skills install")
+			}
 		}
 	}
 
@@ -198,20 +202,24 @@ func loginWithOAuth(timeout int) error {
 
 	// Offer to install bundled Claude Code skills (skip if already up to date)
 	if skills.NeedsUpdate() {
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Konvu ships with Claude Code skills for AI-assisted security workflows.")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "  Weekly Triage — guided review of your security findings with inline")
-		fmt.Fprintln(os.Stderr, "  rating, bulk dismiss, and ticket creation. Run it in Claude Code")
-		fmt.Fprintln(os.Stderr, "  with: /konvu-recipe-weekly-triage")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Skills are installed to ~/.claude/skills/.")
-		fmt.Fprintln(os.Stderr, "You can always install or update them later with: konvu skills install")
-		fmt.Fprintln(os.Stderr)
-		if output.Confirm("Install now?", true) {
-			RunSkillsInstall(false, true)
+		if !output.IsInteractive() {
+			fmt.Fprintln(os.Stderr, "Run 'konvu skills install' to install Claude Code skills.")
 		} else {
-			fmt.Fprintln(os.Stderr, "Skipped. You can install later with: konvu skills install")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, "Konvu ships with Claude Code skills for AI-assisted security workflows.")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, "  Weekly Triage — guided review of your security findings with inline")
+			fmt.Fprintln(os.Stderr, "  rating, bulk dismiss, and ticket creation. Run it in Claude Code")
+			fmt.Fprintln(os.Stderr, "  with: /konvu-recipe-weekly-triage")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, "Skills are installed to ~/.claude/skills/.")
+			fmt.Fprintln(os.Stderr, "You can always install or update them later with: konvu skills install")
+			fmt.Fprintln(os.Stderr)
+			if output.Confirm("Install now?", true) {
+				RunSkillsInstall(false, true)
+			} else {
+				fmt.Fprintln(os.Stderr, "Skipped. You can install later with: konvu skills install")
+			}
 		}
 	}
 
