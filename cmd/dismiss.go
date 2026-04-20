@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"strings"
 
@@ -93,14 +92,14 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 			params["vcs_repository_url"] = []string{repo}
 		}
 
-		params["any_source_state"] = []string{"open"}
+		params["source_state"] = []string{"open"}
 
 		// Paginate through all pages
 		page := 1
 		for {
 			params["page"] = fmt.Sprintf("%d", page)
 
-			data, err := client.Get("/sca_issues", params)
+			data, err := client.Get("/sca_findings", params)
 			if err != nil {
 				if _, ok := err.(*api.AuthenticationError); ok {
 					fmt.Fprintln(os.Stderr, "Error:", err)
@@ -113,23 +112,13 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 			items, _ := data["items"].([]any)
 			for _, raw := range items {
 				item, _ := raw.(map[string]any)
-				sources, _ := item["sources"].([]any)
-
-				for _, rawSrc := range sources {
-					src, _ := rawSrc.(map[string]any)
-					state, _ := src["state"].(string)
-					if state != "open" {
-						continue
-					}
-					issueID, _ := src["id"].(string)
-					if issueID != "" {
-						issueIDs = append(issueIDs, issueID)
-					}
+				id, _ := item["id"].(string)
+				if id != "" {
+					issueIDs = append(issueIDs, id)
 				}
 			}
 
-			total, _ := data["total"].(float64)
-			if page*500 >= int(math.Max(total, 1)) {
+			if len(items) < 500 {
 				break
 			}
 			page++
