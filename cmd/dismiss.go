@@ -51,16 +51,9 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 
-	type dismissItem struct {
-		IntegrationID string `json:"integration_id,omitempty"`
-		IssueID       string `json:"issue_id,omitempty"`
-		CVE           string `json:"cve,omitempty"`
-		Repository    string `json:"repository,omitempty"`
-	}
+	// Collect open integration issue IDs to dismiss.
+	var issueIDs []string
 
-	var toDismiss []dismissItem
-
-	// If using filters, first query matching issues
 	if len(assessments) > 0 || len(severities) > 0 || repo != "" {
 		params := map[string]any{
 			"per_page": "500",
@@ -99,186 +92,120 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 			params["vcs_repository_url"] = []string{repo}
 		}
 
-		params["any_source_state"] = []string{"open"}
+		params["source_state"] = []string{"open"}
+		params["has_code_sensor"] = "true"
 
-		data, err := client.Get("/sca_issues", params)
-		if err != nil {
-			if _, ok := err.(*api.AuthenticationError); ok {
-				fmt.Fprintln(os.Stderr, "Error:", err)
-				os.Exit(clierrors.ExitAuthFailed)
+		// Paginate through all pages
+		page := 1
+		for {
+			params["page"] = fmt.Sprintf("%d", page)
+
+			data, err := client.Get("/sca_findings", params)
+			if err != nil {
+				if _, ok := err.(*api.AuthenticationError); ok {
+					fmt.Fprintln(os.Stderr, "Error:", err)
+					os.Exit(clierrors.ExitAuthFailed)
+				}
+				fmt.Fprintln(os.Stderr, "API Error:", err)
+				os.Exit(1)
 			}
-			fmt.Fprintln(os.Stderr, "API Error:", err)
-			os.Exit(1)
-		}
 
-		items, _ := data["items"].([]any)
-		for _, raw := range items {
-			item, _ := raw.(map[string]any)
-			sources, _ := item["sources"].([]any)
-
-			vuln, _ := item["vulnerability"].(map[string]any)
-			cve, _ := vuln["cve_number"].(string)
-
-			manifestLoc, _ := item["manifest_location"].(map[string]any)
-			repoURL, _ := manifestLoc["repository_url"].(string)
-
-			for _, rawSrc := range sources {
-				src, _ := rawSrc.(map[string]any)
-				integrationID, _ := src["integration_id"].(string)
-				issueID, _ := src["id"].(string)
-				toDismiss = append(toDismiss, dismissItem{
-					IntegrationID: integrationID,
-					IssueID:       issueID,
-					CVE:           cve,
-					Repository:    repoURL,
-				})
+			items, _ := data["items"].([]any)
+			for _, raw := range items {
+				item, _ := raw.(map[string]any)
+				id, _ := item["id"].(string)
+				issueIDs = append(issueIDs, id)
 			}
+
+			if len(items) < 500 {
+				break
+			}
+			page++
 		}
 	} else if issuesList != "" {
-		// Parse comma-separated issue IDs
 		ids := strings.Split(issuesList, ",")
 		for _, id := range ids {
 			id = strings.TrimSpace(id)
 			if id != "" {
-				toDismiss = append(toDismiss, dismissItem{IssueID: id})
+				issueIDs = append(issueIDs, id)
 			}
 		}
 	}
 
-	if len(toDismiss) == 0 {
+	if len(issueIDs) == 0 {
 		fmt.Println("No issues found matching criteria.")
 		return nil
-	}
-
-	// Build items for output (first 50)
-	limit := 50
-	if len(toDismiss) < limit {
-		limit = len(toDismiss)
-	}
-
-	type outputItemJSON struct {
-		IntegrationID string `json:"integration_id,omitempty"`
-		IssueID       string `json:"issue_id,omitempty"`
-		CVE           string `json:"cve,omitempty"`
-		Repository    string `json:"repository,omitempty"`
-	}
-	previewItems := make([]outputItemJSON, limit)
-	for i := 0; i < limit; i++ {
-		previewItems[i] = outputItemJSON{
-			IntegrationID: toDismiss[i].IntegrationID,
-			IssueID:       toDismiss[i].IssueID,
-			CVE:           toDismiss[i].CVE,
-			Repository:    toDismiss[i].Repository,
-		}
 	}
 
 	outputFormat := output.DetectOutputFormat(outputFlag)
 
 	if dryRun {
-		msg := fmt.Sprintf("Would dismiss %d issues. Use without --dry-run to execute.", len(toDismiss))
+		msg := fmt.Sprintf("Would dismiss %d issues. Use without --dry-run to execute.", len(issueIDs))
 		if outputFormat == output.JSON {
 			jsonOut := map[string]any{
 				"action":  "dismiss",
 				"dry_run": true,
 				"reason":  reason,
-				"total":   len(toDismiss),
-				"items":   previewItems,
+				"total":   len(issueIDs),
 				"message": msg,
 			}
 			fmt.Println(output.FormatJSON(jsonOut))
 		} else {
-			fmt.Printf("\nDry run: would dismiss %d issues\n", len(toDismiss))
-			fmt.Printf("Reason: %s\n\n", reason)
-			showLimit := 10
-			if len(toDismiss) < showLimit {
-				showLimit = len(toDismiss)
-			}
-			for i := 0; i < showLimit; i++ {
-				item := toDismiss[i]
-				label := item.CVE
-				if label == "" {
-					label = item.IssueID
-				}
-				repo := item.Repository
-				if repo == "" {
-					repo = "unknown"
-				}
-				fmt.Printf("  - %s in %s\n", label, repo)
-			}
-			if len(toDismiss) > 10 {
-				fmt.Printf("  ... and %d more\n", len(toDismiss)-10)
-			}
+			fmt.Printf("\nDry run: would dismiss %d issues\n", len(issueIDs))
+			fmt.Printf("Reason: %s\n", reason)
 		}
 		return nil
 	}
 
-	// Execute dismissals
-	type failedItem struct {
-		ID    string `json:"id"`
-		Error string `json:"error"`
-	}
-	var succeeded []outputItemJSON
-	var failed []failedItem
+	// Bulk dismiss in chunks of 500 (API limit)
+	totalDismissed := 0
+	totalSkipped := 0
 
-	for _, item := range toDismiss {
-		integrationID := item.IntegrationID
-		issueID := item.IssueID
+	for i := 0; i < len(issueIDs); i += 500 {
+		end := i + 500
+		if end > len(issueIDs) {
+			end = len(issueIDs)
+		}
+		chunk := issueIDs[i:end]
 
-		if integrationID == "" || issueID == "" {
-			failed = append(failed, failedItem{
-				ID:    issueID,
-				Error: "Missing integration_id or issue_id",
-			})
-			continue
+		body := map[string]any{
+			"finding_ids": chunk,
+			"reason":      reason,
 		}
 
-		_, err := client.Post(
-			fmt.Sprintf("/integrations/%s/issue/%s/dismiss", integrationID, issueID),
-			map[string]any{"reason": reason},
-		)
+		result, err := client.Post("/sca_findings/bulk_dismiss", body)
 		if err != nil {
 			if _, ok := err.(*api.AuthenticationError); ok {
 				fmt.Fprintln(os.Stderr, "Error:", err)
 				os.Exit(clierrors.ExitAuthFailed)
 			}
-			failed = append(failed, failedItem{ID: issueID, Error: err.Error()})
-		} else {
-			succeeded = append(succeeded, outputItemJSON{
-				IntegrationID: integrationID,
-				IssueID:       issueID,
-				CVE:           item.CVE,
-				Repository:    item.Repository,
-			})
+			// 404 means no open findings in this chunk
+			if apiErr, ok := err.(*api.APIError); ok && apiErr.StatusCode == 404 {
+				totalSkipped += len(chunk)
+				continue
+			}
+			fmt.Fprintln(os.Stderr, "API Error:", err)
+			os.Exit(1)
 		}
+
+		dismissed, _ := result["dismissed_count"].(float64)
+		totalDismissed += int(dismissed)
+		totalSkipped += len(chunk) - int(dismissed)
 	}
 
 	if outputFormat == output.JSON {
 		jsonOut := map[string]any{
-			"action":  "dismiss",
-			"dry_run": false,
-			"reason":  reason,
-			"total":   len(toDismiss),
-			"items":   previewItems,
-			"results": map[string]any{
-				"succeeded": len(succeeded),
-				"failed":    len(failed),
-			},
-			"succeeded": succeeded,
-			"failed":    failed,
+			"action":    "dismiss",
+			"dry_run":   false,
+			"reason":    reason,
+			"dismissed": totalDismissed,
+			"skipped":   totalSkipped,
 		}
 		fmt.Println(output.FormatJSON(jsonOut))
 	} else {
-		fmt.Printf("\nDismissed %d issues\n", len(succeeded))
-		if len(failed) > 0 {
-			fmt.Printf("Failed: %d\n", len(failed))
-			showLimit := 5
-			if len(failed) < showLimit {
-				showLimit = len(failed)
-			}
-			for i := 0; i < showLimit; i++ {
-				f := failed[i]
-				fmt.Printf("  - %s: %s\n", f.ID, f.Error)
-			}
+		fmt.Printf("\nDismissed %d issues\n", totalDismissed)
+		if totalSkipped > 0 {
+			fmt.Printf("Skipped %d (already dismissed or not open)\n", totalSkipped)
 		}
 	}
 
