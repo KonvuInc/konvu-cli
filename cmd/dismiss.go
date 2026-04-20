@@ -53,6 +53,7 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 
 	// Collect open integration issue IDs to dismiss.
 	var issueIDs []string
+	var issueIDSet = map[string]bool{}
 
 	if len(assessments) > 0 || len(severities) > 0 || repo != "" {
 		params := map[string]any{
@@ -93,6 +94,7 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 		}
 
 		params["source_state"] = []string{"open"}
+		params["has_code_sensor"] = "true"
 
 		// Paginate through all pages
 		page := 1
@@ -113,7 +115,8 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 			for _, raw := range items {
 				item, _ := raw.(map[string]any)
 				id, _ := item["id"].(string)
-				if id != "" {
+				if id != "" && !issueIDSet[id] {
+					issueIDSet[id] = true
 					issueIDs = append(issueIDs, id)
 				}
 			}
