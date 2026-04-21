@@ -40,6 +40,7 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 	severities, _ := cmd.Flags().GetStringArray("severity")
 	repo, _ := cmd.Flags().GetString("repo")
 	reason, _ := cmd.Flags().GetString("reason")
+	comment, _ := cmd.Flags().GetString("comment")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	outputFlag, _ := cmd.Flags().GetString("output")
 
@@ -169,8 +170,9 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 		chunk := issueIDs[i:end]
 
 		body := map[string]any{
-			"finding_ids": chunk,
-			"reason":      reason,
+			"finding_ids":      chunk,
+			"dismissed_reason":  reason,
+			"dismissed_comment": comment,
 		}
 
 		result, err := client.Post("/sca_findings/bulk_dismiss", body)
@@ -218,6 +220,7 @@ func addDismissFlags(cmd *cobra.Command) {
 	cmd.Flags().StringArrayP("severity", "s", nil, "Filter by severity")
 	cmd.Flags().StringP("repo", "r", "", "Filter by repository")
 	cmd.Flags().String("reason", "Dismissed via Konvu CLI", "Reason for dismissal")
+	cmd.Flags().String("comment", "", "Comment for dismissal (auto-generated if empty)")
 	cmd.Flags().Bool("dry-run", false, "Preview what would be dismissed without executing")
 	cmd.Flags().StringP("output", "o", "", "Output format: json, table")
 }
