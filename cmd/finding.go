@@ -114,22 +114,45 @@ func transformFinding(finding map[string]any) map[string]any {
 	}
 }
 
+// countFindings returns the total number of /sca_findings matching filterParams.
+// The backend does not return a total field, so we paginate until a short page
+// tells us we've hit the end. filterParams must not contain page / per_page.
+// TODO: drop the pagination loop once dashboard_backend returns a total.
+func countFindings(client *api.Client, filterParams map[string]any) (int, error) {
+	const pageSize = 500
+	p := make(map[string]any, len(filterParams)+2)
+	for k, v := range filterParams {
+		p[k] = v
+	}
+	p["per_page"] = pageSize
+	total := 0
+	for page := 1; ; page++ {
+		p["page"] = page
+		data, err := client.Get("/sca_findings", p)
+		if err != nil {
+			return 0, err
+		}
+		items := getSlice(data, "items")
+		total += len(items)
+		if len(items) < pageSize {
+			return total, nil
+		}
+	}
+}
+
 func computeAssessmentCounts(client *api.Client, baseParams map[string]any) map[string]int {
 	counts := make(map[string]int)
 	for _, status := range mapping.AllStatuses {
-		recs := mapping.AssessmentToRecommendation(status)
-		params := map[string]any{"per_page": 1, "recommendation": recs}
+		params := make(map[string]any, len(baseParams)+1)
 		for k, v := range baseParams {
 			params[k] = v
 		}
-		params["recommendation"] = recs // always override
-		data, err := client.Get("/sca_findings", params)
+		params["recommendation"] = mapping.AssessmentToRecommendation(status)
+		n, err := countFindings(client, params)
 		if err != nil {
 			continue
 		}
-		if total, ok := data["total"].(float64); ok {
-			counts[string(status)] = int(total)
-		}
+		counts[string(status)] = n
 	}
 	return counts
 }
@@ -296,29 +319,20 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 		client := api.NewClient("", "")
 		defer client.Close()
 
-		// Build params
-		perPage := limit
-		if perPage > 1000 {
-			perPage = 1000
-		}
-		params := map[string]any{
-			"per_page": perPage,
-			"page":     (offset / maxInt(limit, 1)) + 1,
-			"sort":     sortFlag,
-			"order":    order,
-		}
+		// Build filter params (no pagination / sort — those are added below).
+		filterParams := map[string]any{}
 		if since != "" {
-			params["first_seen_after"] = parseRelativeDate(since)
+			filterParams["first_seen_after"] = parseRelativeDate(since)
 		}
 		if until != "" && until != "now" {
-			params["first_seen_before"] = parseRelativeDate(until)
+			filterParams["first_seen_before"] = parseRelativeDate(until)
 		}
 		if len(severity) > 0 {
 			upper := make([]string, len(severity))
 			for i, s := range severity {
 				upper[i] = strings.ToUpper(s)
 			}
-			params["severity"] = upper
+			filterParams["severity"] = upper
 		}
 		if len(assessment) > 0 {
 			var recs []string
@@ -327,26 +341,51 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 				r := mapping.AssessmentToRecommendation(mapping.AssessmentStatus(normalized))
 				recs = append(recs, r...)
 			}
-			params["recommendation"] = recs
+			filterParams["recommendation"] = recs
 		}
 		if len(state) > 0 {
-			params["any_source_state"] = state
+			// Backend param is `source_state`; `any_source_state` is silently
+			// ignored which used to make --state a no-op.
+			filterParams["source_state"] = state
 		}
 		if hasFix != "" {
-			params["has_fix"] = hasFix
+			filterParams["has_fix"] = hasFix
 		}
 		if repo != "" {
-			params["vcs_repository_url"] = []string{repo}
+			filterParams["vcs_repository_url"] = []string{repo}
 		}
 		if cve != "" {
-			params["cve"] = []string{cve}
+			filterParams["cve"] = []string{cve}
 		}
 		if dependency != "" {
-			params["dependency_name"] = []string{dependency}
+			filterParams["dependency_name"] = []string{dependency}
 		}
 		if source != "" {
-			params["source"] = []string{source}
+			filterParams["source"] = []string{source}
 		}
+
+		if count {
+			total, err := countFindings(client, filterParams)
+			if err != nil {
+				handleFindingError(err, format)
+				return nil
+			}
+			fmt.Println(total)
+			return nil
+		}
+
+		perPage := limit
+		if perPage > 1000 {
+			perPage = 1000
+		}
+		params := make(map[string]any, len(filterParams)+4)
+		for k, v := range filterParams {
+			params[k] = v
+		}
+		params["per_page"] = perPage
+		params["page"] = (offset / maxInt(limit, 1)) + 1
+		params["sort"] = sortFlag
+		params["order"] = order
 
 		data, err := client.Get("/sca_findings", params)
 		if err != nil {
@@ -354,17 +393,15 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			return nil
 		}
 
-		var total int
-		if t, ok := data["total"].(float64); ok {
-			total = int(t)
-		}
-
-		if count {
-			fmt.Println(total)
-			return nil
-		}
-
 		items := getSlice(data, "items")
+		// The API doesn't return a total; derive it. If the page is full there
+		// may be more, so paginate to get an accurate count for the summary.
+		total := offset + len(items)
+		if len(items) == perPage {
+			if t, err := countFindings(client, filterParams); err == nil {
+				total = t
+			}
+		}
 
 		// Client-side source_id filter
 		if sourceID != "" {
