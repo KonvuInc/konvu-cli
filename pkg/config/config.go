@@ -12,6 +12,7 @@ const AppName = "konvu"
 
 const (
 	DefaultAPIBaseURL      = "https://api.konvu.com"
+	DefaultDashboardURL    = "https://app.konvu.com"
 	DefaultZitadelDomain   = "https://auth.konvu.com"
 	DefaultZitadelClientID = "362950727238234934"
 )
@@ -45,6 +46,16 @@ func GetAPIBaseURL() string {
 		return v
 	}
 	return DefaultAPIBaseURL
+}
+
+// GetDashboardURL returns the URL of the Konvu web dashboard, where users
+// install integrations (e.g. the Konvu Autofix GitHub App or the GitLab
+// remediation integration). Override via KONVU_APP_URL.
+func GetDashboardURL() string {
+	if v := os.Getenv("KONVU_APP_URL"); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	return DefaultDashboardURL
 }
 
 func GetZitadelDomain() string {

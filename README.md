@@ -240,8 +240,10 @@ Asks Konvu to open a remediation pull request for a finding. The job runs
 asynchronously inside the on-prem controller (patcheus engine); poll status
 with `--wait` or `konvu remediate status`.
 
-Requires the **Konvu Autofix GitHub App** (or the GitLab equivalent) to be
-installed on the affected repository.
+Works with both **GitHub** (Konvu Autofix GitHub App) and **GitLab** (Konvu
+remediation integration) — the CLI detects which SCM your finding lives in
+from the repository URL and points you at the right install flow if a
+required integration is missing.
 
 ```bash
 # Trigger remediation (top-level alias for `konvu remediate run`)
@@ -352,6 +354,7 @@ Filter by assessment: `--assessment exploitable`, combine with severity: `--seve
 |---|---|---|
 | `KONVU_ACCESS_TOKEN` | — | API key or access token (alternative to `konvu login`) |
 | `KONVU_API_URL` | `https://api.konvu.com` | API base URL |
+| `KONVU_APP_URL` | `https://app.konvu.com` | Dashboard URL (used in `konvu remediate` install-link suggestions) |
 | `KONVU_ZITADEL_DOMAIN` | `https://auth.konvu.com` | OAuth provider |
 | `KONVU_ZITADEL_CLIENT_ID` | — | OAuth client ID (required for OAuth login) |
 

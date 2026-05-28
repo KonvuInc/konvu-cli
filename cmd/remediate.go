@@ -9,10 +9,32 @@ import (
 	"time"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
+	"github.com/KonvuInc/konvu-cli/pkg/config"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	"github.com/KonvuInc/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
 )
+
+// scmType identifies the source control system for a finding.
+type scmType string
+
+const (
+	scmGitHub  scmType = "github"
+	scmGitLab  scmType = "gitlab"
+	scmUnknown scmType = ""
+)
+
+// label returns a human-readable SCM name; "your SCM" when unknown.
+func (s scmType) label() string {
+	switch s {
+	case scmGitHub:
+		return "GitHub"
+	case scmGitLab:
+		return "GitLab"
+	default:
+		return "your SCM"
+	}
+}
 
 var remediateCmd = &cobra.Command{
 	Use:     "remediate [finding-id]",
@@ -53,44 +75,73 @@ var remediateTerminalStatuses = map[string]bool{
 }
 
 // resolveFindingTarget fetches a finding and extracts the
-// (manifest_location_id, vulnerability_id) pair the remediation
-// endpoints address.
-func resolveFindingTarget(client *api.Client, findingID string) (mlID, vulnID string, err error) {
+// (manifest_location_id, vulnerability_id) pair the remediation endpoints
+// address, plus the detected SCM so error suggestions can be SCM-specific.
+func resolveFindingTarget(client *api.Client, findingID string) (mlID, vulnID string, scm scmType, err error) {
 	detail, err := client.Get(fmt.Sprintf("/sca_findings/%s", findingID), nil)
 	if err != nil {
 		if apiErr, ok := err.(*api.APIError); ok && apiErr.StatusCode == 404 {
-			return "", "", &clierrors.CLIError{
+			return "", "", scmUnknown, &clierrors.CLIError{
 				Code:       "FINDING_NOT_FOUND",
 				Message:    fmt.Sprintf("Finding '%s' not found", findingID),
 				Suggestion: "Run 'konvu finding list' to see available findings.",
 				ExitCode:   clierrors.ExitNotFound,
 			}
 		}
-		return "", "", err
+		return "", "", scmUnknown, err
 	}
+	ml := getMap(detail, "manifest_location")
 	mlID = getStr(detail, "manifest_location_id")
 	vulnID = getStr(detail, "vulnerability_id")
-	if mlID == "" || vulnID == "" {
-		// Fallback: pull from nested objects (older response shapes).
-		if mlID == "" {
-			mlID = getStr(getMap(detail, "manifest_location"), "id")
-		}
-		if vulnID == "" {
-			vulnID = getStr(getMap(detail, "vulnerability"), "id")
-		}
+	if mlID == "" {
+		mlID = getStr(ml, "id")
+	}
+	if vulnID == "" {
+		vulnID = getStr(getMap(detail, "vulnerability"), "id")
 	}
 	if mlID == "" || vulnID == "" {
-		return "", "", &clierrors.CLIError{
+		return "", "", scmUnknown, &clierrors.CLIError{
 			Code:     "FINDING_INCOMPLETE",
 			Message:  fmt.Sprintf("Finding '%s' is missing manifest_location_id or vulnerability_id", findingID),
 			ExitCode: clierrors.ExitGeneralError,
 		}
 	}
-	return mlID, vulnID, nil
+	return mlID, vulnID, detectSCM(ml), nil
 }
 
-// mapRemediateAPIError turns backend 422 detail codes into actionable CLIErrors.
-func mapRemediateAPIError(err error, findingID string) *clierrors.CLIError {
+// detectSCM derives the source control system from a finding's
+// manifest_location. Prefers the typed `vcs_source` enum; falls back to the
+// repository URL host.
+func detectSCM(manifestLocation map[string]any) scmType {
+	source := strings.ToLower(getStr(manifestLocation, "vcs_source"))
+	switch {
+	case strings.HasPrefix(source, "github"):
+		return scmGitHub
+	case strings.HasPrefix(source, "gitlab"):
+		return scmGitLab
+	}
+	for _, key := range []string{"vcs_base_url", "vcs_repository_url"} {
+		u := strings.ToLower(getStr(manifestLocation, key))
+		switch {
+		case strings.Contains(u, "github"):
+			return scmGitHub
+		case strings.Contains(u, "gitlab"):
+			return scmGitLab
+		}
+	}
+	return scmUnknown
+}
+
+// integrationsURL returns the dashboard's integrations page, where the user
+// installs/configures both GitHub Autofix and GitLab remediation integrations.
+func integrationsURL() string {
+	return config.GetDashboardURL() + "/configuration/integrations"
+}
+
+// mapRemediateAPIError turns backend 422 detail codes into actionable
+// CLIErrors. `scm` is the SCM detected from the finding so suggestions can
+// be SCM-specific; pass scmUnknown when it isn't known yet.
+func mapRemediateAPIError(err error, findingID string, scm scmType) *clierrors.CLIError {
 	if cliErr, ok := err.(*clierrors.CLIError); ok {
 		return cliErr
 	}
@@ -102,6 +153,14 @@ func mapRemediateAPIError(err error, findingID string) *clierrors.CLIError {
 		return clierrors.NewAPIError(err.Error())
 	}
 	detail := extractAPIErrorDetail(apiErr.Message)
+
+	// The gitlab-specific detail tells us SCM even when the finding didn't.
+	if detail == "autofix_repo_not_covered_gitlab" {
+		scm = scmGitLab
+	} else if detail == "autofix_repo_not_covered" {
+		scm = scmGitHub
+	}
+
 	switch {
 	case apiErr.StatusCode == 404:
 		return &clierrors.CLIError{
@@ -113,26 +172,47 @@ func mapRemediateAPIError(err error, findingID string) *clierrors.CLIError {
 	case detail == "autofix_integration_missing":
 		return &clierrors.CLIError{
 			Code:       "REMEDIATE_INTEGRATION_MISSING",
-			Message:    "No remediation integration is installed for this company",
-			Suggestion: "Install the Konvu Autofix GitHub App (or the GitLab remediation integration) and retry.",
+			Message:    fmt.Sprintf("No remediation integration is installed for %s", scm.label()),
+			Suggestion: installSuggestion(scm),
 			ExitCode:   clierrors.ExitGeneralError,
 		}
-	case detail == "autofix_repo_not_covered":
+	case detail == "autofix_repo_not_covered" || detail == "autofix_repo_not_covered_gitlab":
 		return &clierrors.CLIError{
 			Code:       "REMEDIATE_REPO_NOT_COVERED",
-			Message:    "Remediation integration is installed but does not cover this repository",
-			Suggestion: "Grant the Konvu Autofix GitHub App access to this repository, then retry.",
-			ExitCode:   clierrors.ExitGeneralError,
-		}
-	case detail == "autofix_repo_not_covered_gitlab":
-		return &clierrors.CLIError{
-			Code:       "REMEDIATE_REPO_NOT_COVERED",
-			Message:    "Remediation integration is installed but does not cover this repository",
-			Suggestion: "Grant the Konvu Autofix GitLab integration access to this repository, then retry.",
+			Message:    fmt.Sprintf("%s remediation integration is installed but does not cover this repository", scm.label()),
+			Suggestion: coverageSuggestion(scm),
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	default:
 		return clierrors.NewAPIError(apiErr.Message)
+	}
+}
+
+// installSuggestion returns the install-link text shown when no remediation
+// integration is configured for the company.
+func installSuggestion(scm scmType) string {
+	url := integrationsURL()
+	switch scm {
+	case scmGitHub:
+		return fmt.Sprintf("Install the Konvu Autofix GitHub App from %s, then retry.", url)
+	case scmGitLab:
+		return fmt.Sprintf("Install the Konvu GitLab remediation integration from %s, then retry.", url)
+	default:
+		return fmt.Sprintf("Install a remediation integration from %s (GitHub Autofix App or GitLab integration), then retry.", url)
+	}
+}
+
+// coverageSuggestion returns the link text shown when the integration exists
+// but doesn't cover the repository this finding lives in.
+func coverageSuggestion(scm scmType) string {
+	url := integrationsURL()
+	switch scm {
+	case scmGitHub:
+		return fmt.Sprintf("Grant the Konvu Autofix GitHub App access to this repository (manage at %s), then retry.", url)
+	case scmGitLab:
+		return fmt.Sprintf("Add this repository to the Konvu GitLab remediation integration (manage at %s), then retry.", url)
+	default:
+		return fmt.Sprintf("Grant the remediation integration access to this repository (manage at %s), then retry.", url)
 	}
 }
 
@@ -198,9 +278,9 @@ func runRemediateTrigger(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 
-	mlID, vulnID, err := resolveFindingTarget(client, findingID)
+	mlID, vulnID, scm, err := resolveFindingTarget(client, findingID)
 	if err != nil {
-		reportRemediateError(mapRemediateAPIError(err, findingID), format)
+		reportRemediateError(mapRemediateAPIError(err, findingID, scm), format)
 		return nil
 	}
 
@@ -218,7 +298,7 @@ func runRemediateTrigger(cmd *cobra.Command, args []string) error {
 
 	resp, err := client.Post(triggerPath, nil)
 	if err != nil {
-		reportRemediateError(mapRemediateAPIError(err, findingID), format)
+		reportRemediateError(mapRemediateAPIError(err, findingID, scm), format)
 		return nil
 	}
 
@@ -239,7 +319,7 @@ func runRemediateTrigger(cmd *cobra.Command, args []string) error {
 		statusParams.Set("vulnerability_id", vulnID)
 		final, waitErr := pollRemediateStatus(client, statusParams, timeout, interval, format)
 		if waitErr != nil {
-			reportRemediateError(mapRemediateAPIError(waitErr, findingID), format)
+			reportRemediateError(mapRemediateAPIError(waitErr, findingID, scm), format)
 			return nil
 		}
 		result["status"] = final
@@ -286,9 +366,9 @@ func runRemediateStatus(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 
-	mlID, vulnID, err := resolveFindingTarget(client, findingID)
+	mlID, vulnID, scm, err := resolveFindingTarget(client, findingID)
 	if err != nil {
-		reportRemediateError(mapRemediateAPIError(err, findingID), format)
+		reportRemediateError(mapRemediateAPIError(err, findingID, scm), format)
 		return nil
 	}
 
@@ -303,7 +383,7 @@ func runRemediateStatus(cmd *cobra.Command, args []string) error {
 		status, err = fetchRemediateStatus(client, params)
 	}
 	if err != nil {
-		reportRemediateError(mapRemediateAPIError(err, findingID), format)
+		reportRemediateError(mapRemediateAPIError(err, findingID, scm), format)
 		return nil
 	}
 
