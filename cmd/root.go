@@ -71,6 +71,8 @@ const helpAllFooter = `EXAMPLES
   konvu vuln CVE-2024-1234 --include technical
   konvu metrics --since 90d --include trends --compare previous_period
   konvu dismiss --assessment false-positive --repo org/repo --dry-run
+  konvu remediate abc-123 --wait --timeout 15m
+  konvu remediate status abc-123
 
 OUTPUT FORMATS
   Most commands support: -o json (structured), -o table (human), -o csv (finding list only)

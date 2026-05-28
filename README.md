@@ -234,6 +234,37 @@ konvu dismiss --assessment false-positive --severity low --dry-run
 konvu dismiss --assessment false-positive --severity low --reason "Accepted risk"
 ```
 
+### `konvu remediate` — Trigger an auto-fix PR
+
+Asks Konvu to open a remediation pull request for a finding. The job runs
+asynchronously inside the on-prem controller (patcheus engine); poll status
+with `--wait` or `konvu remediate status`.
+
+Works with both **GitHub** (Konvu Autofix GitHub App) and **GitLab** (Konvu
+remediation integration) — the CLI detects which SCM your finding lives in
+from the repository URL and points you at the right install flow if a
+required integration is missing.
+
+```bash
+# Trigger remediation (top-level alias for `konvu remediate run`)
+konvu remediate <finding-id>
+
+# Trigger and wait until the job reaches a terminal status
+konvu remediate <finding-id> --wait --timeout 15m
+
+# Include a ticket/source URL in the PR description
+konvu remediate <finding-id> --source-url https://linear.app/konvu/issue/SEC-42
+
+# Check status without triggering (returns null if no job has run)
+konvu remediate status <finding-id>
+
+# Backward-compatible alias
+konvu autofix <finding-id>
+```
+
+Terminal job statuses: `succeeded`, `failed`, `merged`, `closed`. Non-terminal:
+`pending`, `running`.
+
 ### `konvu skills path` — Locate bundled skills
 
 Returns the path to the bundled Claude Code skills directory. Useful for configuring your AI assistant.
@@ -323,6 +354,7 @@ Filter by assessment: `--assessment exploitable`, combine with severity: `--seve
 |---|---|---|
 | `KONVU_ACCESS_TOKEN` | — | API key or access token (alternative to `konvu login`) |
 | `KONVU_API_URL` | `https://api.konvu.com` | API base URL |
+| `KONVU_APP_URL` | `https://app.konvu.com` | Dashboard URL (used in `konvu remediate` install-link suggestions) |
 | `KONVU_ZITADEL_DOMAIN` | `https://auth.konvu.com` | OAuth provider |
 | `KONVU_ZITADEL_CLIENT_ID` | — | OAuth client ID (required for OAuth login) |
 
