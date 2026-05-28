@@ -5,7 +5,7 @@ import (
 )
 
 func TestRootCommandHasSubcommands(t *testing.T) {
-	expected := []string{"auth", "finding", "vuln", "metrics", "dismiss", "version", "skills",
+	expected := []string{"auth", "finding", "vuln", "metrics", "dismiss", "remediate", "version", "skills",
 		"whoami", "login", "logout", "help-all"}
 	for _, name := range expected {
 		found := false

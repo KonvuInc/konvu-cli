@@ -234,6 +234,35 @@ konvu dismiss --assessment false-positive --severity low --dry-run
 konvu dismiss --assessment false-positive --severity low --reason "Accepted risk"
 ```
 
+### `konvu remediate` — Trigger an auto-fix PR
+
+Asks Konvu to open a remediation pull request for a finding. The job runs
+asynchronously inside the on-prem controller (patcheus engine); poll status
+with `--wait` or `konvu remediate status`.
+
+Requires the **Konvu Autofix GitHub App** (or the GitLab equivalent) to be
+installed on the affected repository.
+
+```bash
+# Trigger remediation (top-level alias for `konvu remediate run`)
+konvu remediate <finding-id>
+
+# Trigger and wait until the job reaches a terminal status
+konvu remediate <finding-id> --wait --timeout 15m
+
+# Include a ticket/source URL in the PR description
+konvu remediate <finding-id> --source-url https://linear.app/konvu/issue/SEC-42
+
+# Check status without triggering (returns null if no job has run)
+konvu remediate status <finding-id>
+
+# Backward-compatible alias
+konvu autofix <finding-id>
+```
+
+Terminal job statuses: `succeeded`, `failed`, `merged`, `closed`. Non-terminal:
+`pending`, `running`.
+
 ### `konvu skills path` — Locate bundled skills
 
 Returns the path to the bundled Claude Code skills directory. Useful for configuring your AI assistant.
