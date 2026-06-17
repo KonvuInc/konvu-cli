@@ -172,25 +172,44 @@ func runCoverageEnable(cmd *cobra.Command, args []string) error {
 	repos, defaultSevs := fetchCoverage(client, format)
 	ids := resolveRepoIDsOrExit(repos, args, format)
 
-	// Without explicit --severities, start the repo on the company default
-	// (mirrors the dashboard). The default may be null (= all) or, if an admin
-	// stored one, an empty array — coerce that to null so we never PATCH the
-	// forbidden empty list (server 422).
-	var sevVal any = normalizeDefaultSeverities(defaultSevs)
-	if len(severities) > 0 {
-		sevVal = normalizeSeveritiesOrExit(severities, format)
+	enabledByID := map[string]bool{}
+	for _, r := range repos {
+		if m, ok := r.(map[string]any); ok {
+			b, _ := getBool(m, "assessment_enabled")
+			enabledByID[getStr(m, "id")] = b
+		}
 	}
 
-	items := make([]map[string]any, 0, len(ids))
-	for _, id := range ids {
-		items = append(items, map[string]any{
-			"repository_id":         id,
-			"assessment_enabled":    true,
-			"assessment_severities": sevVal,
-		})
+	var explicit any
+	hasExplicit := len(severities) > 0
+	if hasExplicit {
+		explicit = normalizeSeveritiesOrExit(severities, format)
 	}
+	// Empty admin-stored default coerces to nil so we never PATCH [] (422).
+	defaultSev := normalizeDefaultSeverities(defaultSevs)
+
+	items := buildEnableItems(ids, enabledByID, hasExplicit, explicit, defaultSev)
 	applyCoverage(client, items, dryRun, format, "enable")
 	return nil
+}
+
+// buildEnableItems builds the PATCH items for `enable`. Severities are written
+// only when the user passed --severities (applies to all targets), or, absent
+// that, when a repo is currently DISABLED — an off->on transition starts it on
+// the company default, mirroring the dashboard. Already-enabled repos get only
+// assessment_enabled, leaving any per-repo override untouched (no silent reset).
+func buildEnableItems(ids []string, enabledByID map[string]bool, hasExplicit bool, explicit, defaultSev any) []map[string]any {
+	items := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		item := map[string]any{"repository_id": id, "assessment_enabled": true}
+		if hasExplicit {
+			item["assessment_severities"] = explicit
+		} else if !enabledByID[id] {
+			item["assessment_severities"] = defaultSev
+		}
+		items = append(items, item)
+	}
+	return items
 }
 
 func runCoverageDisable(cmd *cobra.Command, args []string) error {

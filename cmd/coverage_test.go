@@ -89,6 +89,39 @@ func TestResolveSeverityValue(t *testing.T) {
 	}
 }
 
+func TestBuildEnableItems(t *testing.T) {
+	enabledByID := map[string]bool{"on": true, "off": false}
+
+	// No --severities: only the currently-disabled repo is seeded with the
+	// default; the already-enabled repo keeps its severities (key omitted).
+	items := buildEnableItems([]string{"on", "off"}, enabledByID, false, nil, []string{"CRITICAL"})
+	for _, it := range items {
+		if it["assessment_enabled"] != true {
+			t.Errorf("%v: assessment_enabled should be true", it)
+		}
+	}
+	if _, present := items[0]["assessment_severities"]; present {
+		t.Errorf("already-enabled repo must NOT carry assessment_severities (silent reset): %v", items[0])
+	}
+	if got, present := items[1]["assessment_severities"]; !present || !reflect.DeepEqual(got, []string{"CRITICAL"}) {
+		t.Errorf("disabled repo should be seeded with default, got present=%v val=%v", present, got)
+	}
+
+	// Explicit --severities: applied to every target regardless of state.
+	items = buildEnableItems([]string{"on", "off"}, enabledByID, true, []string{"HIGH"}, nil)
+	for _, it := range items {
+		if got := it["assessment_severities"]; !reflect.DeepEqual(got, []string{"HIGH"}) {
+			t.Errorf("explicit severities should apply to all, got %v", got)
+		}
+	}
+
+	// Default is nil (all): disabled repo gets explicit null (key present, nil).
+	items = buildEnableItems([]string{"off"}, enabledByID, false, nil, nil)
+	if got, present := items[0]["assessment_severities"]; !present || got != nil {
+		t.Errorf("disabled repo with nil default should send null, got present=%v val=%v", present, got)
+	}
+}
+
 func TestNormalizeDefaultSeverities(t *testing.T) {
 	// nil/null stays nil (= all severities)
 	if got := normalizeDefaultSeverities(nil); got != nil {
