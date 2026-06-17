@@ -89,6 +89,25 @@ func TestResolveSeverityValue(t *testing.T) {
 	}
 }
 
+func TestNormalizeDefaultSeverities(t *testing.T) {
+	// nil/null stays nil (= all severities)
+	if got := normalizeDefaultSeverities(nil); got != nil {
+		t.Errorf("nil -> %v, want nil", got)
+	}
+	// empty array (e.g. admin-stored) is coerced to nil so we never PATCH []
+	if got := normalizeDefaultSeverities([]any{}); got != nil {
+		t.Errorf("empty []any -> %v, want nil", got)
+	}
+	if got := normalizeDefaultSeverities([]string{}); got != nil {
+		t.Errorf("empty []string -> %v, want nil", got)
+	}
+	// non-empty passes through unchanged
+	in := []any{"CRITICAL", "HIGH"}
+	if got := normalizeDefaultSeverities(in); !reflect.DeepEqual(got, in) {
+		t.Errorf("non-empty -> %v, want %v", got, in)
+	}
+}
+
 func TestSeveritiesDisplay(t *testing.T) {
 	cases := []struct {
 		in   any

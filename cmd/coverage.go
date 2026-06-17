@@ -130,14 +130,31 @@ func runCoverageList(cmd *cobra.Command, args []string) error {
 			"severities": severitiesDisplay(m["assessment_severities"]),
 		})
 	}
-	fmt.Println(output.FormatTable(
-		map[string]any{"repositories": rows},
-		[]string{"repository", "assessment", "severities"},
-		"repositories",
-		nil,
-	))
+	columns := []string{"repository", "assessment", "severities"}
+	if format == output.CSV {
+		fmt.Print(output.FormatCSV(map[string]any{"repositories": rows}, columns, "repositories"))
+		return nil
+	}
+	fmt.Println(output.FormatTable(map[string]any{"repositories": rows}, columns, "repositories", nil))
 	fmt.Printf("Default severities: %s\n", severitiesDisplay(defaultSevs))
 	return nil
+}
+
+// normalizeDefaultSeverities coerces an empty severity array to nil so callers
+// never forward the forbidden empty list (the API 422s on []); nil/null and a
+// non-empty list pass through unchanged.
+func normalizeDefaultSeverities(v any) any {
+	switch t := v.(type) {
+	case []any:
+		if len(t) == 0 {
+			return nil
+		}
+	case []string:
+		if len(t) == 0 {
+			return nil
+		}
+	}
+	return v
 }
 
 func runCoverageEnable(cmd *cobra.Command, args []string) error {
@@ -156,8 +173,10 @@ func runCoverageEnable(cmd *cobra.Command, args []string) error {
 	ids := resolveRepoIDsOrExit(repos, args, format)
 
 	// Without explicit --severities, start the repo on the company default
-	// (mirrors the dashboard). default_severities may be null (= all).
-	var sevVal any = defaultSevs
+	// (mirrors the dashboard). The default may be null (= all) or, if an admin
+	// stored one, an empty array — coerce that to null so we never PATCH the
+	// forbidden empty list (server 422).
+	var sevVal any = normalizeDefaultSeverities(defaultSevs)
 	if len(severities) > 0 {
 		sevVal = normalizeSeveritiesOrExit(severities, format)
 	}
