@@ -241,3 +241,69 @@ func (c *Client) Post(path string, data map[string]any) (map[string]any, error) 
 	}
 	return result, nil
 }
+
+// Patch sends a PATCH request. data may be any JSON-serializable value —
+// the assessment_config endpoint takes a top-level array, which map[string]any
+// cannot represent — so the response is decoded into a generic value.
+func (c *Client) Patch(path string, data any) (any, error) {
+	return c.sendBody("PATCH", path, data)
+}
+
+// Put sends a PUT request with a JSON object body.
+func (c *Client) Put(path string, data map[string]any) (map[string]any, error) {
+	result, err := c.sendBody("PUT", path, data)
+	if err != nil {
+		return nil, err
+	}
+	m, _ := result.(map[string]any)
+	return m, nil
+}
+
+// sendBody issues a request with a JSON body and decodes the response into a
+// generic value (object or array). Shared by Patch and Put.
+func (c *Client) sendBody(method, path string, data any) (any, error) {
+	reqURL := c.baseURL + path
+
+	var body io.Reader
+	if data != nil {
+		b, err := json.Marshal(data)
+		if err != nil {
+			return nil, err
+		}
+		body = bytes.NewReader(b)
+	}
+
+	req, err := http.NewRequest(method, reqURL, body)
+	if err != nil {
+		return nil, err
+	}
+
+	auth, err := c.authHeader()
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", auth)
+	if data != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if err := c.checkResponse(resp); err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == 204 {
+		return nil, nil
+	}
+
+	var result any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}

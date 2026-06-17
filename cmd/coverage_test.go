@@ -1,0 +1,159 @@
+package cmd
+
+import (
+	"reflect"
+	"testing"
+)
+
+func coverageRepoFixture() []any {
+	return []any{
+		map[string]any{"id": "id-a", "url": "github:org/alpha"},
+		map[string]any{"id": "id-b", "url": "github:org/beta"},
+		map[string]any{"id": "id-c", "url": "gitlab:org/alpha-tools"},
+	}
+}
+
+func TestResolveRepoIDs(t *testing.T) {
+	repos := coverageRepoFixture()
+	cases := []struct {
+		name string
+		args []string
+		want []string
+		err  bool
+	}{
+		{"by id", []string{"id-b"}, []string{"id-b"}, false},
+		{"by exact url", []string{"github:org/beta"}, []string{"id-b"}, false},
+		{"by unique substring", []string{"beta"}, []string{"id-b"}, false},
+		{"multiple", []string{"id-a", "github:org/beta"}, []string{"id-a", "id-b"}, false},
+		{"dedup", []string{"id-a", "github:org/alpha"}, []string{"id-a"}, false},
+		{"ambiguous substring", []string{"alpha"}, nil, true},
+		{"missing", []string{"nope"}, nil, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := resolveRepoIDs(repos, c.args)
+			if c.err {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeSeverities(t *testing.T) {
+	got, err := normalizeSeverities([]string{"critical", "Medium", "HIGH", "medium"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"CRITICAL", "MODERATE", "HIGH"} // upper, MEDIUM->MODERATE, dedup, order kept
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	if _, err := normalizeSeverities([]string{"bogus"}); err == nil {
+		t.Error("expected error for invalid severity")
+	}
+	if _, err := normalizeSeverities(nil); err == nil {
+		t.Error("expected error for empty input")
+	}
+}
+
+func TestResolveSeverityValue(t *testing.T) {
+	// --all -> nil value (JSON null = all), no error
+	if v, err := resolveSeverityValue(nil, true); err != nil || v != nil {
+		t.Errorf("all: got (%v, %v), want (nil, nil)", v, err)
+	}
+	// --set -> normalized list
+	v, err := resolveSeverityValue([]string{"high"}, false)
+	if err != nil {
+		t.Fatalf("set: unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual(v, []string{"HIGH"}) {
+		t.Errorf("set: got %v, want [HIGH]", v)
+	}
+	// neither -> error (never send empty [])
+	if _, err := resolveSeverityValue(nil, false); err == nil {
+		t.Error("expected error when neither --set nor --all given")
+	}
+	// both -> error
+	if _, err := resolveSeverityValue([]string{"high"}, true); err == nil {
+		t.Error("expected error when both --set and --all given")
+	}
+}
+
+func TestBuildEnableItems(t *testing.T) {
+	enabledByID := map[string]bool{"on": true, "off": false}
+
+	// No --severities: only the currently-disabled repo is seeded with the
+	// default; the already-enabled repo keeps its severities (key omitted).
+	items := buildEnableItems([]string{"on", "off"}, enabledByID, false, nil, []string{"CRITICAL"})
+	for _, it := range items {
+		if it["assessment_enabled"] != true {
+			t.Errorf("%v: assessment_enabled should be true", it)
+		}
+	}
+	if _, present := items[0]["assessment_severities"]; present {
+		t.Errorf("already-enabled repo must NOT carry assessment_severities (silent reset): %v", items[0])
+	}
+	if got, present := items[1]["assessment_severities"]; !present || !reflect.DeepEqual(got, []string{"CRITICAL"}) {
+		t.Errorf("disabled repo should be seeded with default, got present=%v val=%v", present, got)
+	}
+
+	// Explicit --severities: applied to every target regardless of state.
+	items = buildEnableItems([]string{"on", "off"}, enabledByID, true, []string{"HIGH"}, nil)
+	for _, it := range items {
+		if got := it["assessment_severities"]; !reflect.DeepEqual(got, []string{"HIGH"}) {
+			t.Errorf("explicit severities should apply to all, got %v", got)
+		}
+	}
+
+	// Default is nil (all): disabled repo gets explicit null (key present, nil).
+	items = buildEnableItems([]string{"off"}, enabledByID, false, nil, nil)
+	if got, present := items[0]["assessment_severities"]; !present || got != nil {
+		t.Errorf("disabled repo with nil default should send null, got present=%v val=%v", present, got)
+	}
+}
+
+func TestNormalizeDefaultSeverities(t *testing.T) {
+	// nil/null stays nil (= all severities)
+	if got := normalizeDefaultSeverities(nil); got != nil {
+		t.Errorf("nil -> %v, want nil", got)
+	}
+	// empty array (e.g. admin-stored) is coerced to nil so we never PATCH []
+	if got := normalizeDefaultSeverities([]any{}); got != nil {
+		t.Errorf("empty []any -> %v, want nil", got)
+	}
+	if got := normalizeDefaultSeverities([]string{}); got != nil {
+		t.Errorf("empty []string -> %v, want nil", got)
+	}
+	// non-empty passes through unchanged
+	in := []any{"CRITICAL", "HIGH"}
+	if got := normalizeDefaultSeverities(in); !reflect.DeepEqual(got, in) {
+		t.Errorf("non-empty -> %v, want %v", got, in)
+	}
+}
+
+func TestSeveritiesDisplay(t *testing.T) {
+	cases := []struct {
+		in   any
+		want string
+	}{
+		{nil, "all"},
+		{[]any{}, "all"},
+		{[]any{"CRITICAL", "MODERATE"}, "Critical, Medium"},
+		{[]string{"LOW"}, "Low"},
+	}
+	for _, c := range cases {
+		if got := severitiesDisplay(c.in); got != c.want {
+			t.Errorf("severitiesDisplay(%v) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

@@ -265,6 +265,35 @@ konvu autofix <finding-id>
 Terminal job statuses: `succeeded`, `failed`, `merged`, `closed`. Non-terminal:
 `pending`, `running`.
 
+### `konvu coverage` — Configure where AI Assessment runs
+
+Control which repositories the agents assess and at which severities. Repositories are identified by URL, id, or a unique URL substring.
+
+```bash
+# List repositories and their coverage (bare `konvu coverage` also lists)
+konvu coverage list
+
+# Enable AI Assessment on a repository (starts on the company default severities)
+konvu coverage enable github:org/repo
+
+# Enable scoped to specific severities
+konvu coverage enable org/repo --severities CRITICAL,HIGH
+
+# Disable AI Assessment
+konvu coverage disable org/repo
+
+# Change the severities assessed for a repository
+konvu coverage severities org/repo --set CRITICAL,HIGH
+konvu coverage severities org/repo --all          # assess every severity
+
+# Show or set the company-wide default new repositories inherit
+konvu coverage default
+konvu coverage default --set CRITICAL,HIGH
+konvu coverage default --all
+```
+
+Severities are `CRITICAL`, `HIGH`, `MEDIUM` (alias for `MODERATE`), `LOW`. `--all` clears the restriction (assess every severity); an empty set is rejected. Use `--dry-run` on `enable`/`disable`/`severities` to preview.
+
 ### `konvu skills path` — Locate bundled skills
 
 Returns the path to the bundled Claude Code skills directory. Useful for configuring your AI assistant.
