@@ -184,6 +184,31 @@ konvu finding rate <id> disagree --comment "Only used in test environment"
 konvu finding rate <id> agree --recommendation-id <rec-id>
 ```
 
+### `konvu finding submit` — Ingest findings from another scanner
+
+Push SCA findings you already have (e.g. a Snyk or Dependabot export) into Konvu
+for triage. Reads a JSON array of findings from `--file` (or stdin with `-`) and
+submits them against `--repo`. Re-submitting a finding updates it rather than
+duplicating; on a Konvu-connected, scanned repo the findings flow into AI triage
+automatically.
+
+```bash
+# Submit an export against a repo's default branch
+konvu finding submit --repo github:acme/web --file snyk-findings.json
+
+# Target a specific branch or tag
+konvu finding submit --repo github:acme/web --ref release-2.3 --file findings.json
+
+# Pipe findings in and preview without submitting
+cat findings.json | konvu finding submit --repo github:acme/web --file - --dry-run
+```
+
+Each finding object accepts `vulnerability_id`, `manifest_location`, and
+`dependency_name` (required), plus optional `dependency_version`,
+`dependency_ecosystem`, `source`, `state`, and `transitivity`. Every item is
+processed independently and reported back as created / updated / accepted_unmapped
+/ rejected (with a reason); a submission where every item is rejected exits `1`.
+
 ### `konvu finding counts` — Assessment metrics
 
 Get accurate counts across your entire dataset, with optional breakdowns.

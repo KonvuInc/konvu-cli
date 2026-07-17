@@ -67,6 +67,7 @@ const helpAllFooter = `EXAMPLES
   konvu finding list --source snyk
   konvu finding get abc-123 --include evidence --include logs
   konvu finding rate abc-123 agree --comment "Confirmed exploitable"
+  konvu finding submit --repo github:org/repo --file snyk-findings.json
   konvu finding counts --group-by severity
   konvu vuln CVE-2024-1234 --include technical
   konvu metrics --since 90d --include trends --compare previous_period
