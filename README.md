@@ -290,6 +290,29 @@ konvu autofix <finding-id>
 Terminal job statuses: `succeeded`, `failed`, `merged`, `closed`. Non-terminal:
 `pending`, `running`.
 
+### `konvu remediate brief` — Brief your own coding agent
+
+Fetches one or more remediation plans and prints a ready-to-use agent prompt:
+the packages to upgrade, where they live (repository, branch, manifest), the
+findings each bump resolves, and Konvu's assessment of why they matter.
+
+Plan ids come from the Konvu dashboard's remediation board — the
+**Copy CLI command** actions put the full command on your clipboard.
+
+```bash
+# Print the agent prompt for a plan
+konvu remediate brief <plan-id>
+
+# Several plans at once (prompts separated by `---`)
+konvu remediate brief <plan-id-1> <plan-id-2>
+
+# Pipe straight into a coding agent
+konvu remediate brief <plan-id> | claude -p
+
+# Full structured payload instead of the prompt
+konvu remediate brief <plan-id> --output json
+```
+
 ### `konvu coverage` — Configure where AI Assessment runs
 
 Control which repositories the agents assess and at which severities. Repositories are identified by URL, id, or a unique URL substring.
