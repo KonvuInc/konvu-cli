@@ -782,6 +782,50 @@ func writeRuntimeObservation(b *strings.Builder, label string, observation map[s
 	fmt.Fprintf(b, "  %s observed: %s\n", label, line)
 }
 
+func checklistItemText(item map[string]any) string {
+	var b strings.Builder
+	status := strings.ToUpper(orDefault(getStr(item, "status"), "?"))
+	fmt.Fprintf(&b, "\n  [%s] %s\n", status, getStr(item, "description"))
+	if conclusion := getStr(item, "conclusion"); conclusion != "" {
+		fmt.Fprintf(&b, "  Conclusion: %s\n", conclusion)
+	}
+
+	if steps := getSlice(item, "investigation_steps"); len(steps) > 0 {
+		b.WriteString("\n  Investigation steps:\n")
+		for _, raw := range steps {
+			step, _ := raw.(string)
+			fmt.Fprintf(&b, "    - %s\n", step)
+		}
+	}
+
+	if proofs := getSlice(item, "proofs"); len(proofs) > 0 {
+		b.WriteString("\n  Proofs:\n")
+		for _, raw := range proofs {
+			proof, _ := raw.(map[string]any)
+			loc := getStr(proof, "file")
+			if line := proof["line"]; line != nil {
+				loc += fmt.Sprintf(":%v", line)
+			}
+			fmt.Fprintf(&b, "    %s\n", loc)
+			if code := getStr(proof, "code"); code != "" {
+				writeIndentedLines(&b, "        ", code)
+			}
+			if comment := getStr(proof, "comment"); comment != "" {
+				writeIndentedLines(&b, "      ", "# "+comment)
+			}
+		}
+	}
+	return b.String()
+}
+
+func writeIndentedLines(b *strings.Builder, indent, text string) {
+	for _, line := range strings.Split(text, "\n") {
+		b.WriteString(indent)
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+}
+
 var findingGetCmd = &cobra.Command{
 	Use:   "get [finding-id]",
 	Short: "Get detailed information about a finding",
@@ -907,29 +951,7 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 				fmt.Println("\n--- Checklist ---")
 				for _, itemRaw := range checklistData {
 					item, _ := itemRaw.(map[string]any)
-					itemStatus := strings.ToUpper(orDefault(getStr(item, "status"), "?"))
-					fmt.Printf("\n  [%s] %s\n", itemStatus, getStr(item, "description"))
-					if conclusion := getStr(item, "conclusion"); conclusion != "" {
-						fmt.Printf("  Conclusion: %s\n", conclusion)
-					}
-					for _, stepRaw := range getSlice(item, "investigation_steps") {
-						step, _ := stepRaw.(string)
-						fmt.Printf("    - %s\n", step)
-					}
-					for _, proofRaw := range getSlice(item, "proofs") {
-						proof, _ := proofRaw.(map[string]any)
-						loc := getStr(proof, "file")
-						if line := proof["line"]; line != nil {
-							loc += fmt.Sprintf(":%v", line)
-						}
-						fmt.Printf("    %s\n", loc)
-						if code := getStr(proof, "code"); code != "" {
-							fmt.Printf("      %s\n", code)
-						}
-						if comment := getStr(proof, "comment"); comment != "" {
-							fmt.Printf("      # %s\n", comment)
-						}
-					}
+					fmt.Print(checklistItemText(item))
 				}
 			}
 
