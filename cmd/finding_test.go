@@ -2,8 +2,6 @@ package cmd
 
 import "testing"
 
-// sampleFindingDetail mirrors the real /sca_findings/{id} response shape:
-// evidence is nested under assessment.details.*, NOT a top-level "analyses".
 func sampleFindingDetail() map[string]any {
 	return map[string]any{
 		"id":            "fid-1",
@@ -50,8 +48,6 @@ func sampleFindingDetail() map[string]any {
 	}
 }
 
-// getSlice must accept the []map[string]any slices the result map is built
-// from, not just []any, or the table renderer reads back an empty checklist.
 func TestGetSliceAcceptsMapSlice(t *testing.T) {
 	m := map[string]any{
 		"anyslice": []any{1, 2, 3},
@@ -69,15 +65,11 @@ func TestGetSliceAcceptsMapSlice(t *testing.T) {
 	}
 }
 
-// With evidence, the checklist, proofs, investigation steps, carto stack entry,
-// and runtime reachability must all be pulled from assessment.details.*.
-// This fails if the extraction reads a top-level "analyses" object.
 func TestBuildFindingResultEvidence(t *testing.T) {
 	result := buildFindingResult(sampleFindingDetail(), true)
 
 	assessment := getMap(result, "assessment")
 	checklist := getSlice(assessment, "checklist")
-	// carto stack entry is prepended, so: [stack, ai_assessment item]
 	if len(checklist) != 2 {
 		t.Fatalf("checklist items: got %d, want 2", len(checklist))
 	}
@@ -109,8 +101,6 @@ func TestBuildFindingResultEvidence(t *testing.T) {
 	}
 }
 
-// Without evidence, the checklist entry carries no proofs/steps and there is
-// no reachability block, but the base sections still populate.
 func TestBuildFindingResultNoEvidence(t *testing.T) {
 	result := buildFindingResult(sampleFindingDetail(), false)
 

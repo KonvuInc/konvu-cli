@@ -612,15 +612,6 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 
 // --- finding get ---
 
-// buildFindingResult assembles the structured result map the `finding get`
-// renderers (JSON and table) consume from a /sca_findings/{id} response.
-//
-// Evidence lives under assessment.details.* in the API response, NOT under a
-// top-level "analyses" object: the AI checklist + proofs come from
-// assessment.details.ai_assessment, dependency-stack applicability from
-// assessment.details.environment_analysis.evidence, and runtime reachability
-// from assessment.details.runtime_reachability. Checklist proofs, investigation
-// steps, and reachability are only pulled in when includeEvidence is set.
 func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]any {
 	vuln := getMap(detail, "vulnerability")
 	ml := getMap(detail, "manifest_location")
@@ -660,7 +651,6 @@ func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]
 		checklistItems = append(checklistItems, entry)
 	}
 
-	// Carto evidence
 	carto := getMap(getMap(details, "environment_analysis"), "evidence")
 	cartoApplicable := carto["applicable"]
 	cartoSummary := getStr(carto, "summary")
@@ -689,7 +679,6 @@ func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]
 			"status":      "completed",
 			"conclusion":  conclusion,
 		}
-		// Insert at beginning
 		checklistItems = append([]map[string]any{stackEntry}, checklistItems...)
 	}
 
@@ -699,7 +688,6 @@ func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]
 		"checklist": checklistItems,
 	}
 
-	// --- Finding section ---
 	source := getMap(detail, "source")
 	findingSection := map[string]any{
 		"id":         getStr(detail, "id"),
@@ -712,7 +700,6 @@ func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]
 		"first_seen": getStr(source, "remote_created_at"),
 	}
 
-	// --- Vulnerability section ---
 	vulnSection := map[string]any{
 		"cve":      getStr(vuln, "id"),
 		"aliases":  getSlice(vuln, "aliases"),
