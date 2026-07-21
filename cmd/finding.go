@@ -723,6 +723,65 @@ func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]
 	return result
 }
 
+func runtimeReachabilityText(reach map[string]any) string {
+	status := getStr(reach, "status")
+	errMsg := getStr(reach, "error")
+	if status == "" && errMsg == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\n--- Runtime Reachability ---\n")
+
+	switch status {
+	case "completed":
+		if observed, _ := getBool(reach, "has_findings"); observed {
+			b.WriteString("Vulnerable dependency/function observed at runtime: yes\n")
+		} else {
+			b.WriteString("Vulnerable dependency/function observed at runtime: no\n")
+		}
+	case "not_installed":
+		b.WriteString("Status: runtime sensor not installed\n")
+	case "no_data":
+		b.WriteString("Status: no runtime data collected yet\n")
+	default:
+		if status != "" {
+			fmt.Fprintf(&b, "Status: %s\n", strings.ToUpper(status))
+		}
+	}
+
+	if summary := getStr(reach, "summary"); summary != "" {
+		fmt.Fprintf(&b, "%s\n", summary)
+	}
+
+	findings := getMap(reach, "findings")
+	writeRuntimeObservation(&b, "Dependency", getMap(findings, "dependency"))
+	writeRuntimeObservation(&b, "Function", getMap(findings, "function"))
+
+	if errMsg != "" {
+		fmt.Fprintf(&b, "Error: %s\n", errMsg)
+	}
+	return b.String()
+}
+
+func writeRuntimeObservation(b *strings.Builder, label string, observation map[string]any) {
+	rec := getMap(observation, "last")
+	if len(rec) == 0 {
+		rec = getMap(observation, "first")
+	}
+	if len(rec) == 0 {
+		return
+	}
+	line := getStr(rec, "name")
+	if v := getStr(rec, "version"); v != "" {
+		line += "@" + v
+	}
+	if callSite := getStr(rec, "call_site"); callSite != "" {
+		line += " (" + callSite + ")"
+	}
+	fmt.Fprintf(b, "  %s observed: %s\n", label, line)
+}
+
 var findingGetCmd = &cobra.Command{
 	Use:   "get [finding-id]",
 	Short: "Get detailed information about a finding",
@@ -874,23 +933,8 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 				}
 			}
 
-			// --- Runtime Reachability ---
-			if reach := getMap(a, "reachability"); len(reach) > 0 {
-				reachStatus := getStr(reach, "status")
-				reachSummary := getStr(reach, "summary")
-				reachError := getStr(reach, "error")
-				if reachStatus != "" || reachSummary != "" || reachError != "" {
-					fmt.Println("\n--- Runtime Reachability ---")
-					if reachStatus != "" {
-						fmt.Printf("Status: %s\n", strings.ToUpper(reachStatus))
-					}
-					if reachSummary != "" {
-						fmt.Printf("%s\n", reachSummary)
-					}
-					if reachError != "" {
-						fmt.Printf("Error: %s\n", reachError)
-					}
-				}
+			if txt := runtimeReachabilityText(getMap(a, "reachability")); txt != "" {
+				fmt.Print(txt)
 			}
 
 			// --- Finding ---

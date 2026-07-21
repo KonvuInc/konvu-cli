@@ -1,6 +1,63 @@
 package cmd
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestRuntimeReachabilityText(t *testing.T) {
+	cases := []struct {
+		name        string
+		reach       map[string]any
+		wantContain []string
+		wantAbsent  []string
+		wantEmpty   bool
+	}{
+		{
+			name:      "empty map renders nothing",
+			reach:     map[string]any{},
+			wantEmpty: true,
+		},
+		{
+			name:        "completed with observation",
+			reach:       map[string]any{"status": "completed", "has_findings": true, "findings": map[string]any{"function": map[string]any{"last": map[string]any{"name": "pillow", "version": "8.1.0", "call_site": "sinks.py:32"}}}},
+			wantContain: []string{"observed at runtime: yes", "Function observed: pillow@8.1.0 (sinks.py:32)"},
+		},
+		{
+			name:        "completed without observation",
+			reach:       map[string]any{"status": "completed", "has_findings": false},
+			wantContain: []string{"observed at runtime: no"},
+			wantAbsent:  []string{"observed at runtime: yes"},
+		},
+		{
+			name:        "not installed",
+			reach:       map[string]any{"status": "not_installed"},
+			wantContain: []string{"sensor not installed"},
+			wantAbsent:  []string{"observed at runtime"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := runtimeReachabilityText(tc.reach)
+			if tc.wantEmpty {
+				if got != "" {
+					t.Fatalf("want empty, got %q", got)
+				}
+				return
+			}
+			for _, s := range tc.wantContain {
+				if !strings.Contains(got, s) {
+					t.Errorf("output missing %q\n---\n%s", s, got)
+				}
+			}
+			for _, s := range tc.wantAbsent {
+				if strings.Contains(got, s) {
+					t.Errorf("output should not contain %q\n---\n%s", s, got)
+				}
+			}
+		})
+	}
+}
 
 func sampleFindingDetail() map[string]any {
 	return map[string]any{
