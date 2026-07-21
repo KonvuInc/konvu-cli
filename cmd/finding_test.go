@@ -5,6 +5,39 @@ import (
 	"testing"
 )
 
+func TestChecklistItemText(t *testing.T) {
+	item := map[string]any{
+		"status":              "completed",
+		"description":         "Vulnerable function invoked",
+		"conclusion":          "reachable",
+		"investigation_steps": []any{"step one", "step two"},
+		"proofs": []any{
+			map[string]any{
+				"file":    "sinks.py",
+				"line":    float64(32),
+				"code":    "def f():\n    return open(p)",
+				"comment": "tainted",
+			},
+		},
+	}
+	out := checklistItemText(item)
+
+	for _, s := range []string{"Investigation steps:", "Proofs:", "- step one", "sinks.py:32"} {
+		if !strings.Contains(out, s) {
+			t.Errorf("output missing %q\n---\n%s", s, out)
+		}
+	}
+	if strings.Index(out, "Investigation steps:") > strings.Index(out, "Proofs:") {
+		t.Error("investigation steps should render before proofs")
+	}
+	if !strings.Contains(out, "\n        def f():\n") {
+		t.Errorf("first code line not indented to 8 spaces\n---\n%s", out)
+	}
+	if !strings.Contains(out, "\n            return open(p)\n") {
+		t.Errorf("continuation code line missing the 8-space block indent\n---\n%s", out)
+	}
+}
+
 func TestRuntimeReachabilityText(t *testing.T) {
 	cases := []struct {
 		name        string
