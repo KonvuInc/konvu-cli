@@ -51,8 +51,17 @@ func getMap(m map[string]any, key string) map[string]any {
 }
 
 func getSlice(m map[string]any, key string) []any {
-	v, _ := m[key].([]any)
-	return v
+	switch v := m[key].(type) {
+	case []any:
+		return v
+	case []map[string]any:
+		out := make([]any, len(v))
+		for i := range v {
+			out[i] = v[i]
+		}
+		return out
+	}
+	return nil
 }
 
 func getBool(m map[string]any, key string) (bool, bool) {
@@ -603,6 +612,176 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 
 // --- finding get ---
 
+func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]any {
+	vuln := getMap(detail, "vulnerability")
+	ml := getMap(detail, "manifest_location")
+	dep := getMap(detail, "dependency")
+	assess := getMap(detail, "assessment")
+	details := getMap(assess, "details")
+	qual := getMap(details, "ai_assessment")
+
+	assessmentResult := normalizeAssessmentResult(getStr(assess, "result"))
+	qualSummary := getStr(assess, "summary")
+
+	checklist := getMap(qual, "checklist")
+	checklistRaw := getSlice(checklist, "items")
+	checklistItems := make([]map[string]any, 0)
+	for _, raw := range checklistRaw {
+		item, _ := raw.(map[string]any)
+		entry := map[string]any{
+			"description": getStr(item, "description"),
+			"status":      getStr(item, "status"),
+			"conclusion":  getStr(item, "check_conclusion"),
+		}
+		if includeEvidence {
+			entry["investigation_steps"] = getSlice(item, "investigation_steps")
+			proofRaw := getSlice(item, "proofs")
+			var proofs []map[string]any
+			for _, pr := range proofRaw {
+				p, _ := pr.(map[string]any)
+				proofs = append(proofs, map[string]any{
+					"file":    getStr(p, "file"),
+					"line":    p["line"],
+					"code":    getStr(p, "code"),
+					"comment": getStr(p, "comment"),
+				})
+			}
+			entry["proofs"] = proofs
+		}
+		checklistItems = append(checklistItems, entry)
+	}
+
+	carto := getMap(getMap(details, "environment_analysis"), "evidence")
+	cartoApplicable := carto["applicable"]
+	cartoSummary := getStr(carto, "summary")
+	if cartoApplicable != nil || cartoSummary != "" {
+		conclusion := ""
+		if cartoApplicable != nil {
+			if applicable, ok := cartoApplicable.(bool); ok {
+				if applicable {
+					conclusion = "Applicable"
+				} else {
+					conclusion = "Not applicable"
+				}
+			} else if cartoApplicable != nil {
+				conclusion = fmt.Sprintf("%v", cartoApplicable)
+			}
+		}
+		if cartoSummary != "" {
+			if conclusion != "" {
+				conclusion = conclusion + " — " + cartoSummary
+			} else {
+				conclusion = cartoSummary
+			}
+		}
+		stackEntry := map[string]any{
+			"description": "Vulnerability applicable to dependency stack",
+			"status":      "completed",
+			"conclusion":  conclusion,
+		}
+		checklistItems = append([]map[string]any{stackEntry}, checklistItems...)
+	}
+
+	assessmentSection := map[string]any{
+		"status":    assessmentResult,
+		"summary":   qualSummary,
+		"checklist": checklistItems,
+	}
+
+	source := getMap(detail, "source")
+	findingSection := map[string]any{
+		"id":         getStr(detail, "id"),
+		"dependency": getStr(dep, "name"),
+		"repository": getStr(ml, "vcs_repository_url"),
+		"manifest":   getStr(ml, "location"),
+		"scanner":    getStr(source, "source_name"),
+		"source_id":  getStr(source, "identifier"),
+		"state":      getStr(source, "state"),
+		"first_seen": getStr(source, "remote_created_at"),
+	}
+
+	vulnSection := map[string]any{
+		"cve":      getStr(vuln, "id"),
+		"aliases":  getSlice(vuln, "aliases"),
+		"severity": strings.ToLower(orDefault(getStr(vuln, "severity"), "unknown")),
+		"summary":  getStr(vuln, "summary"),
+		"has_fix":  strings.ToLower(orDefault(getStr(vuln, "has_fix"), "unknown")),
+		"cvss":     vuln["cvss"],
+		"epss":     vuln["epss"],
+	}
+
+	result := map[string]any{
+		"assessment":    assessmentSection,
+		"finding":       findingSection,
+		"vulnerability": vulnSection,
+	}
+
+	if includeEvidence {
+		assessmentSection["reachability"] = getMap(details, "runtime_reachability")
+	}
+
+	return result
+}
+
+func runtimeReachabilityText(reach map[string]any) string {
+	status := getStr(reach, "status")
+	errMsg := getStr(reach, "error")
+	if status == "" && errMsg == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\n--- Runtime Reachability ---\n")
+
+	switch status {
+	case "completed":
+		if observed, _ := getBool(reach, "has_findings"); observed {
+			b.WriteString("Vulnerable dependency/function observed at runtime: yes\n")
+		} else {
+			b.WriteString("Vulnerable dependency/function observed at runtime: no\n")
+		}
+	case "not_installed":
+		b.WriteString("Status: runtime sensor not installed\n")
+	case "no_data":
+		b.WriteString("Status: no runtime data collected yet\n")
+	default:
+		if status != "" {
+			fmt.Fprintf(&b, "Status: %s\n", strings.ToUpper(status))
+		}
+	}
+
+	if summary := getStr(reach, "summary"); summary != "" {
+		fmt.Fprintf(&b, "%s\n", summary)
+	}
+
+	findings := getMap(reach, "findings")
+	writeRuntimeObservation(&b, "Dependency", getMap(findings, "dependency"))
+	writeRuntimeObservation(&b, "Function", getMap(findings, "function"))
+
+	if errMsg != "" {
+		fmt.Fprintf(&b, "Error: %s\n", errMsg)
+	}
+	return b.String()
+}
+
+func writeRuntimeObservation(b *strings.Builder, label string, observation map[string]any) {
+	rec := getMap(observation, "last")
+	if len(rec) == 0 {
+		rec = getMap(observation, "first")
+	}
+	if len(rec) == 0 {
+		return
+	}
+	line := getStr(rec, "name")
+	if v := getStr(rec, "version"); v != "" {
+		line += "@" + v
+	}
+	if callSite := getStr(rec, "call_site"); callSite != "" {
+		line += " (" + callSite + ")"
+	}
+	fmt.Fprintf(b, "  %s observed: %s\n", label, line)
+}
+
 var findingGetCmd = &cobra.Command{
 	Use:   "get [finding-id]",
 	Short: "Get detailed information about a finding",
@@ -667,117 +846,7 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 			return nil
 		}
 
-		vuln := getMap(detail, "vulnerability")
-		ml := getMap(detail, "manifest_location")
-		dep := getMap(detail, "dependency")
-		analyses := getMap(detail, "analyses")
-		qual := getMap(analyses, "qualification")
-		assess := getMap(detail, "assessment")
-
-		assessmentResult := normalizeAssessmentResult(getStr(assess, "result"))
-		qualSummary := getStr(assess, "summary")
-
-		checklist := getMap(qual, "checklist")
-		checklistRaw := getSlice(checklist, "items")
-		checklistItems := make([]map[string]any, 0)
-		for _, raw := range checklistRaw {
-			item, _ := raw.(map[string]any)
-			entry := map[string]any{
-				"description": getStr(item, "description"),
-				"status":      getStr(item, "status"),
-				"conclusion":  getStr(item, "check_conclusion"),
-			}
-			if includeSet["evidence"] {
-				entry["investigation_steps"] = getSlice(item, "investigation_steps")
-				proofRaw := getSlice(item, "proofs")
-				var proofs []map[string]any
-				for _, pr := range proofRaw {
-					p, _ := pr.(map[string]any)
-					proofs = append(proofs, map[string]any{
-						"file":    getStr(p, "file"),
-						"line":    p["line"],
-						"code":    getStr(p, "code"),
-						"comment": getStr(p, "comment"),
-					})
-				}
-				entry["proofs"] = proofs
-			}
-			checklistItems = append(checklistItems, entry)
-		}
-
-		// Carto evidence
-		carto := getMap(analyses, "carto_evidence")
-		cartoApplicable := carto["applicable"]
-		cartoSummary := getStr(carto, "summary")
-		if cartoApplicable != nil || cartoSummary != "" {
-			conclusion := ""
-			if cartoApplicable != nil {
-				if applicable, ok := cartoApplicable.(bool); ok {
-					if applicable {
-						conclusion = "Applicable"
-					} else {
-						conclusion = "Not applicable"
-					}
-				} else if cartoApplicable != nil {
-					conclusion = fmt.Sprintf("%v", cartoApplicable)
-				}
-			}
-			if cartoSummary != "" {
-				if conclusion != "" {
-					conclusion = conclusion + " — " + cartoSummary
-				} else {
-					conclusion = cartoSummary
-				}
-			}
-			stackEntry := map[string]any{
-				"description": "Vulnerability applicable to dependency stack",
-				"status":      "completed",
-				"conclusion":  conclusion,
-			}
-			// Insert at beginning
-			checklistItems = append([]map[string]any{stackEntry}, checklistItems...)
-		}
-
-		assessmentSection := map[string]any{
-			"status":    assessmentResult,
-			"summary":   qualSummary,
-			"checklist": checklistItems,
-		}
-
-		// --- Finding section ---
-		source := getMap(detail, "source")
-		findingSection := map[string]any{
-			"id":         getStr(detail, "id"),
-			"dependency": getStr(dep, "name"),
-			"repository": getStr(ml, "vcs_repository_url"),
-			"manifest":   getStr(ml, "location"),
-			"scanner":    getStr(source, "source_name"),
-			"source_id":  getStr(source, "identifier"),
-			"state":      getStr(source, "state"),
-			"first_seen": getStr(source, "remote_created_at"),
-		}
-
-		// --- Vulnerability section ---
-		vulnSection := map[string]any{
-			"cve":      getStr(vuln, "id"),
-			"aliases":  getSlice(vuln, "aliases"),
-			"severity": strings.ToLower(orDefault(getStr(vuln, "severity"), "unknown")),
-			"summary":  getStr(vuln, "summary"),
-			"has_fix":  strings.ToLower(orDefault(getStr(vuln, "has_fix"), "unknown")),
-			"cvss":     vuln["cvss"],
-			"epss":     vuln["epss"],
-		}
-
-		result := map[string]any{
-			"assessment":    assessmentSection,
-			"finding":       findingSection,
-			"vulnerability": vulnSection,
-		}
-
-		if includeSet["evidence"] {
-			reachability := getMap(analyses, "runtime_reachability")
-			assessmentSection["reachability"] = reachability
-		}
+		result := buildFindingResult(detail, includeSet["evidence"])
 
 		if includeSet["logs"] {
 			logsData, logErr := client.Get(fmt.Sprintf("/sca_findings/%s/logs", findingID), nil)
@@ -862,6 +931,10 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 						}
 					}
 				}
+			}
+
+			if txt := runtimeReachabilityText(getMap(a, "reachability")); txt != "" {
+				fmt.Print(txt)
 			}
 
 			// --- Finding ---
