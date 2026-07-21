@@ -864,6 +864,25 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 				}
 			}
 
+			// --- Runtime Reachability ---
+			if reach := getMap(a, "reachability"); len(reach) > 0 {
+				reachStatus := getStr(reach, "status")
+				reachSummary := getStr(reach, "summary")
+				reachError := getStr(reach, "error")
+				if reachStatus != "" || reachSummary != "" || reachError != "" {
+					fmt.Println("\n--- Runtime Reachability ---")
+					if reachStatus != "" {
+						fmt.Printf("Status: %s\n", strings.ToUpper(reachStatus))
+					}
+					if reachSummary != "" {
+						fmt.Printf("%s\n", reachSummary)
+					}
+					if reachError != "" {
+						fmt.Printf("Error: %s\n", reachError)
+					}
+				}
+			}
+
 			// --- Finding ---
 			fmt.Println("\n--- Finding ---")
 			fmt.Printf("ID:         %s\n", getStr(f, "id"))
