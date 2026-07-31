@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -183,5 +184,49 @@ func TestClient_Put(t *testing.T) {
 	sevs, _ := data["assessment_severities"].([]any)
 	if len(sevs) != 1 || sevs[0] != "CRITICAL" {
 		t.Errorf("unexpected response: %v", data)
+	}
+}
+
+func TestServerDetailPrefersTheDetailField(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{`{"detail":"konvu lane not served on this host"}`, "konvu lane not served on this host"},
+		{`{"detail":{"code":7}}`, `{"code":7}`},
+		{`plain text failure`, "plain text failure"},
+		{``, ""},
+		{`{"other":"x"}`, `{"other":"x"}`},
+	} {
+		if got := ServerDetail([]byte(tc.in)); got != tc.want {
+			t.Errorf("ServerDetail(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestServerDetailTruncates(t *testing.T) {
+	long := strings.Repeat("x", 500)
+	got := ServerDetail([]byte(long))
+	if len([]rune(got)) != 301 {
+		t.Errorf("len = %d runes, want 301 (300 + ellipsis)", len([]rune(got)))
+	}
+}
+
+// A 401 from a service behind the API must not be reported as an expired session with no
+// other information — that sends the reader round a loop that cannot succeed.
+func TestUnauthorizedCarriesTheServerReason(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"detail":"konvu lane not served on this host"}`))
+	}))
+	defer srv.Close()
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+
+	_, err := NewClient(srv.URL, "tok").Get("/anything", nil)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if !strings.Contains(err.Error(), "not served on this host") {
+		t.Errorf("the server's reason is missing: %v", err)
+	}
+	if !strings.Contains(err.Error(), "konvu login") {
+		t.Errorf("the login hint should still be there: %v", err)
 	}
 }

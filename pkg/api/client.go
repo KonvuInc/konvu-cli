@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/KonvuInc/konvu-cli/pkg/config"
@@ -86,9 +87,38 @@ func (c *Client) authHeader() (string, error) {
 	return "Bearer " + token, nil
 }
 
+// ServerDetail pulls the human-readable reason out of an error response: the "detail"
+// field when the body is the usual JSON error shape, otherwise the raw body. Truncated,
+// since it ends up in a one-line message.
+func ServerDetail(body []byte) string {
+	detail := strings.TrimSpace(string(body))
+	var payload struct {
+		Detail any `json:"detail"`
+	}
+	if err := json.Unmarshal(body, &payload); err == nil && payload.Detail != nil {
+		if s, ok := payload.Detail.(string); ok {
+			detail = s
+		} else if b, err := json.Marshal(payload.Detail); err == nil {
+			detail = string(b)
+		}
+	}
+	if len(detail) > 300 {
+		detail = detail[:300] + "…"
+	}
+	return detail
+}
+
 func (c *Client) checkResponse(resp *http.Response) error {
 	if resp.StatusCode == 401 {
-		return &AuthenticationError{Message: "Session expired. Run 'konvu login' again."}
+		// A 401 can also come from a service behind the API refusing the request for its
+		// own reasons. Saying only "log in again" then sends the user round a loop that
+		// cannot succeed, so include what the server actually said.
+		body, _ := io.ReadAll(resp.Body)
+		msg := "Session expired. Run 'konvu login' again."
+		if detail := ServerDetail(body); detail != "" {
+			msg += " (server said: " + detail + ")"
+		}
+		return &AuthenticationError{Message: msg}
 	}
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
@@ -306,4 +336,74 @@ func (c *Client) sendBody(method, path string, data any) (any, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+// PostForm sends application/x-www-form-urlencoded. Some service endpoints behind the
+// gateway take form fields rather than JSON, because the same route also accepts a file
+// upload and a route cannot take both a JSON body and a file part.
+func (c *Client) PostForm(path string, form url.Values) (map[string]any, error) {
+	req, err := http.NewRequest("POST", c.baseURL+path, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	auth, err := c.authHeader()
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", auth)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if err := c.checkResponse(resp); err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == 204 {
+		return nil, nil
+	}
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// PutPresigned uploads a file to a pre-authorized upload URL.
+//
+// It deliberately sends no Authorization header: the URL carries its own signature, and
+// an unexpected auth header makes the storage service reject the request. size must match
+// the length the URL was issued for — it is part of that signature — so it is set
+// explicitly rather than left to chunked encoding. Uploads get their own timeout because
+// a large body can outlast the API client's.
+func (c *Client) PutPresigned(target, filePath string, size int64, timeout time.Duration) error {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	req, err := http.NewRequest("PUT", target, f)
+	if err != nil {
+		return err
+	}
+	req.ContentLength = size
+
+	resp, err := (&http.Client{Timeout: timeout}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return &APIError{
+			Message:    fmt.Sprintf("upload failed: %s", strings.TrimSpace(string(body))),
+			StatusCode: resp.StatusCode,
+		}
+	}
+	return nil
 }
