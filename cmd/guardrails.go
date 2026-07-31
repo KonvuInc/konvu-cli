@@ -22,5 +22,8 @@ func init() {
 	guardrailsCmd.AddCommand(guardrailsBaselineCmd)
 	guardrailsCmd.AddCommand(guardrailsListCmd)
 	guardrailsCmd.AddCommand(guardrailsShowCmd)
+	guardrailsCmd.AddCommand(guardrailsRatifyCmd)
+	guardrailsCmd.AddCommand(guardrailsReviewCmd)
+	guardrailsCmd.AddCommand(guardrailsExplainCmd)
 	rootCmd.AddCommand(guardrailsCmd)
 }

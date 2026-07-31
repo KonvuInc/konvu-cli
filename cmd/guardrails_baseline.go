@@ -36,25 +36,30 @@ Packages the current commit, uploads it, and records the authorization your code
 enforces. Later checks compare against this baseline, so drift is reported as a
 change rather than re-derived from scratch.
 
+The policy is proposed from the recorded baseline; agree to it with
+'konvu guardrails ratify <repo>'. This command no longer takes one.
+
 The repo id defaults to owner/name from your 'origin' remote.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 	Example: `  # Baseline the repo you are in
-  konvu guardrails baseline --policy policy.yaml
+  konvu guardrails baseline
 
   # Baseline another checkout, on a named branch
-  konvu guardrails baseline ../web --policy policy.yaml --branch release-2.3`,
+  konvu guardrails baseline ../web --branch release-2.3`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runGuardrailsBaseline,
 }
 
 func init() {
 	f := guardrailsBaselineCmd.Flags()
-	f.StringVarP(&blPolicy, "policy", "p", "", "policy file describing intended authorization — required")
+	// Kept so existing invocations do not fail on an unknown flag, but the server retired
+	// client-supplied policies: it proposes one from the baseline and you ratify it.
+	f.StringVarP(&blPolicy, "policy", "p", "", "retired; the policy is proposed and ratified in the dashboard")
+	_ = f.MarkDeprecated("policy", "the policy is proposed from the baseline and ratified in the dashboard")
 	f.StringVar(&blBranch, "branch", "main", "branch this baseline applies to")
 	f.StringVar(&blRepo, "repo", "", "repo id (default: inferred from origin)")
 	f.DurationVar(&blTimeout, "timeout", 30*time.Minute, "how long to wait for the baseline to build")
-	_ = guardrailsBaselineCmd.MarkFlagRequired("policy")
 }
 
 // runGuardrailsBaseline splits the work into an inner function that returns, because
@@ -71,12 +76,6 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	repoPath := "."
 	if len(args) == 1 {
 		repoPath = args[0]
-	}
-
-	policy, err := os.ReadFile(blPolicy)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: read policy: %v\n", err)
-		os.Exit(clierrors.ExitUsageError)
 	}
 
 	head, err := gitbundle.Head(repoPath, "HEAD")
@@ -97,22 +96,26 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 
+	// No policy field: the server rejects one outright now, rather than ignoring it.
 	fields := url.Values{
 		"repo":   {repoID},
 		"branch": {blBranch},
-		"policy": {string(policy)},
 	}
 
-	// Upload out of band when the server offers it, so the bundle does not travel through
-	// the API. A server that cannot issue an upload URL answers 501, and then the bundle is
-	// sent inline instead — the only difference is where the bytes go.
+	// Upload out of band, so the bundle does not travel through the API. A server that cannot
+	// issue an upload URL answers 501; this command has no inline path, so that is an error
+	// rather than a fallback.
 	key, err := uploadBundle(client, bundlePath)
 	if err != nil {
 		return err
 	}
 	if key == "" {
-		fmt.Fprintln(os.Stderr, "Error: this server requires an inline bundle upload, which this command does not support yet")
-		os.Exit(clierrors.ExitGeneralError)
+		return &clierrors.CLIError{
+			Code:       "UPLOAD_UNAVAILABLE",
+			Message:    "this server cannot issue an upload URL for the bundle",
+			Suggestion: "Update the CLI, or ask whoever runs the service.",
+			ExitCode:   clierrors.ExitGeneralError,
+		}
 	}
 	fields.Set("bundle_key", key)
 
@@ -161,11 +164,13 @@ func guardrailsCLIError(err error) *clierrors.CLIError {
 				ExitCode:   clierrors.ExitNotFound,
 			}
 		case http.StatusConflict:
+			// 409 covers more than a stale baseline (a draft that cannot be ratified answers it
+			// too), and the server's detail already says which. Naming one remedy for all of
+			// them sends readers somewhere that cannot help, so let the detail speak.
 			return &clierrors.CLIError{
-				Code:       "STALE_BASELINE",
-				Message:    detail,
-				Suggestion: "Re-run 'konvu guardrails baseline' for this repository.",
-				ExitCode:   clierrors.ExitGeneralError,
+				Code:     "CONFLICT",
+				Message:  detail,
+				ExitCode: clierrors.ExitGeneralError,
 			}
 		default:
 			return clierrors.NewAPIError(detail)
@@ -236,14 +241,21 @@ func waitForBaseline(client *api.Client, jobID string) error {
 		case "error":
 			msg, _ := st["error"].(string)
 			if msg == "" {
-				msg = "baseline failed"
+				msg = "the baseline could not be built"
 			}
-			fmt.Fprintln(os.Stderr, "Error:", msg)
-			os.Exit(clierrors.ExitGeneralError)
+			return &clierrors.CLIError{
+				Code:     "BASELINE_FAILED",
+				Message:  msg,
+				ExitCode: clierrors.ExitGeneralError,
+			}
 		}
 		if time.Now().After(deadline) {
-			fmt.Fprintf(os.Stderr, "Error: still building after %s — check back with 'konvu guardrails baseline' later\n", blTimeout)
-			os.Exit(clierrors.ExitGeneralError)
+			return &clierrors.CLIError{
+				Code:       "STILL_BUILDING",
+				Message:    fmt.Sprintf("the baseline was still building after %s", blTimeout),
+				Suggestion: "It may finish on its own; check with 'konvu guardrails list'.",
+				ExitCode:   clierrors.ExitGeneralError,
+			}
 		}
 		time.Sleep(2 * time.Second)
 	}

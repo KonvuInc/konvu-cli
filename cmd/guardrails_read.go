@@ -39,10 +39,10 @@ policy rows drift is measured against. Pass --policy-only to print just the poli
 The repo is the id the baseline was recorded under, usually owner/name.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth failed`,
-	Example: `  konvu guardrails show AcmeKonvu/litellm
+	Example: `  konvu guardrails show acme/web
 
   # A specific branch, policy table only
-  konvu guardrails show AcmeKonvu/litellm --branch demo/x --policy-only`,
+  konvu guardrails show acme/web --branch release-2.3 --policy-only`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runGuardrailsShow,
 }
