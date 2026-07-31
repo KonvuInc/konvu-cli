@@ -170,7 +170,7 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 		chunk := issueIDs[i:end]
 
 		body := map[string]any{
-			"finding_ids":       chunk,
+			"finding_ids":      chunk,
 			"dismissed_reason":  reason,
 			"dismissed_comment": comment,
 		}
