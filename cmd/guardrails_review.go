@@ -72,10 +72,16 @@ func reviewFlow(cmd *cobra.Command, args []string) error {
 
 	// The route matches on a path, so the repo's slash is part of it and must not be escaped.
 	path := guardrailsAPI + "/dashboard/repos/" + repo + "/review"
-	decisions := buildDecisions(allow, deny, clear)
+	decisions, err := buildDecisions(allow, deny, clear)
+	if err != nil {
+		return &clierrors.CLIError{
+			Code:     "CONFLICTING_DECISIONS",
+			Message:  err.Error(),
+			ExitCode: clierrors.ExitUsageError,
+		}
+	}
 
 	var data map[string]any
-	var err error
 	if len(decisions) == 0 {
 		data, err = client.Get(path, map[string]any{"pr": pr})
 	} else {
@@ -97,23 +103,33 @@ func reviewFlow(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// buildDecisions keeps the flags' order irrelevant and the wire shape explicit. A capability
-// named in two flags is a mistake worth surfacing rather than resolving silently, so the last
-// one does not quietly win: the server ignores keys outside the snapshot, and a duplicate key
-// with conflicting decisions would otherwise depend on map ordering.
-func buildDecisions(allow, deny, clear []string) []map[string]any {
+// buildDecisions turns the flags into the wire shape, and refuses a capability named under two
+// verbs. The server applies decisions in order, so allowing and denying the same capability in
+// one command would let argument order settle an authorization question silently. That is worth
+// an error rather than a winner.
+func buildDecisions(allow, deny, clear []string) ([]map[string]any, error) {
 	out := []map[string]any{}
+	verb := map[string]string{}
 	for _, spec := range [](struct {
 		keys     []string
 		decision string
 	}){{allow, "allow"}, {deny, "deny"}, {clear, "clear"}} {
 		for _, k := range spec.keys {
-			if k = strings.TrimSpace(k); k != "" {
-				out = append(out, map[string]any{"capability_key": k, "decision": spec.decision})
+			if k = strings.TrimSpace(k); k == "" {
+				continue
 			}
+			if prev, seen := verb[k]; seen && prev != spec.decision {
+				return nil, fmt.Errorf(
+					"capability %q was passed to both --%s and --%s; pass it once", k, prev, spec.decision)
+			}
+			if _, seen := verb[k]; seen {
+				continue // same verb twice is harmless; do not send it twice
+			}
+			verb[k] = spec.decision
+			out = append(out, map[string]any{"capability_key": k, "decision": spec.decision})
 		}
 	}
-	return out
+	return out, nil
 }
 
 func printReview(data map[string]any, wrote bool) {

@@ -177,7 +177,10 @@ func TestReviewPostsDecisionsWithPrInTheQuery(t *testing.T) {
 }
 
 func TestBuildDecisionsCoversAllThreeVerbs(t *testing.T) {
-	got := buildDecisions([]string{"a"}, []string{"b"}, []string{"c", "  "})
+	got, err := buildDecisions([]string{"a"}, []string{"b"}, []string{"c", "  "})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 3 {
 		t.Fatalf("len = %d, want 3 (blank entries dropped): %v", len(got), got)
 	}
@@ -233,5 +236,27 @@ func TestExplainDoesNotDoubleTheMethod(t *testing.T) {
 	}
 	if !strings.Contains(out, "DELETE /v1/models/{id}/purge") {
 		t.Errorf("route missing:\n%s", out)
+	}
+}
+
+// The server applies decisions in order, so allowing and denying the same capability in one
+// command would let argument order settle an authorization question silently.
+func TestBuildDecisionsRefusesAConflict(t *testing.T) {
+	_, err := buildDecisions([]string{"k"}, []string{"k"}, nil)
+	if err == nil {
+		t.Fatal("want an error when one capability is both allowed and denied")
+	}
+	if !strings.Contains(err.Error(), "--allow") || !strings.Contains(err.Error(), "--deny") {
+		t.Errorf("the error should name both flags: %v", err)
+	}
+}
+
+func TestBuildDecisionsToleratesTheSameVerbTwice(t *testing.T) {
+	got, err := buildDecisions([]string{"k", "k"}, nil, nil)
+	if err != nil {
+		t.Fatalf("repeating one verb is harmless: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("len = %d, want the duplicate collapsed", len(got))
 	}
 }

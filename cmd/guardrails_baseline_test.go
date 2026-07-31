@@ -205,9 +205,11 @@ func TestGuardrailsCLIErrorClassifies(t *testing.T) {
 			"NOT_FOUND", clierrors.ExitNotFound, "no baseline for a/b@main",
 		},
 		{
-			"409 is a stale baseline",
+			// 409 covers a stale baseline AND a draft that cannot be ratified, so the suggestion
+			// cannot name one remedy; the server's detail already says which.
+			"409 lets the server's detail speak",
 			&api.APIError{Message: `API error: {"detail":"built by an older version of the analysis model; rebuild and ratify it"}`, StatusCode: 409},
-			"STALE_BASELINE", clierrors.ExitGeneralError, "rebuild and ratify it",
+			"CONFLICT", clierrors.ExitGeneralError, "rebuild and ratify it",
 		},
 		{
 			"an expired session is an auth failure",
@@ -230,8 +232,10 @@ func TestGuardrailsCLIErrorClassifies(t *testing.T) {
 			if strings.Contains(got.Message, "API error:") || strings.Contains(got.Message, `{"detail"`) {
 				t.Errorf("raw wrapper leaked: %q", got.Message)
 			}
-			if got.Suggestion == "" {
-				t.Error("every classified error should suggest a next step")
+			// Not every status has one honest next step: a 409 can mean two different
+			// things, so its message carries the remedy instead of a canned suggestion.
+			if got.Suggestion == "" && got.Code != "CONFLICT" {
+				t.Error("this error should suggest a next step")
 			}
 		})
 	}
@@ -244,56 +248,118 @@ func TestGuardrailsCLIErrorKeepsATransportError(t *testing.T) {
 	}
 }
 
-// os.Exit does not run deferred functions, so classifying the error inside the flow would
-// leave the staged refs and the temp bundle in the user's checkout. The flow returns; only
-// the wrapper exits.
-func TestBaselineFlowCleansUpAfterAFailure(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"detail":"company not provisioned for guardrails"}`))
-	}))
-	defer srv.Close()
-	t.Setenv("KONVU_API_URL", srv.URL)
-	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
-	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+// os.Exit does not run deferred functions, so ending the flow anywhere but the wrapper leaves the
+// staged refs and the temp bundle in the user's checkout. One case per way the flow can end badly,
+// because fixing this once for the 403 path is exactly how the other three survived.
+func TestBaselineFlowCleansUpOnEveryFailurePath(t *testing.T) {
+	cases := []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{
+			"the account cannot use guardrails",
+			func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"detail":"not available"}`))
+			},
+		},
+		{
+			"the server cannot issue an upload URL",
+			func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusNotImplemented)
+			},
+		},
+		{
+			"the build fails",
+			func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/upload-url"):
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"bundle_key": "k", "url": "http://" + r.Host + "/put", "expires_in": 900,
+					})
+				case r.URL.Path == "/put":
+					w.WriteHeader(http.StatusOK)
+				case strings.Contains(r.URL.Path, "/jobs/"):
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"job_id": "j1", "status": "error", "error": "no routes found",
+					})
+				default:
+					w.WriteHeader(http.StatusAccepted)
+					_ = json.NewEncoder(w).Encode(map[string]any{"job_id": "j1", "status": "pending"})
+				}
+			},
+		},
+		{
+			"the build outlasts the timeout",
+			func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/upload-url"):
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"bundle_key": "k", "url": "http://" + r.Host + "/put", "expires_in": 900,
+					})
+				case r.URL.Path == "/put":
+					w.WriteHeader(http.StatusOK)
+				case strings.Contains(r.URL.Path, "/jobs/"):
+					_ = json.NewEncoder(w).Encode(map[string]any{"job_id": "j1", "status": "running"})
+				default:
+					w.WriteHeader(http.StatusAccepted)
+					_ = json.NewEncoder(w).Encode(map[string]any{"job_id": "j1", "status": "pending"})
+				}
+			},
+		},
+	}
 
-	repo := t.TempDir()
-	for _, args := range [][]string{
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(tc.handler)
+			defer srv.Close()
+			t.Setenv("KONVU_API_URL", srv.URL)
+			t.Setenv("KONVU_ACCESS_TOKEN", "tok")
+			t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+
+			repo := newRepo(t)
+			// A timeout that has already passed, so the poll loop gives up on its first look.
+			_ = guardrailsBaselineCmd.Flags().Set("timeout", "1ns")
+			defer func() { _ = guardrailsBaselineCmd.Flags().Set("timeout", "30m") }()
+
+			if err := baselineFlow(guardrailsBaselineCmd, []string{repo}); err == nil {
+				t.Fatal("want an error rather than an exit")
+			}
+
+			out, err := exec.Command("git", "-C", repo, "for-each-ref",
+				"--format=%(refname)", "refs/authzprover/").CombinedOutput()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.TrimSpace(string(out)) != "" {
+				t.Errorf("staged refs left behind: %q", out)
+			}
+		})
+	}
+}
+
+// newRepo makes a throwaway checkout with one commit.
+func newRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, a := range [][]string{
 		{"init", "-q", "-b", "main"},
 		{"config", "user.email", "t@example.com"},
 		{"config", "user.name", "t"},
 	} {
-		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
+		if out, err := exec.Command("git", append([]string{"-C", dir}, a...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", a, err, out)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("hi"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hi"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"add", "a.txt"}, {"commit", "-q", "-m", "one"}} {
-		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
+	for _, a := range [][]string{{"add", "a.txt"}, {"commit", "-q", "-m", "one"}} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, a...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", a, err, out)
 		}
 	}
-
-	policy := filepath.Join(t.TempDir(), "policy.yaml")
-	if err := os.WriteFile(policy, []byte("subjects: []\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_ = guardrailsBaselineCmd.Flags().Set("policy", policy)
-	defer func() { _ = guardrailsBaselineCmd.Flags().Set("policy", "") }()
-
-	if err := baselineFlow(guardrailsBaselineCmd, []string{repo}); err == nil {
-		t.Fatal("want the 403 to surface as an error")
-	}
-
-	out, err := exec.Command("git", "-C", repo, "for-each-ref", "--format=%(refname)", "refs/authzprover/").CombinedOutput()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(out)) != "" {
-		t.Errorf("staged refs left behind after a failure: %q", out)
-	}
+	return dir
 }
 
 // The server retired client-supplied policies: it proposes one from the baseline and it is
