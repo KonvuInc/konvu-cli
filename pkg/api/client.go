@@ -87,9 +87,38 @@ func (c *Client) authHeader() (string, error) {
 	return "Bearer " + token, nil
 }
 
+// ServerDetail pulls the human-readable reason out of an error response: the "detail"
+// field when the body is the usual JSON error shape, otherwise the raw body. Truncated,
+// since it ends up in a one-line message.
+func ServerDetail(body []byte) string {
+	detail := strings.TrimSpace(string(body))
+	var payload struct {
+		Detail any `json:"detail"`
+	}
+	if err := json.Unmarshal(body, &payload); err == nil && payload.Detail != nil {
+		if s, ok := payload.Detail.(string); ok {
+			detail = s
+		} else if b, err := json.Marshal(payload.Detail); err == nil {
+			detail = string(b)
+		}
+	}
+	if len(detail) > 300 {
+		detail = detail[:300] + "…"
+	}
+	return detail
+}
+
 func (c *Client) checkResponse(resp *http.Response) error {
 	if resp.StatusCode == 401 {
-		return &AuthenticationError{Message: "Session expired. Run 'konvu login' again."}
+		// A 401 can also come from a service behind the API refusing the request for its
+		// own reasons. Saying only "log in again" then sends the user round a loop that
+		// cannot succeed, so include what the server actually said.
+		body, _ := io.ReadAll(resp.Body)
+		msg := "Session expired. Run 'konvu login' again."
+		if detail := ServerDetail(body); detail != "" {
+			msg += " (server said: " + detail + ")"
+		}
+		return &AuthenticationError{Message: msg}
 	}
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)

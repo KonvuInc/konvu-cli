@@ -3,9 +3,11 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
@@ -95,7 +97,7 @@ func runGuardrailsBaseline(cmd *cobra.Command, args []string) error {
 	// sent inline instead — the only difference is where the bytes go.
 	key, err := uploadBundle(client, bundlePath)
 	if err != nil {
-		return err
+		return friendlyError(err)
 	}
 	if key == "" {
 		fmt.Fprintln(os.Stderr, "Error: this server requires an inline bundle upload, which this command does not support yet")
@@ -105,7 +107,7 @@ func runGuardrailsBaseline(cmd *cobra.Command, args []string) error {
 
 	job, err := client.PostForm(guardrailsAPI+"/baselines", fields)
 	if err != nil {
-		return err
+		return friendlyError(err)
 	}
 	jobID, _ := job["job_id"].(string)
 	if jobID == "" {
@@ -114,6 +116,18 @@ func runGuardrailsBaseline(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Baseline queued for %s@%s — building…\n", repoID, blBranch)
 
 	return waitForBaseline(client, jobID)
+}
+
+// friendlyError rewrites a refusal into something the reader can act on. A 403 means the
+// account reached guardrails and was turned away; echoing the raw JSON body leaves the
+// reader with nothing to do about it.
+func friendlyError(err error) error {
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden {
+		detail := api.ServerDetail([]byte(strings.TrimPrefix(apiErr.Message, "API error: ")))
+		return fmt.Errorf("guardrails is not available for this account yet: %s", detail)
+	}
+	return err
 }
 
 // uploadBundle asks for an upload URL and PUTs the bundle to it. Returns "" when the
@@ -153,7 +167,7 @@ func waitForBaseline(client *api.Client, jobID string) error {
 	for {
 		st, err := client.Get(guardrailsAPI+"/baselines/jobs/"+jobID, nil)
 		if err != nil {
-			return err
+			return friendlyError(err)
 		}
 		switch status, _ := st["status"].(string); status {
 		case "done":

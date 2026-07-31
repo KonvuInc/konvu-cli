@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
@@ -179,4 +181,32 @@ func TestUploadBundleFailsWhenThePutFails(t *testing.T) {
 
 func newTestClient(baseURL string) *api.Client {
 	return api.NewClient(baseURL, "tok")
+}
+
+func TestFriendlyErrorRewritesA403(t *testing.T) {
+	in := &api.APIError{
+		Message:    `API error: {"detail":"company not provisioned for guardrails"}`,
+		StatusCode: 403,
+	}
+	got := friendlyError(in).Error()
+	if !strings.Contains(got, "not available for this account") {
+		t.Errorf("403 not rewritten: %q", got)
+	}
+	if !strings.Contains(got, "company not provisioned") {
+		t.Errorf("the server's reason was dropped: %q", got)
+	}
+	if strings.Contains(got, "API error:") {
+		t.Errorf("raw wrapper leaked through: %q", got)
+	}
+}
+
+func TestFriendlyErrorLeavesOtherErrorsAlone(t *testing.T) {
+	in := &api.APIError{Message: "API error: boom", StatusCode: 500}
+	if friendlyError(in) != error(in) {
+		t.Error("a 500 should pass through untouched")
+	}
+	plain := errors.New("dial tcp: refused")
+	if friendlyError(plain) != plain {
+		t.Error("a transport error should pass through untouched")
+	}
 }
