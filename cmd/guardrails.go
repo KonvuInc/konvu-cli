@@ -20,5 +20,7 @@ use your 'konvu login' session.`,
 
 func init() {
 	guardrailsCmd.AddCommand(guardrailsBaselineCmd)
+	guardrailsCmd.AddCommand(guardrailsListCmd)
+	guardrailsCmd.AddCommand(guardrailsShowCmd)
 	rootCmd.AddCommand(guardrailsCmd)
 }
