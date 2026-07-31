@@ -59,6 +59,13 @@ func init() {
 }
 
 func runGuardrailsList(cmd *cobra.Command, args []string) error {
+	if err := listFlow(cmd, args); err != nil {
+		handleGuardrailsError(err, output.DetectOutputFormat(mustGuardrailsOutput(cmd)))
+	}
+	return nil
+}
+
+func listFlow(cmd *cobra.Command, args []string) error {
 	outputFlag, _ := cmd.Flags().GetString("output")
 	quiet, _ := cmd.Flags().GetBool("quiet")
 	format := output.DetectOutputFormat(outputFlag)
@@ -68,15 +75,23 @@ func runGuardrailsList(cmd *cobra.Command, args []string) error {
 
 	data, err := client.Get(guardrailsAPI+"/dashboard/baselines", nil)
 	if err != nil {
-		return friendlyError(err)
+		return err
 	}
 	baselines := getSlice(data, "baselines")
 	skipped := getSlice(data, "skipped")
 
 	if quiet {
+		// One repository can hold a baseline per branch, so print each name once — the point
+		// of --quiet is piping the list somewhere, and duplicates make that wrong.
+		seen := map[string]bool{}
 		items := make([]map[string]any, 0, len(baselines))
 		for _, b := range baselines {
-			if m, ok := b.(map[string]any); ok {
+			m, ok := b.(map[string]any)
+			if !ok {
+				continue
+			}
+			if repo := getStr(m, "repo"); repo != "" && !seen[repo] {
+				seen[repo] = true
 				items = append(items, m)
 			}
 		}
@@ -130,6 +145,18 @@ func runGuardrailsList(cmd *cobra.Command, args []string) error {
 }
 
 func runGuardrailsShow(cmd *cobra.Command, args []string) error {
+	if err := showFlow(cmd, args); err != nil {
+		handleGuardrailsError(err, output.DetectOutputFormat(mustGuardrailsOutput(cmd)))
+	}
+	return nil
+}
+
+func mustGuardrailsOutput(cmd *cobra.Command) string {
+	v, _ := cmd.Flags().GetString("output")
+	return v
+}
+
+func showFlow(cmd *cobra.Command, args []string) error {
 	branch, _ := cmd.Flags().GetString("branch")
 	policyOnly, _ := cmd.Flags().GetBool("policy-only")
 	outputFlag, _ := cmd.Flags().GetString("output")
@@ -150,7 +177,7 @@ func runGuardrailsShow(cmd *cobra.Command, args []string) error {
 		map[string]any{"branch": branch},
 	)
 	if err != nil {
-		return friendlyError(err)
+		return err
 	}
 
 	if format == output.JSON {

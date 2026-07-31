@@ -2,8 +2,11 @@ package cmd
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -139,4 +142,50 @@ func TestPlaceholdersAreSingleByte(t *testing.T) {
 			t.Errorf("placeholder %q is multi-byte; it will misalign the table", s)
 		}
 	}
+}
+
+// One repo can hold a baseline per branch; --quiet exists for piping, so a repeated name
+// would make the piped list wrong.
+func TestListQuietPrintsEachRepoOnce(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"baselines": []any{
+				map[string]any{"repo": "a/one", "branch": "main"},
+				map[string]any{"repo": "a/one", "branch": "demo/x"},
+				map[string]any{"repo": "a/two", "branch": "main"},
+			},
+			"skipped": []any{},
+		})
+	}))
+	defer srv.Close()
+	t.Setenv("KONVU_API_URL", srv.URL)
+	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+
+	_ = guardrailsListCmd.Flags().Set("quiet", "true")
+	defer func() { _ = guardrailsListCmd.Flags().Set("quiet", "false") }()
+
+	out := captureStdout(t, func() {
+		if err := runGuardrailsList(guardrailsListCmd, nil); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if got := strings.Count(out, "a/one"); got != 1 {
+		t.Errorf("a/one printed %d times, want 1\n%s", got, out)
+	}
+	if !strings.Contains(out, "a/two") {
+		t.Errorf("a/two missing\n%s", out)
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	fn()
+	_ = w.Close()
+	os.Stdout = old
+	b, _ := io.ReadAll(r)
+	return string(b)
 }

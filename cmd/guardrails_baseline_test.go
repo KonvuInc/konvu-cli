@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
+	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 )
 
 func TestGuardrailsBaselineRegistered(t *testing.T) {
@@ -183,30 +185,113 @@ func newTestClient(baseURL string) *api.Client {
 	return api.NewClient(baseURL, "tok")
 }
 
-func TestFriendlyErrorRewritesA403(t *testing.T) {
-	in := &api.APIError{
-		Message:    `API error: {"detail":"company not provisioned for guardrails"}`,
-		StatusCode: 403,
+// Classification decides the exit code and the suggestion, so it is worth pinning per status.
+func TestGuardrailsCLIErrorClassifies(t *testing.T) {
+	cases := []struct {
+		name     string
+		in       error
+		wantCode string
+		wantExit int
+		wantMsg  string
+	}{
+		{
+			"403 is about the account",
+			&api.APIError{Message: `API error: {"detail":"company not provisioned for guardrails"}`, StatusCode: 403},
+			"NOT_AVAILABLE", clierrors.ExitGeneralError, "company not provisioned for guardrails",
+		},
+		{
+			"404 is a missing baseline",
+			&api.APIError{Message: `API error: {"detail":"no baseline for a/b@main"}`, StatusCode: 404},
+			"NOT_FOUND", clierrors.ExitNotFound, "no baseline for a/b@main",
+		},
+		{
+			"409 is a stale baseline",
+			&api.APIError{Message: `API error: {"detail":"built by an older version of the analysis model; rebuild and ratify it"}`, StatusCode: 409},
+			"STALE_BASELINE", clierrors.ExitGeneralError, "rebuild and ratify it",
+		},
+		{
+			"an expired session is an auth failure",
+			&api.AuthenticationError{Message: "Session expired. Run 'konvu login' again."},
+			"AUTH_FAILED", clierrors.ExitAuthFailed, "Session expired",
+		},
 	}
-	got := friendlyError(in).Error()
-	if !strings.Contains(got, "not available for this account") {
-		t.Errorf("403 not rewritten: %q", got)
-	}
-	if !strings.Contains(got, "company not provisioned") {
-		t.Errorf("the server's reason was dropped: %q", got)
-	}
-	if strings.Contains(got, "API error:") {
-		t.Errorf("raw wrapper leaked through: %q", got)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := guardrailsCLIError(tc.in)
+			if got.Code != tc.wantCode {
+				t.Errorf("Code = %q, want %q", got.Code, tc.wantCode)
+			}
+			if got.ExitCode != tc.wantExit {
+				t.Errorf("ExitCode = %d, want %d", got.ExitCode, tc.wantExit)
+			}
+			if !strings.Contains(got.Message, tc.wantMsg) {
+				t.Errorf("Message = %q, want it to contain %q", got.Message, tc.wantMsg)
+			}
+			if strings.Contains(got.Message, "API error:") || strings.Contains(got.Message, `{"detail"`) {
+				t.Errorf("raw wrapper leaked: %q", got.Message)
+			}
+			if got.Suggestion == "" {
+				t.Error("every classified error should suggest a next step")
+			}
+		})
 	}
 }
 
-func TestFriendlyErrorLeavesOtherErrorsAlone(t *testing.T) {
-	in := &api.APIError{Message: "API error: boom", StatusCode: 500}
-	if friendlyError(in) != error(in) {
-		t.Error("a 500 should pass through untouched")
+func TestGuardrailsCLIErrorKeepsATransportError(t *testing.T) {
+	got := guardrailsCLIError(errors.New("dial tcp: refused"))
+	if !strings.Contains(got.Message, "dial tcp") {
+		t.Errorf("Message = %q", got.Message)
 	}
-	plain := errors.New("dial tcp: refused")
-	if friendlyError(plain) != plain {
-		t.Error("a transport error should pass through untouched")
+}
+
+// os.Exit does not run deferred functions, so classifying the error inside the flow would
+// leave the staged refs and the temp bundle in the user's checkout. The flow returns; only
+// the wrapper exits.
+func TestBaselineFlowCleansUpAfterAFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"detail":"company not provisioned for guardrails"}`))
+	}))
+	defer srv.Close()
+	t.Setenv("KONVU_API_URL", srv.URL)
+	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+
+	repo := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"config", "user.email", "t@example.com"},
+		{"config", "user.name", "t"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "a.txt"}, {"commit", "-q", "-m", "one"}} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	policy := filepath.Join(t.TempDir(), "policy.yaml")
+	if err := os.WriteFile(policy, []byte("subjects: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = guardrailsBaselineCmd.Flags().Set("policy", policy)
+	defer func() { _ = guardrailsBaselineCmd.Flags().Set("policy", "") }()
+
+	if err := baselineFlow(guardrailsBaselineCmd, []string{repo}); err == nil {
+		t.Fatal("want the 403 to surface as an error")
+	}
+
+	out, err := exec.Command("git", "-C", repo, "for-each-ref", "--format=%(refname)", "refs/authzprover/").CombinedOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(out)) != "" {
+		t.Errorf("staged refs left behind after a failure: %q", out)
 	}
 }

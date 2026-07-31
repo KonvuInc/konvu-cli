@@ -13,6 +13,7 @@ import (
 	"github.com/KonvuInc/konvu-cli/pkg/api"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	"github.com/KonvuInc/konvu-cli/pkg/gitbundle"
+	"github.com/KonvuInc/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
 )
 
@@ -56,7 +57,17 @@ func init() {
 	_ = guardrailsBaselineCmd.MarkFlagRequired("policy")
 }
 
+// runGuardrailsBaseline splits the work into an inner function that returns, because
+// handleGuardrailsError calls os.Exit and os.Exit does not run deferred functions — exiting
+// from inside the flow would leave the staged refs and the temp bundle in the user's repo.
 func runGuardrailsBaseline(cmd *cobra.Command, args []string) error {
+	if err := baselineFlow(cmd, args); err != nil {
+		handleGuardrailsError(err, output.DetectOutputFormat(""))
+	}
+	return nil
+}
+
+func baselineFlow(cmd *cobra.Command, args []string) error {
 	repoPath := "."
 	if len(args) == 1 {
 		repoPath = args[0]
@@ -97,7 +108,7 @@ func runGuardrailsBaseline(cmd *cobra.Command, args []string) error {
 	// sent inline instead — the only difference is where the bytes go.
 	key, err := uploadBundle(client, bundlePath)
 	if err != nil {
-		return friendlyError(err)
+		return err
 	}
 	if key == "" {
 		fmt.Fprintln(os.Stderr, "Error: this server requires an inline bundle upload, which this command does not support yet")
@@ -107,7 +118,7 @@ func runGuardrailsBaseline(cmd *cobra.Command, args []string) error {
 
 	job, err := client.PostForm(guardrailsAPI+"/baselines", fields)
 	if err != nil {
-		return friendlyError(err)
+		return err
 	}
 	jobID, _ := job["job_id"].(string)
 	if jobID == "" {
@@ -118,16 +129,65 @@ func runGuardrailsBaseline(cmd *cobra.Command, args []string) error {
 	return waitForBaseline(client, jobID)
 }
 
-// friendlyError rewrites a refusal into something the reader can act on. A 403 means the
-// account reached guardrails and was turned away; echoing the raw JSON body leaves the
-// reader with nothing to do about it.
-func friendlyError(err error) error {
-	var apiErr *api.APIError
-	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden {
-		detail := api.ServerDetail([]byte(strings.TrimPrefix(apiErr.Message, "API error: ")))
-		return fmt.Errorf("guardrails is not available for this account yet: %s", detail)
+// guardrailsCLIError classifies a failure into the shared CLI error shape: a real exit code
+// and a suggestion. Split from the printing so the classification can be tested.
+//
+// These endpoints answer with a readable "detail", and echoing it inside `API error: {...}`
+// buries the one part the reader can act on.
+func guardrailsCLIError(err error) *clierrors.CLIError {
+	switch e := err.(type) {
+	case *clierrors.CLIError:
+		return e
+	case *api.AuthenticationError:
+		return clierrors.NewAuthError(e.Error())
+	case *api.APIError:
+		detail := api.ServerDetail([]byte(strings.TrimPrefix(e.Message, "API error: ")))
+		if detail == "" {
+			detail = e.Error()
+		}
+		switch e.StatusCode {
+		case http.StatusForbidden:
+			return &clierrors.CLIError{
+				Code:       "NOT_AVAILABLE",
+				Message:    detail,
+				Suggestion: "Guardrails is not available for this account yet.",
+				ExitCode:   clierrors.ExitGeneralError,
+			}
+		case http.StatusNotFound:
+			return &clierrors.CLIError{
+				Code:       "NOT_FOUND",
+				Message:    detail,
+				Suggestion: "Run 'konvu guardrails list' to see recorded baselines.",
+				ExitCode:   clierrors.ExitNotFound,
+			}
+		case http.StatusConflict:
+			return &clierrors.CLIError{
+				Code:       "STALE_BASELINE",
+				Message:    detail,
+				Suggestion: "Re-run 'konvu guardrails baseline' for this repository.",
+				ExitCode:   clierrors.ExitGeneralError,
+			}
+		default:
+			return clierrors.NewAPIError(detail)
+		}
+	default:
+		return clierrors.NewAPIError(err.Error())
 	}
-	return err
+}
+
+// handleGuardrailsError prints and exits, matching how the other command groups report a
+// runtime failure — returning the error from RunE would make cobra dump the usage block.
+func handleGuardrailsError(err error, format output.OutputFormat) {
+	cliErr := guardrailsCLIError(err)
+	if format == output.JSON {
+		fmt.Println(clierrors.FormatErrorJSON(cliErr))
+	} else {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", cliErr.Message)
+		if cliErr.Suggestion != "" {
+			fmt.Fprintf(os.Stderr, "  %s\n", cliErr.Suggestion)
+		}
+	}
+	os.Exit(cliErr.ExitCode)
 }
 
 // uploadBundle asks for an upload URL and PUTs the bundle to it. Returns "" when the
@@ -167,7 +227,7 @@ func waitForBaseline(client *api.Client, jobID string) error {
 	for {
 		st, err := client.Get(guardrailsAPI+"/baselines/jobs/"+jobID, nil)
 		if err != nil {
-			return friendlyError(err)
+			return err
 		}
 		switch status, _ := st["status"].(string); status {
 		case "done":
