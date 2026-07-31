@@ -295,3 +295,62 @@ func TestBaselineFlowCleansUpAfterAFailure(t *testing.T) {
 		t.Errorf("staged refs left behind after a failure: %q", out)
 	}
 }
+
+// The server retired client-supplied policies: it proposes one from the baseline and it is
+// ratified in the dashboard. Sending the field at all is a 422, so this pins that we do not.
+func TestBaselineDoesNotSendAPolicy(t *testing.T) {
+	var sawPolicy bool
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case guardrailsAPI + "/baselines/upload-url":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"bundle_key": "bundles/dev/baseline/k.bundle",
+				"url":        srv.URL + "/put", "expires_in": 900,
+			})
+		case "/put":
+			w.WriteHeader(http.StatusOK)
+		case guardrailsAPI + "/baselines":
+			_ = r.ParseForm()
+			_, sawPolicy = r.Form["policy"]
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{"job_id": "j1", "status": "pending"})
+		case guardrailsAPI + "/baselines/jobs/j1":
+			_ = json.NewEncoder(w).Encode(map[string]any{"job_id": "j1", "status": "done"})
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("KONVU_API_URL", srv.URL)
+	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+
+	repo := t.TempDir()
+	for _, a := range [][]string{
+		{"init", "-q", "-b", "main"}, {"config", "user.email", "t@e.com"}, {"config", "user.name", "t"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, a...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", a, err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range [][]string{{"add", "a.txt"}, {"commit", "-q", "-m", "one"}} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, a...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", a, err, out)
+		}
+	}
+
+	// Even when the deprecated flag is set, the field must not go on the wire.
+	_ = guardrailsBaselineCmd.Flags().Set("policy", "/does/not/matter.yaml")
+	defer func() { _ = guardrailsBaselineCmd.Flags().Set("policy", "") }()
+
+	if err := baselineFlow(guardrailsBaselineCmd, []string{repo}); err != nil {
+		t.Fatalf("baselineFlow: %v", err)
+	}
+	if sawPolicy {
+		t.Error("policy was sent; the server rejects the field outright (422)")
+	}
+}

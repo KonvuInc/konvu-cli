@@ -36,25 +36,30 @@ Packages the current commit, uploads it, and records the authorization your code
 enforces. Later checks compare against this baseline, so drift is reported as a
 change rather than re-derived from scratch.
 
+The policy is proposed from the recorded baseline and ratified in the dashboard, so
+this command no longer takes one.
+
 The repo id defaults to owner/name from your 'origin' remote.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 	Example: `  # Baseline the repo you are in
-  konvu guardrails baseline --policy policy.yaml
+  konvu guardrails baseline
 
   # Baseline another checkout, on a named branch
-  konvu guardrails baseline ../web --policy policy.yaml --branch release-2.3`,
+  konvu guardrails baseline ../web --branch release-2.3`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runGuardrailsBaseline,
 }
 
 func init() {
 	f := guardrailsBaselineCmd.Flags()
-	f.StringVarP(&blPolicy, "policy", "p", "", "policy file describing intended authorization — required")
+	// Kept so existing invocations do not fail on an unknown flag, but the server retired
+	// client-supplied policies: it proposes one from the baseline and you ratify it.
+	f.StringVarP(&blPolicy, "policy", "p", "", "retired; the policy is proposed and ratified in the dashboard")
+	_ = f.MarkDeprecated("policy", "the policy is proposed from the baseline and ratified in the dashboard")
 	f.StringVar(&blBranch, "branch", "main", "branch this baseline applies to")
 	f.StringVar(&blRepo, "repo", "", "repo id (default: inferred from origin)")
 	f.DurationVar(&blTimeout, "timeout", 30*time.Minute, "how long to wait for the baseline to build")
-	_ = guardrailsBaselineCmd.MarkFlagRequired("policy")
 }
 
 // runGuardrailsBaseline splits the work into an inner function that returns, because
@@ -71,12 +76,6 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	repoPath := "."
 	if len(args) == 1 {
 		repoPath = args[0]
-	}
-
-	policy, err := os.ReadFile(blPolicy)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: read policy: %v\n", err)
-		os.Exit(clierrors.ExitUsageError)
 	}
 
 	head, err := gitbundle.Head(repoPath, "HEAD")
@@ -97,10 +96,10 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 
+	// No policy field: the server rejects one outright now, rather than ignoring it.
 	fields := url.Values{
 		"repo":   {repoID},
 		"branch": {blBranch},
-		"policy": {string(policy)},
 	}
 
 	// Upload out of band when the server offers it, so the bundle does not travel through

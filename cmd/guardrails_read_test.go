@@ -59,7 +59,7 @@ func TestShowSendsTheRepoSlashUnescaped(t *testing.T) {
 		gotPath = r.URL.Path
 		gotBranch = r.URL.Query().Get("branch")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"repo": "AcmeKonvu/litellm", "branch": "demo/x", "ratified": true,
+			"repo": "acme/web", "branch": "release-2.3", "ratified": true,
 			"fingerprint": "abc123", "n_paths": 213.0, "n_guarded": 189.0, "n_unguarded": 24.0,
 			"policy": []any{map[string]any{
 				"role": "USER", "action": "read", "resource": "Document",
@@ -73,18 +73,18 @@ func TestShowSendsTheRepoSlashUnescaped(t *testing.T) {
 	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
 
 	cmd := guardrailsShowCmd
-	_ = cmd.Flags().Set("branch", "demo/x")
+	_ = cmd.Flags().Set("branch", "release-2.3")
 	defer func() { _ = cmd.Flags().Set("branch", "main") }()
 
-	if err := runGuardrailsShow(cmd, []string{"AcmeKonvu/litellm"}); err != nil {
+	if err := runGuardrailsShow(cmd, []string{"acme/web"}); err != nil {
 		t.Fatalf("show: %v", err)
 	}
-	want := guardrailsAPI + "/dashboard/repos/AcmeKonvu/litellm/baseline"
+	want := guardrailsAPI + "/dashboard/repos/acme/web/baseline"
 	if gotPath != want {
 		t.Errorf("path = %q, want %q", gotPath, want)
 	}
-	if gotBranch != "demo/x" {
-		t.Errorf("branch = %q, want demo/x", gotBranch)
+	if gotBranch != "release-2.3" {
+		t.Errorf("branch = %q, want release-2.3", gotBranch)
 	}
 }
 
@@ -95,10 +95,10 @@ func TestListReadsBaselinesAndSkipped(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"baselines": []any{map[string]any{
-				"repo": "AcmeKonvu/litellm", "branch": "main", "fingerprint": "abc",
+				"repo": "acme/web", "branch": "main", "fingerprint": "abc",
 				"ratified": true, "created_at": "2026-07-14T10:00:00Z", "n_paths": 213.0,
 			}},
-			"skipped": []any{"AcmeKonvu/docs"},
+			"skipped": []any{"acme/docs"},
 		})
 	}))
 	defer srv.Close()
@@ -151,7 +151,7 @@ func TestListQuietPrintsEachRepoOnce(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"baselines": []any{
 				map[string]any{"repo": "a/one", "branch": "main"},
-				map[string]any{"repo": "a/one", "branch": "demo/x"},
+				map[string]any{"repo": "a/one", "branch": "release-2.3"},
 				map[string]any{"repo": "a/two", "branch": "main"},
 			},
 			"skipped": []any{},
