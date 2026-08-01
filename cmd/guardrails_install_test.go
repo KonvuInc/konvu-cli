@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 func TestInstallRegistered(t *testing.T) {
@@ -20,40 +19,36 @@ func TestInstallRegistered(t *testing.T) {
 	t.Error("guardrails missing subcommand: install")
 }
 
-// installServer records what the command sent and replies with the given payloads in order,
-// repeating the last one once they run out.
-func installServer(t *testing.T, gotPath, gotBody *string, replies ...map[string]any) *httptest.Server {
+// installServer records what the command sent, counts requests, and replies with one payload.
+func installServer(t *testing.T, gotPath, gotBody *string, calls *atomic.Int32, reply map[string]any) *httptest.Server {
 	t.Helper()
-	var n atomic.Int32
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		*gotPath = r.URL.Path
 		b, _ := io.ReadAll(r.Body)
 		*gotBody = string(b)
-		i := int(n.Add(1)) - 1
-		if i >= len(replies) {
-			i = len(replies) - 1
-		}
-		_ = json.NewEncoder(w).Encode(replies[i])
+		calls.Add(1)
+		_ = json.NewEncoder(w).Encode(reply)
 	}))
 }
 
-func setInstallFlags(t *testing.T, org string, wait time.Duration) {
+func setInstallOrg(t *testing.T, org string) {
 	t.Helper()
-	prevOrg, prevWait := inOrg, inWait
-	inOrg, inWait = org, wait
-	t.Cleanup(func() { inOrg, inWait = prevOrg, prevWait })
+	prev := inOrg
+	inOrg = org
+	t.Cleanup(func() { inOrg = prev })
 }
 
 func TestInstallSendsTheOrganizationAndReportsLinked(t *testing.T) {
 	var gotPath, gotBody string
-	srv := installServer(t, &gotPath, &gotBody, map[string]any{
+	var calls atomic.Int32
+	srv := installServer(t, &gotPath, &gotBody, &calls, map[string]any{
 		"linked": true, "account": "acme", "detail": "acme is linked to your Konvu company",
 	})
 	defer srv.Close()
 	t.Setenv("KONVU_API_URL", srv.URL)
 	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
 	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
-	setInstallFlags(t, "acme", 0)
+	setInstallOrg(t, "acme")
 
 	if err := installFlow(guardrailsInstallCmd, nil); err != nil {
 		t.Fatalf("installFlow: %v", err)
@@ -66,10 +61,12 @@ func TestInstallSendsTheOrganizationAndReportsLinked(t *testing.T) {
 	}
 }
 
-func TestInstallDoesNotWaitWhenWaitIsZero(t *testing.T) {
-	// --wait 0 is the CI shape: print the link and exit rather than block a pipeline.
+func TestInstallAsksOnceAndReturnsWhenNotInstalled(t *testing.T) {
+	// The command reports state and exits; you install and run it again. A version that waited
+	// would keep asking here, so the request count is what pins the behaviour.
 	var gotPath, gotBody string
-	srv := installServer(t, &gotPath, &gotBody, map[string]any{
+	var calls atomic.Int32
+	srv := installServer(t, &gotPath, &gotBody, &calls, map[string]any{
 		"linked": false, "install_url": "https://github.com/apps/x/installations/new",
 		"detail": "not installed",
 	})
@@ -77,41 +74,13 @@ func TestInstallDoesNotWaitWhenWaitIsZero(t *testing.T) {
 	t.Setenv("KONVU_API_URL", srv.URL)
 	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
 	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
-	setInstallFlags(t, "acme", 0)
+	setInstallOrg(t, "acme")
 
-	done := make(chan error, 1)
-	go func() { done <- installFlow(guardrailsInstallCmd, nil) }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("installFlow: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("installFlow waited despite --wait 0")
+	if err := installFlow(guardrailsInstallCmd, nil); err != nil {
+		t.Fatalf("installFlow: %v", err)
 	}
-}
-
-func TestInstallStopsPollingOnceLinked(t *testing.T) {
-	var gotPath, gotBody string
-	srv := installServer(t, &gotPath, &gotBody,
-		map[string]any{"linked": false, "install_url": "https://github.com/apps/x/installations/new"},
-		map[string]any{"linked": true, "account": "acme"},
-	)
-	defer srv.Close()
-	t.Setenv("KONVU_API_URL", srv.URL)
-	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
-	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
-	setInstallFlags(t, "acme", time.Minute)
-
-	done := make(chan error, 1)
-	go func() { done <- installFlow(guardrailsInstallCmd, nil) }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("installFlow: %v", err)
-		}
-	case <-time.After(30 * time.Second):
-		t.Fatal("installFlow kept polling after the installation appeared")
+	if n := calls.Load(); n != 1 {
+		t.Errorf("asked %d times, want exactly 1", n)
 	}
 }
 
