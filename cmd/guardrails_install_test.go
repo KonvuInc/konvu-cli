@@ -76,13 +76,7 @@ func TestInstallShowsTheRepositorySelectionWhenAlreadyConnected(t *testing.T) {
 	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
 	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
 	setInstallOrg(t, "acme")
-	// Forced, because captureStdout makes stdout a pipe and the format auto-detects to JSON
-	// there. Without this the assertion passes on the JSON dump of the whole payload and says
-	// nothing about the human output, which is the thing being tested.
-	if err := guardrailsInstallCmd.Flags().Set("output", "table"); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = guardrailsInstallCmd.Flags().Set("output", "") })
+	forceTableOutput(t)
 
 	out := captureStdout(t, func() {
 		if err := installFlow(guardrailsInstallCmd, nil); err != nil {
@@ -94,6 +88,81 @@ func TestInstallShowsTheRepositorySelectionWhenAlreadyConnected(t *testing.T) {
 	}
 	if !strings.Contains(out, manage) {
 		t.Errorf("output does not offer the repository selection:\n%s", out)
+	}
+}
+
+// installSequence replies with each payload in turn, repeating the last once they run out, so a
+// test can make the repository appear part-way through a wait.
+func installSequence(t *testing.T, calls *atomic.Int32, replies ...map[string]any) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		i := int(calls.Add(1)) - 1
+		if i >= len(replies) {
+			i = len(replies) - 1
+		}
+		_ = json.NewEncoder(w).Encode(replies[i])
+	}))
+}
+
+func TestInstallWaitsUntilTheRepositoryIsVisible(t *testing.T) {
+	// The wait ends on a fact Konvu checked with GitHub, which is what makes it worth waiting for
+	// rather than asking the user to confirm they are done.
+	manage := "https://github.com/organizations/acme/settings/installations/42"
+	var calls atomic.Int32
+	srv := installSequence(t, &calls,
+		map[string]any{"linked": true, "account": "acme", "manage_url": manage, "repo_visible": false},
+		map[string]any{"linked": true, "account": "acme", "manage_url": manage, "repo_visible": true},
+	)
+	defer srv.Close()
+	t.Setenv("KONVU_API_URL", srv.URL)
+	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+	setInstallOrg(t, "acme")
+	forceTableOutput(t)
+
+	out := captureStdout(t, func() {
+		if err := installFlow(guardrailsInstallCmd, nil); err != nil {
+			t.Fatalf("installFlow: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "cannot see") || !strings.Contains(out, manage) {
+		t.Errorf("did not say what is missing, or where to fix it:\n%s", out)
+	}
+	if !strings.Contains(out, "is connected") {
+		t.Errorf("never reported success once the repository appeared:\n%s", out)
+	}
+	if n := calls.Load(); n < 2 {
+		t.Errorf("asked %d times, so it never waited", n)
+	}
+}
+
+func TestInstallDoesNotWaitWhenVisibilityIsUnknown(t *testing.T) {
+	// null is "could not tell" - GitHub unreachable, or no repo named. Treating it as "missing"
+	// would send someone to fix a repository selection that is already correct.
+	manage := "https://github.com/organizations/acme/settings/installations/42"
+	var calls atomic.Int32
+	srv := installSequence(t, &calls,
+		map[string]any{"linked": true, "account": "acme", "manage_url": manage, "repo_visible": nil},
+	)
+	defer srv.Close()
+	t.Setenv("KONVU_API_URL", srv.URL)
+	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+	setInstallOrg(t, "acme")
+	forceTableOutput(t)
+
+	out := captureStdout(t, func() {
+		if err := installFlow(guardrailsInstallCmd, nil); err != nil {
+			t.Fatalf("installFlow: %v", err)
+		}
+	})
+
+	if strings.Contains(out, "cannot see") {
+		t.Errorf("claimed the repository is missing on a null answer:\n%s", out)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("asked %d times, want exactly 1", n)
 	}
 }
 
@@ -126,4 +195,16 @@ func TestGithubOwnerReturnsNothingWithoutARemote(t *testing.T) {
 	if got := githubOwner(t.TempDir()); got != "" {
 		t.Errorf("githubOwner = %q, want empty so the command asks for --org", got)
 	}
+}
+
+// forceTableOutput pins the human output path. captureStdout makes stdout a pipe and the format
+// auto-detects to JSON there, so without this an assertion matches the JSON dump of the whole
+// payload and says nothing about what a person sees -- which is how the first version of these
+// tests passed while the print it was checking had been deleted.
+func forceTableOutput(t *testing.T) {
+	t.Helper()
+	if err := guardrailsInstallCmd.Flags().Set("output", "table"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = guardrailsInstallCmd.Flags().Set("output", "") })
 }

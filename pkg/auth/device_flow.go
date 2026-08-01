@@ -135,6 +135,10 @@ func pollForToken(zitadelDomain, clientID, deviceCode string, pollInterval int, 
 	return nil, fmt.Errorf("login timed out. Please try again.\nYou can also set KONVU_ACCESS_TOKEN environment variable manually.")
 }
 
+// OpenBrowser opens rawURL in the user's default browser, best-effort. Exported so other flows
+// that hand the user a page to act on can reuse it rather than growing a second copy.
+func OpenBrowser(rawURL string) { openBrowser(rawURL) }
+
 func openBrowser(rawURL string) {
 	// Only open HTTP(S) URLs to prevent command injection via malicious schemes.
 	if !strings.HasPrefix(rawURL, "https://") && !strings.HasPrefix(rawURL, "http://") {

@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
+	"github.com/KonvuInc/konvu-cli/pkg/auth"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	"github.com/KonvuInc/konvu-cli/pkg/gitbundle"
 	"github.com/KonvuInc/konvu-cli/pkg/output"
@@ -13,6 +15,13 @@ import (
 )
 
 var inOrg string
+
+const (
+	repoPollEvery = 3 * time.Second
+	// Long enough to find the page, tick a checkbox and save; short enough that a terminal left
+	// open overnight is not doing this.
+	repoWait = 5 * time.Minute
+)
 
 var guardrailsInstallCmd = &cobra.Command{
 	Use:   "install",
@@ -81,10 +90,17 @@ func installFlow(cmd *cobra.Command, _ []string) error {
 		os.Exit(clierrors.ExitUsageError)
 	}
 
+	// The repo you are standing in, so the answer can be about it and not only the organization.
+	// Empty outside a checkout, which just means the organization-level answer.
+	repo := gitbundle.RepoSlug(".")
+	if !strings.Contains(repo, "/") {
+		repo = ""
+	}
+
 	client := api.NewClient("", "")
 	defer client.Close()
 
-	data, err := client.Post(guardrailsAPI+"/dashboard/install", map[string]any{"account": account})
+	data, err := askInstall(client, account, repo)
 	if err != nil {
 		return err
 	}
@@ -104,12 +120,57 @@ func installFlow(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 	fmt.Printf("Connected %s to your Konvu account.\n", getStr(data, "account"))
+	manage := getStr(data, "manage_url")
+
+	// repo_visible is null when no repo was named, or when GitHub could not be reached. Neither is
+	// "your repo is missing", so neither sends anyone off to change a selection that may be fine.
+	if visible, known := getBool(data, "repo_visible"); known && !visible && manage != "" {
+		return waitForRepo(client, account, repo, manage)
+	}
+
 	// Printed every time, not only on the first connect. Connecting an organization is separate
 	// from choosing which of its repositories Konvu can see, and that choice is changed on the
 	// same page, so re-running this command is how you add a repository later.
-	if url := getStr(data, "manage_url"); url != "" {
-		fmt.Printf("  Choose which repositories Konvu can see:\n    %s\n", url)
+	if manage != "" {
+		fmt.Printf("  Choose which repositories Konvu can see:\n    %s\n", manage)
 	}
 	fmt.Println("  Run 'konvu guardrails baseline' in a repository to record its authorization.")
 	return nil
+}
+
+func askInstall(client *api.Client, account, repo string) (map[string]any, error) {
+	body := map[string]any{"account": account}
+	if repo != "" {
+		body["repo"] = repo
+	}
+	return client.Post(guardrailsAPI+"/dashboard/install", body)
+}
+
+// waitForRepo opens the selection page and waits for the repo to appear in it. Unlike waiting for
+// someone to say they are done, this ends on a fact Konvu checked with GitHub.
+func waitForRepo(client *api.Client, account, repo, manage string) error {
+	// The link is printed as well as opened: OpenBrowser is best-effort and silently does nothing
+	// over SSH or in a container, and "opening that page" with no page and no URL is a dead end.
+	fmt.Printf("\nKonvu cannot see %s yet. Add it here:\n\n    %s\n\n", repo, manage)
+	auth.OpenBrowser(manage)
+	fmt.Println("Opening that page in your browser. Waiting for you to save (Ctrl-C to stop)...")
+
+	deadline := time.Now().Add(repoWait)
+	for {
+		time.Sleep(repoPollEvery)
+		data, err := askInstall(client, account, repo)
+		if err != nil {
+			return err
+		}
+		if visible, known := getBool(data, "repo_visible"); known && visible {
+			fmt.Printf("\n%s is connected.\n", repo)
+			fmt.Println("  Run 'konvu guardrails baseline' to record its authorization.")
+			return nil
+		}
+		if time.Now().After(deadline) {
+			fmt.Printf("\nStill cannot see %s after %s.\n", repo, repoWait)
+			fmt.Println("Add it at the link above, then run 'konvu guardrails install' again.")
+			return nil
+		}
+	}
 }
