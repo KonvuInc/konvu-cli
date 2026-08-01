@@ -172,6 +172,16 @@ func guardrailsCLIError(err error) *clierrors.CLIError {
 				Message:  detail,
 				ExitCode: clierrors.ExitGeneralError,
 			}
+		case http.StatusServiceUnavailable:
+			// The default below suggests checking your session, which is wrong here and sends
+			// people to re-authenticate over something that has nothing to do with them.
+			return &clierrors.CLIError{
+				Code:       "UNAVAILABLE",
+				Message:    detail,
+				Suggestion: "Try again shortly, or contact Konvu support if it persists.",
+				Retryable:  true,
+				ExitCode:   clierrors.ExitGeneralError,
+			}
 		default:
 			return clierrors.NewAPIError(detail)
 		}
