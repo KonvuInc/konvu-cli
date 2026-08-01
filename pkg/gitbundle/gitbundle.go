@@ -35,6 +35,18 @@ func Head(dir, ref string) (string, error) {
 	return git(dir, "rev-parse", ref)
 }
 
+// CurrentBranch is the checked-out branch, or "" on a detached HEAD or outside a repository.
+//
+// The bundle carries no branch name -- Create stages the sha under fixed synthetic refs and drops
+// them again -- so the label travels beside it, and only this side can know what it should be.
+func CurrentBranch(dir string) string {
+	b, err := git(dir, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil || b == "HEAD" {
+		return ""
+	}
+	return b
+}
+
 // RepoSlug infers "owner/name" from the origin remote, falling back to the directory name.
 func RepoSlug(dir string) string {
 	if remote, err := git(dir, "remote", "get-url", "origin"); err == nil && remote != "" {
