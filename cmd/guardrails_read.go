@@ -53,7 +53,7 @@ func init() {
 	lf.Bool("quiet", false, "print only repo names")
 
 	sf := guardrailsShowCmd.Flags()
-	sf.String("branch", "main", "branch the baseline was recorded for")
+	sf.String("branch", "main", "branch the baseline was recorded for (default: the branch you are on)")
 	sf.Bool("policy-only", false, "print just the policy table, no baseline summary")
 	sf.StringP("output", "o", "", "output format: table, json, or csv")
 }
@@ -157,7 +157,7 @@ func mustGuardrailsOutput(cmd *cobra.Command) string {
 }
 
 func showFlow(cmd *cobra.Command, args []string) error {
-	branch, _ := cmd.Flags().GetString("branch")
+	branch := branchOrCheckout(cmd)
 	policyOnly, _ := cmd.Flags().GetBool("policy-only")
 	outputFlag, _ := cmd.Flags().GetString("output")
 	format := output.DetectOutputFormat(outputFlag)

@@ -57,7 +57,7 @@ func init() {
 	// client-supplied policies: it proposes one from the baseline and you ratify it.
 	f.StringVarP(&blPolicy, "policy", "p", "", "retired; the policy is proposed and ratified in the dashboard")
 	_ = f.MarkDeprecated("policy", "the policy is proposed from the baseline and ratified in the dashboard")
-	f.StringVar(&blBranch, "branch", "main", "branch this baseline applies to")
+	f.StringVar(&blBranch, "branch", "main", "branch this baseline applies to (default: the branch you are on)")
 	f.StringVar(&blRepo, "repo", "", "repo id (default: inferred from origin)")
 	f.DurationVar(&blTimeout, "timeout", 30*time.Minute, "how long to wait for the baseline to build")
 }
@@ -73,6 +73,7 @@ func runGuardrailsBaseline(cmd *cobra.Command, args []string) error {
 }
 
 func baselineFlow(cmd *cobra.Command, args []string) error {
+	blBranch = branchOrCheckout(cmd)
 	repoPath := "."
 	if len(args) == 1 {
 		repoPath = args[0]

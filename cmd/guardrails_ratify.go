@@ -56,7 +56,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth
 
 func init() {
 	rf := guardrailsRatifyCmd.Flags()
-	rf.String("branch", "main", "branch the baseline was recorded for")
+	rf.String("branch", "main", "branch the baseline was recorded for (default: the branch you are on)")
 	rf.StringP("output", "o", "", "output format: table, json, or csv")
 
 	ef := guardrailsExplainCmd.Flags()
@@ -72,7 +72,7 @@ func runGuardrailsRatify(cmd *cobra.Command, args []string) error {
 }
 
 func ratifyFlow(cmd *cobra.Command, args []string) error {
-	branch, _ := cmd.Flags().GetString("branch")
+	branch := branchOrCheckout(cmd)
 	format := output.DetectOutputFormat(mustGuardrailsOutput(cmd))
 
 	if len(args) == 0 {
