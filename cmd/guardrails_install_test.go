@@ -61,6 +61,42 @@ func TestInstallSendsTheOrganizationAndReportsLinked(t *testing.T) {
 	}
 }
 
+func TestInstallShowsTheRepositorySelectionWhenAlreadyConnected(t *testing.T) {
+	// Connecting an organization is not the same as giving Konvu a repository, and the selection
+	// is changed on the same page, so the link has to appear on every run and not only the first.
+	var gotPath, gotBody string
+	var calls atomic.Int32
+	manage := "https://github.com/organizations/acme/settings/installations/42"
+	srv := installServer(t, &gotPath, &gotBody, &calls, map[string]any{
+		"linked": true, "account": "acme", "manage_url": manage,
+		"detail": "acme is linked to your Konvu company",
+	})
+	defer srv.Close()
+	t.Setenv("KONVU_API_URL", srv.URL)
+	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+	setInstallOrg(t, "acme")
+	// Forced, because captureStdout makes stdout a pipe and the format auto-detects to JSON
+	// there. Without this the assertion passes on the JSON dump of the whole payload and says
+	// nothing about the human output, which is the thing being tested.
+	if err := guardrailsInstallCmd.Flags().Set("output", "table"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = guardrailsInstallCmd.Flags().Set("output", "") })
+
+	out := captureStdout(t, func() {
+		if err := installFlow(guardrailsInstallCmd, nil); err != nil {
+			t.Fatalf("installFlow: %v", err)
+		}
+	})
+	if !strings.Contains(out, "Connected acme") {
+		t.Fatalf("not the human output path:\n%s", out)
+	}
+	if !strings.Contains(out, manage) {
+		t.Errorf("output does not offer the repository selection:\n%s", out)
+	}
+}
+
 func TestInstallAsksOnceAndReturnsWhenNotInstalled(t *testing.T) {
 	// The command reports state and exits; you install and run it again. A version that waited
 	// would keep asking here, so the request count is what pins the behaviour.

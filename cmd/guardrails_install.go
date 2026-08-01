@@ -24,8 +24,12 @@ installation on your GitHub organization to your Konvu account, which is what le
 baseline you record here be the one checks read on your pull requests.
 
 If the App is not installed yet, this prints the link to install it; run the command
-again once you have. Re-running is always safe: it reports the current state rather
-than changing it.
+again once you have. Once connected it prints the link to your repository selection,
+so run it again whenever you want to add a repository. Re-running is always safe: it
+reports the current state rather than changing it.
+
+Connecting an organization is not the same as giving Konvu a repository. A repository
+that is not in the selection is one Konvu cannot see.
 
 The organization defaults to the owner of your 'origin' remote.
 
@@ -100,6 +104,12 @@ func installFlow(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 	fmt.Printf("Connected %s to your Konvu account.\n", getStr(data, "account"))
+	// Printed every time, not only on the first connect. Connecting an organization is separate
+	// from choosing which of its repositories Konvu can see, and that choice is changed on the
+	// same page, so re-running this command is how you add a repository later.
+	if url := getStr(data, "manage_url"); url != "" {
+		fmt.Printf("  Choose which repositories Konvu can see:\n    %s\n", url)
+	}
 	fmt.Println("  Run 'konvu guardrails baseline' in a repository to record its authorization.")
 	return nil
 }
