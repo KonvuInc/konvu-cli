@@ -119,6 +119,7 @@ func TestInstallWaitsUntilTheRepositoryIsVisible(t *testing.T) {
 	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
 	setInstallOrg(t, "acme")
 	forceTableOutput(t)
+	opened := stubBrowser(t)
 
 	out := captureStdout(t, func() {
 		if err := installFlow(guardrailsInstallCmd, nil); err != nil {
@@ -126,6 +127,9 @@ func TestInstallWaitsUntilTheRepositoryIsVisible(t *testing.T) {
 		}
 	})
 
+	if len(*opened) != 1 || (*opened)[0] != manage {
+		t.Errorf("browser opened at %v, want exactly [%s]", *opened, manage)
+	}
 	if !strings.Contains(out, "cannot see") || !strings.Contains(out, manage) {
 		t.Errorf("did not say what is missing, or where to fix it:\n%s", out)
 	}
@@ -151,6 +155,7 @@ func TestInstallDoesNotWaitWhenVisibilityIsUnknown(t *testing.T) {
 	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
 	setInstallOrg(t, "acme")
 	forceTableOutput(t)
+	opened := stubBrowser(t)
 
 	out := captureStdout(t, func() {
 		if err := installFlow(guardrailsInstallCmd, nil); err != nil {
@@ -158,6 +163,9 @@ func TestInstallDoesNotWaitWhenVisibilityIsUnknown(t *testing.T) {
 		}
 	})
 
+	if len(*opened) != 0 {
+		t.Errorf("opened a browser on an unknown answer: %v", *opened)
+	}
 	if strings.Contains(out, "cannot see") {
 		t.Errorf("claimed the repository is missing on a null answer:\n%s", out)
 	}
@@ -207,4 +215,15 @@ func forceTableOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = guardrailsInstallCmd.Flags().Set("output", "") })
+}
+
+// stubBrowser records what would have been opened instead of opening it. Without this the wait
+// path launches a real tab on every test run, at a URL that does not exist.
+func stubBrowser(t *testing.T) *[]string {
+	t.Helper()
+	var opened []string
+	prev := openInBrowser
+	openInBrowser = func(u string) { opened = append(opened, u) }
+	t.Cleanup(func() { openInBrowser = prev })
+	return &opened
 }

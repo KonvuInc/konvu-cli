@@ -16,6 +16,10 @@ import (
 
 var inOrg string
 
+// Indirected so tests never launch a real browser: driving the wait path used to open a tab per
+// run, at a URL that does not exist.
+var openInBrowser = auth.OpenBrowser
+
 const (
 	repoPollEvery = 3 * time.Second
 	// Long enough to find the page, tick a checkbox and save; short enough that a terminal left
@@ -152,7 +156,7 @@ func waitForRepo(client *api.Client, account, repo, manage string) error {
 	// The link is printed as well as opened: OpenBrowser is best-effort and silently does nothing
 	// over SSH or in a container, and "opening that page" with no page and no URL is a dead end.
 	fmt.Printf("\nKonvu cannot see %s yet. Add it here:\n\n    %s\n\n", repo, manage)
-	auth.OpenBrowser(manage)
+	openInBrowser(manage)
 	fmt.Println("Opening that page in your browser. Waiting for you to save (Ctrl-C to stop)...")
 
 	deadline := time.Now().Add(repoWait)
