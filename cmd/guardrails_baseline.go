@@ -73,7 +73,6 @@ func runGuardrailsBaseline(cmd *cobra.Command, args []string) error {
 }
 
 func baselineFlow(cmd *cobra.Command, args []string) error {
-	blBranch = branchOrCheckout(cmd)
 	repoPath := "."
 	if len(args) == 1 {
 		repoPath = args[0]
@@ -87,6 +86,9 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	if repoID == "" {
 		repoID = gitbundle.RepoSlug(repoPath)
 	}
+	// After repoID, because the inference only applies when the checkout is the repo being
+	// recorded -- an explicit --repo pointing elsewhere must not borrow this branch name.
+	blBranch = branchOrCheckout(cmd, repoID, repoPath)
 
 	bundlePath, cleanup, err := gitbundle.Create(repoPath, head)
 	if err != nil {

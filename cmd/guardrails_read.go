@@ -157,7 +157,6 @@ func mustGuardrailsOutput(cmd *cobra.Command) string {
 }
 
 func showFlow(cmd *cobra.Command, args []string) error {
-	branch := branchOrCheckout(cmd)
 	policyOnly, _ := cmd.Flags().GetBool("policy-only")
 	outputFlag, _ := cmd.Flags().GetString("output")
 	format := output.DetectOutputFormat(outputFlag)
@@ -167,6 +166,7 @@ func showFlow(cmd *cobra.Command, args []string) error {
 		os.Exit(clierrors.ExitUsageError)
 	}
 	repo := args[0]
+	branch := branchOrCheckout(cmd, repo, ".")
 
 	client := api.NewClient("", "")
 	defer client.Close()

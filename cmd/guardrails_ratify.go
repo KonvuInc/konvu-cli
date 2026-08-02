@@ -72,7 +72,6 @@ func runGuardrailsRatify(cmd *cobra.Command, args []string) error {
 }
 
 func ratifyFlow(cmd *cobra.Command, args []string) error {
-	branch := branchOrCheckout(cmd)
 	format := output.DetectOutputFormat(mustGuardrailsOutput(cmd))
 
 	if len(args) == 0 {
@@ -80,6 +79,7 @@ func ratifyFlow(cmd *cobra.Command, args []string) error {
 		os.Exit(clierrors.ExitUsageError)
 	}
 	repo := args[0]
+	branch := branchOrCheckout(cmd, repo, ".")
 
 	client := api.NewClient("", "")
 	defer client.Close()
