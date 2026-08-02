@@ -420,3 +420,74 @@ func TestBaselineDoesNotSendAPolicy(t *testing.T) {
 		t.Error("policy was sent; the server rejects the field outright (422)")
 	}
 }
+
+func TestBaselineLabelsWithTheBundledCheckoutsBranch(t *testing.T) {
+	// `baseline ../web` records THAT checkout, so its branch is the label. Reading the current
+	// directory instead would stamp whatever you happen to be standing in onto another
+	// repository -- and it addresses a real baseline, so it lands on the wrong one silently.
+	//
+	// Driven through baselineFlow on purpose: asserting on branchOrCheckout alone passes even
+	// when the call site hands it ".", which is exactly the wiring this covers.
+	var gotBranch, gotRepo string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/upload-url"):
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"bundle_key": "k", "url": "http://" + r.Host + "/put", "expires_in": 900,
+			})
+		case r.URL.Path == "/put":
+			w.WriteHeader(http.StatusOK)
+		case strings.Contains(r.URL.Path, "/jobs/"):
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"job_id": "j1", "status": "error", "error": "stop here",
+			})
+		default:
+			_ = r.ParseForm()
+			gotBranch, gotRepo = r.FormValue("branch"), r.FormValue("repo")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{"job_id": "j1", "status": "pending"})
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("KONVU_API_URL", srv.URL)
+	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+
+	// Stand in a checkout on `cwd-branch`; bundle a different one on `bundled-branch`.
+	here := newRepoOn(t, "cwd-branch", "git@github.com:acme/here.git")
+	prev, _ := os.Getwd()
+	if err := os.Chdir(here); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prev) })
+	there := newRepoOn(t, "bundled-branch", "git@github.com:acme/there.git")
+
+	_ = guardrailsBaselineCmd.Flags().Set("timeout", "1ns")
+	defer func() { _ = guardrailsBaselineCmd.Flags().Set("timeout", "30m") }()
+	_ = baselineFlow(guardrailsBaselineCmd, []string{there})
+
+	if gotRepo != "acme/there" {
+		t.Fatalf("repo = %q, want the bundled checkout's", gotRepo)
+	}
+	if gotBranch != "bundled-branch" {
+		t.Errorf("branch = %q, want the bundled checkout's branch, not the current directory's", gotBranch)
+	}
+}
+
+// newRepoOn is newRepo with a chosen branch and origin remote.
+func newRepoOn(t *testing.T, branch, origin string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, a := range [][]string{
+		{"init", "-q", "-b", branch},
+		{"remote", "add", "origin", origin},
+		{"config", "user.email", "t@example.com"},
+		{"config", "user.name", "t"},
+		{"commit", "-q", "--allow-empty", "-m", "one"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, a...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", a, err, out)
+		}
+	}
+	return dir
+}
