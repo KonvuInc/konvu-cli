@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var guardrailsRatifyCmd = &cobra.Command{
+var guardrailsApproveCmd = &cobra.Command{
 	Use:   "ratify <repo>",
 	Short: "Agree to a repository's proposed authorization policy",
 	Long: `Agree to a repository's proposed authorization policy.
@@ -29,7 +29,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth
   # A specific branch
   konvu guardrails ratify acme/web --branch release-2.3`,
 	Args: cobra.MaximumNArgs(1),
-	RunE: runGuardrailsRatify,
+	RunE: runGuardrailsApprove,
 }
 
 var guardrailsExplainCmd = &cobra.Command{
@@ -55,7 +55,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth
 }
 
 func init() {
-	rf := guardrailsRatifyCmd.Flags()
+	rf := guardrailsApproveCmd.Flags()
 	rf.String("branch", "", "branch to act on (default: the repository's default branch, resolved by the server)")
 	rf.StringP("output", "o", "", "output format: table, json, or csv")
 
@@ -64,14 +64,14 @@ func init() {
 	ef.StringP("output", "o", "", "output format: table, json, or csv")
 }
 
-func runGuardrailsRatify(cmd *cobra.Command, args []string) error {
-	if err := ratifyFlow(cmd, args); err != nil {
+func runGuardrailsApprove(cmd *cobra.Command, args []string) error {
+	if err := approveFlow(cmd, args); err != nil {
 		handleGuardrailsError(err, output.DetectOutputFormat(mustGuardrailsOutput(cmd)))
 	}
 	return nil
 }
 
-func ratifyFlow(cmd *cobra.Command, args []string) error {
+func approveFlow(cmd *cobra.Command, args []string) error {
 	format := output.DetectOutputFormat(mustGuardrailsOutput(cmd))
 
 	if len(args) == 0 {

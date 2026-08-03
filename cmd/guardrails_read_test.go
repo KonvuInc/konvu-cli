@@ -46,7 +46,7 @@ func TestShowDoesNotReuseBaselinesPolicyFlag(t *testing.T) {
 	if guardrailsShowCmd.Flags().Lookup("policy") != nil {
 		t.Error("show should use --policy-only; --policy is baseline's file flag")
 	}
-	if f := guardrailsBaselineCmd.Flags().Lookup("policy"); f == nil || f.Value.Type() != "string" {
+	if f := guardrailsScanCmd.Flags().Lookup("policy"); f == nil || f.Value.Type() != "string" {
 		t.Error("baseline --policy should still be the policy file")
 	}
 }

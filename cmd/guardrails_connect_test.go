@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestInstallRegistered(t *testing.T) {
+func TestConnectRegistered(t *testing.T) {
 	for _, c := range guardrailsCmd.Commands() {
 		if c.Name() == "install" {
 			return
@@ -38,7 +38,7 @@ func setInstallOrg(t *testing.T, org string) {
 	t.Cleanup(func() { inOrg = prev })
 }
 
-func TestInstallSendsTheOrganizationAndReportsLinked(t *testing.T) {
+func TestConnectSendsTheOrganizationAndReportsLinked(t *testing.T) {
 	var gotPath, gotBody string
 	var calls atomic.Int32
 	srv := installServer(t, &gotPath, &gotBody, &calls, map[string]any{
@@ -50,8 +50,8 @@ func TestInstallSendsTheOrganizationAndReportsLinked(t *testing.T) {
 	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
 	setInstallOrg(t, "acme")
 
-	if err := installFlow(guardrailsInstallCmd, nil); err != nil {
-		t.Fatalf("installFlow: %v", err)
+	if err := connectFlow(guardrailsConnectCmd, nil); err != nil {
+		t.Fatalf("connectFlow: %v", err)
 	}
 	if want := guardrailsAPI + "/dashboard/install"; gotPath != want {
 		t.Errorf("path = %q, want %q", gotPath, want)
@@ -61,7 +61,7 @@ func TestInstallSendsTheOrganizationAndReportsLinked(t *testing.T) {
 	}
 }
 
-func TestInstallShowsTheRepositorySelectionWhenAlreadyConnected(t *testing.T) {
+func TestConnectShowsTheRepositorySelectionWhenAlreadyConnected(t *testing.T) {
 	// Connecting an organization is not the same as giving Konvu a repository, and the selection
 	// is changed on the same page, so the link has to appear on every run and not only the first.
 	var gotPath, gotBody string
@@ -79,8 +79,8 @@ func TestInstallShowsTheRepositorySelectionWhenAlreadyConnected(t *testing.T) {
 	forceTableOutput(t)
 
 	out := captureStdout(t, func() {
-		if err := installFlow(guardrailsInstallCmd, nil); err != nil {
-			t.Fatalf("installFlow: %v", err)
+		if err := connectFlow(guardrailsConnectCmd, nil); err != nil {
+			t.Fatalf("connectFlow: %v", err)
 		}
 	})
 	if !strings.Contains(out, "Connected acme") {
@@ -104,7 +104,7 @@ func installSequence(t *testing.T, calls *atomic.Int32, replies ...map[string]an
 	}))
 }
 
-func TestInstallWaitsUntilTheRepositoryIsVisible(t *testing.T) {
+func TestConnectWaitsUntilTheRepositoryIsVisible(t *testing.T) {
 	// The wait ends on a fact Konvu checked with GitHub, which is what makes it worth waiting for
 	// rather than asking the user to confirm they are done.
 	manage := "https://github.com/organizations/acme/settings/installations/42"
@@ -122,8 +122,8 @@ func TestInstallWaitsUntilTheRepositoryIsVisible(t *testing.T) {
 	opened := stubBrowser(t)
 
 	out := captureStdout(t, func() {
-		if err := installFlow(guardrailsInstallCmd, nil); err != nil {
-			t.Fatalf("installFlow: %v", err)
+		if err := connectFlow(guardrailsConnectCmd, nil); err != nil {
+			t.Fatalf("connectFlow: %v", err)
 		}
 	})
 
@@ -141,7 +141,7 @@ func TestInstallWaitsUntilTheRepositoryIsVisible(t *testing.T) {
 	}
 }
 
-func TestInstallDoesNotWaitWhenVisibilityIsUnknown(t *testing.T) {
+func TestConnectDoesNotWaitWhenVisibilityIsUnknown(t *testing.T) {
 	// null is "could not tell" - GitHub unreachable, or no repo named. Treating it as "missing"
 	// would send someone to fix a repository selection that is already correct.
 	manage := "https://github.com/organizations/acme/settings/installations/42"
@@ -158,8 +158,8 @@ func TestInstallDoesNotWaitWhenVisibilityIsUnknown(t *testing.T) {
 	opened := stubBrowser(t)
 
 	out := captureStdout(t, func() {
-		if err := installFlow(guardrailsInstallCmd, nil); err != nil {
-			t.Fatalf("installFlow: %v", err)
+		if err := connectFlow(guardrailsConnectCmd, nil); err != nil {
+			t.Fatalf("connectFlow: %v", err)
 		}
 	})
 
@@ -174,7 +174,7 @@ func TestInstallDoesNotWaitWhenVisibilityIsUnknown(t *testing.T) {
 	}
 }
 
-func TestInstallAsksOnceAndReturnsWhenNotInstalled(t *testing.T) {
+func TestConnectAsksOnceAndReturnsWhenNotInstalled(t *testing.T) {
 	// The command reports state and exits; you install and run it again. A version that waited
 	// would keep asking here, so the request count is what pins the behaviour.
 	var gotPath, gotBody string
@@ -189,8 +189,8 @@ func TestInstallAsksOnceAndReturnsWhenNotInstalled(t *testing.T) {
 	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
 	setInstallOrg(t, "acme")
 
-	if err := installFlow(guardrailsInstallCmd, nil); err != nil {
-		t.Fatalf("installFlow: %v", err)
+	if err := connectFlow(guardrailsConnectCmd, nil); err != nil {
+		t.Fatalf("connectFlow: %v", err)
 	}
 	if n := calls.Load(); n != 1 {
 		t.Errorf("asked %d times, want exactly 1", n)
@@ -211,10 +211,10 @@ func TestGithubOwnerReturnsNothingWithoutARemote(t *testing.T) {
 // tests passed while the print it was checking had been deleted.
 func forceTableOutput(t *testing.T) {
 	t.Helper()
-	if err := guardrailsInstallCmd.Flags().Set("output", "table"); err != nil {
+	if err := guardrailsConnectCmd.Flags().Set("output", "table"); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = guardrailsInstallCmd.Flags().Set("output", "") })
+	t.Cleanup(func() { _ = guardrailsConnectCmd.Flags().Set("output", "") })
 }
 
 // stubBrowser records what would have been opened instead of opening it. Without this the wait

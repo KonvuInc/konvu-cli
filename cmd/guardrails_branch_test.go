@@ -42,17 +42,17 @@ func inDir(t *testing.T, dir string) {
 
 func clearBranchFlag(t *testing.T) {
 	t.Helper()
-	t.Cleanup(func() { _ = guardrailsRatifyCmd.Flags().Set("branch", "") })
+	t.Cleanup(func() { _ = guardrailsApproveCmd.Flags().Set("branch", "") })
 }
 
 func TestAnExplicitBranchIsHonoured(t *testing.T) {
 	inDir(t, newRepoOn(t, "git@github.com:acme/web.git", "master", "master"))
-	if err := guardrailsRatifyCmd.Flags().Set("branch", "release-2.3"); err != nil {
+	if err := guardrailsApproveCmd.Flags().Set("branch", "release-2.3"); err != nil {
 		t.Fatal(err)
 	}
 	clearBranchFlag(t)
 
-	if got := requestedBranch(guardrailsRatifyCmd); got != "release-2.3" {
+	if got := requestedBranch(guardrailsApproveCmd); got != "release-2.3" {
 		t.Errorf("branch = %q, want the explicit value", got)
 	}
 }
@@ -67,7 +67,7 @@ func TestTheCheckoutIsNeverReadForABranch(t *testing.T) {
 	inDir(t, newRepoOn(t, "git@github.com:acme/web.git", "master", "feature/add-export"))
 	clearBranchFlag(t)
 
-	if got := requestedBranch(guardrailsRatifyCmd); got != "" {
+	if got := requestedBranch(guardrailsApproveCmd); got != "" {
 		t.Errorf("branch = %q, want empty so the server resolves the current default", got)
 	}
 }

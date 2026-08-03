@@ -27,7 +27,7 @@ const (
 	repoWait = 5 * time.Minute
 )
 
-var guardrailsInstallCmd = &cobra.Command{
+var guardrailsConnectCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Connect your GitHub organization to Konvu Guardrails",
 	Long: `Connect your GitHub organization to Konvu Guardrails.
@@ -53,17 +53,17 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
   # Name it explicitly, outside a checkout
   konvu guardrails install --org acme`,
 	Args: cobra.NoArgs,
-	RunE: runGuardrailsInstall,
+	RunE: runGuardrailsConnect,
 }
 
 func init() {
-	f := guardrailsInstallCmd.Flags()
+	f := guardrailsConnectCmd.Flags()
 	f.StringVar(&inOrg, "org", "", "GitHub organization (default: owner of your origin remote)")
 	f.StringP("output", "o", "", "output format: table or json")
 }
 
-func runGuardrailsInstall(cmd *cobra.Command, args []string) error {
-	if err := installFlow(cmd, args); err != nil {
+func runGuardrailsConnect(cmd *cobra.Command, args []string) error {
+	if err := connectFlow(cmd, args); err != nil {
 		handleGuardrailsError(err, output.DetectOutputFormat(mustGuardrailsOutput(cmd)))
 	}
 	return nil
@@ -81,7 +81,7 @@ func githubOwner(dir string) string {
 	return owner
 }
 
-func installFlow(cmd *cobra.Command, _ []string) error {
+func connectFlow(cmd *cobra.Command, _ []string) error {
 	format := output.DetectOutputFormat(mustGuardrailsOutput(cmd))
 
 	account := inOrg
@@ -104,7 +104,7 @@ func installFlow(cmd *cobra.Command, _ []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 
-	data, err := askInstall(client, account, repo)
+	data, err := askConnect(client, account, repo)
 	if err != nil {
 		return err
 	}
@@ -142,7 +142,7 @@ func installFlow(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func askInstall(client *api.Client, account, repo string) (map[string]any, error) {
+func askConnect(client *api.Client, account, repo string) (map[string]any, error) {
 	body := map[string]any{"account": account}
 	if repo != "" {
 		body["repo"] = repo
@@ -162,7 +162,7 @@ func waitForRepo(client *api.Client, account, repo, manage string) error {
 	deadline := time.Now().Add(repoWait)
 	for {
 		time.Sleep(repoPollEvery)
-		data, err := askInstall(client, account, repo)
+		data, err := askConnect(client, account, repo)
 		if err != nil {
 			return err
 		}

@@ -16,7 +16,7 @@ import (
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 )
 
-func TestGuardrailsBaselineRegistered(t *testing.T) {
+func TestGuardrailsScanRegistered(t *testing.T) {
 	found := false
 	for _, c := range guardrailsCmd.Commands() {
 		if c.Name() == "baseline" {
@@ -28,9 +28,9 @@ func TestGuardrailsBaselineRegistered(t *testing.T) {
 	}
 }
 
-func TestGuardrailsBaselineFlags(t *testing.T) {
+func TestGuardrailsScanFlags(t *testing.T) {
 	for _, flag := range []string{"policy", "branch", "repo", "timeout"} {
-		if guardrailsBaselineCmd.Flags().Lookup(flag) == nil {
+		if guardrailsScanCmd.Flags().Lookup(flag) == nil {
 			t.Errorf("guardrails baseline missing flag: --%s", flag)
 		}
 	}
@@ -251,7 +251,7 @@ func TestGuardrailsCLIErrorKeepsATransportError(t *testing.T) {
 // os.Exit does not run deferred functions, so ending the flow anywhere but the wrapper leaves the
 // staged refs and the temp bundle in the user's checkout. One case per way the flow can end badly,
 // because fixing this once for the 403 path is exactly how the other three survived.
-func TestBaselineFlowCleansUpOnEveryFailurePath(t *testing.T) {
+func TestScanFlowCleansUpOnEveryFailurePath(t *testing.T) {
 	cases := []struct {
 		name    string
 		handler http.HandlerFunc
@@ -319,10 +319,10 @@ func TestBaselineFlowCleansUpOnEveryFailurePath(t *testing.T) {
 
 			repo := newRepo(t)
 			// A timeout that has already passed, so the poll loop gives up on its first look.
-			_ = guardrailsBaselineCmd.Flags().Set("timeout", "1ns")
-			defer func() { _ = guardrailsBaselineCmd.Flags().Set("timeout", "30m") }()
+			_ = guardrailsScanCmd.Flags().Set("timeout", "1ns")
+			defer func() { _ = guardrailsScanCmd.Flags().Set("timeout", "30m") }()
 
-			if err := baselineFlow(guardrailsBaselineCmd, []string{repo}); err == nil {
+			if err := scanFlow(guardrailsScanCmd, []string{repo}); err == nil {
 				t.Fatal("want an error rather than an exit")
 			}
 
@@ -364,7 +364,7 @@ func newRepo(t *testing.T) string {
 
 // The server retired client-supplied policies: it proposes one from the baseline and it is
 // ratified in the dashboard. Sending the field at all is a 422, so this pins that we do not.
-func TestBaselineDoesNotSendAPolicy(t *testing.T) {
+func TestScanDoesNotSendAPolicy(t *testing.T) {
 	var sawPolicy bool
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -410,11 +410,11 @@ func TestBaselineDoesNotSendAPolicy(t *testing.T) {
 	}
 
 	// Even when the deprecated flag is set, the field must not go on the wire.
-	_ = guardrailsBaselineCmd.Flags().Set("policy", "/does/not/matter.yaml")
-	defer func() { _ = guardrailsBaselineCmd.Flags().Set("policy", "") }()
+	_ = guardrailsScanCmd.Flags().Set("policy", "/does/not/matter.yaml")
+	defer func() { _ = guardrailsScanCmd.Flags().Set("policy", "") }()
 
-	if err := baselineFlow(guardrailsBaselineCmd, []string{repo}); err != nil {
-		t.Fatalf("baselineFlow: %v", err)
+	if err := scanFlow(guardrailsScanCmd, []string{repo}); err != nil {
+		t.Fatalf("scanFlow: %v", err)
 	}
 	if sawPolicy {
 		t.Error("policy was sent; the server rejects the field outright (422)")
@@ -465,9 +465,9 @@ func TestBaselineSendsNoBranchAndTheBundledRepositorysID(t *testing.T) {
 	inDir(t, here)
 	there := newRepoOn(t, "git@github.com:acme/there.git", "there-default", "feature/there")
 
-	_ = guardrailsBaselineCmd.Flags().Set("timeout", "1ns")
-	defer func() { _ = guardrailsBaselineCmd.Flags().Set("timeout", "30m") }()
-	_ = baselineFlow(guardrailsBaselineCmd, []string{there})
+	_ = guardrailsScanCmd.Flags().Set("timeout", "1ns")
+	defer func() { _ = guardrailsScanCmd.Flags().Set("timeout", "30m") }()
+	_ = scanFlow(guardrailsScanCmd, []string{there})
 
 	if gotRepo != "acme/there" {
 		t.Fatalf("repo = %q, want the bundled checkout's", gotRepo)
@@ -510,8 +510,8 @@ func TestBaselinePostsTheBundleWhenTheServerCannotPresign(t *testing.T) {
 	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
 
 	repo := newRepoOn(t, "git@github.com:acme/web.git", "main", "main")
-	if err := baselineFlow(guardrailsBaselineCmd, []string{repo}); err != nil {
-		t.Fatalf("baselineFlow: %v", err)
+	if err := scanFlow(guardrailsScanCmd, []string{repo}); err != nil {
+		t.Fatalf("scanFlow: %v", err)
 	}
 	if !sawBundle {
 		t.Error("no bundle part was sent, so a server that cannot presign has no way to receive it")
