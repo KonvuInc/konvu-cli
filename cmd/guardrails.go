@@ -33,32 +33,38 @@ func init() {
 }
 
 // resolveBranch is the branch a command acts on: what was asked for, else the default branch of
-// the repository being named, else "main".
+// the repository being named, else "" meaning "I do not know, you decide".
 //
-// The default branch, not the one you are standing on. A baseline describes what pull requests are
-// measured against, and they target the default branch -- so a developer on `feature/x` still means
-// `master`, and recording a baseline for the feature branch would file it at an address no pull
-// request queries and that disappears at merge.
+// The DEFAULT branch, not the checked-out one: a baseline describes what pull requests are
+// measured against, so a developer on `feature/x` still means `master`.
 //
-// It is read from the checkout only when that checkout IS the repository being named: `show` and
-// `ratify` take the repository as an argument, so run from an unrelated directory they would
-// otherwise borrow a stranger's branch. `dir` is the checkout to read, which is not always "." --
-// `baseline ../web` records somewhere else, and that is the repository whose default branch labels
-// the result.
+// Read from the checkout only when that checkout IS the repository named, since `show` and
+// `ratify` take it as an argument and would otherwise borrow an unrelated repo's branch. `dir` is
+// the checkout to read: `baseline ../web` records somewhere else.
+//
+// Empty must travel as an omitted field, never as "main" -- only the server can ask GitHub for a
+// repository's default, and a client-side guess overrides an answer it would have got right.
 func resolveBranch(cmd *cobra.Command, repo, dir string) string {
 	if v, _ := cmd.Flags().GetString("branch"); v != "" {
 		return v
 	}
 	if sameRepo(repo, gitbundle.RepoSlug(dir)) {
-		if b := gitbundle.DefaultBranch(dir); b != "" {
-			return b
-		}
+		return gitbundle.DefaultBranch(dir)
 	}
-	return "main"
+	return ""
 }
 
 // sameRepo compares two "owner/name" ids. GitHub treats them case-insensitively and so must this,
 // or standing in `acmekonvu/pygoat` while naming `AcmeKonvu/pygoat` silently stops inferring.
 func sameRepo(a, b string) bool {
 	return a != "" && b != "" && strings.EqualFold(a, b)
+}
+
+// branchParam carries the branch only when we know it. An omitted field asks the server to resolve
+// the repository's default; sending a guess instead would override an answer it can look up.
+func branchParam(branch string) map[string]any {
+	if branch == "" {
+		return map[string]any{}
+	}
+	return map[string]any{"branch": branch}
 }

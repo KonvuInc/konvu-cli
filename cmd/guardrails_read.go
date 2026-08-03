@@ -174,7 +174,7 @@ func showFlow(cmd *cobra.Command, args []string) error {
 	// The route matches on a path, so the repo's slash is part of it and must not be escaped.
 	data, err := client.Get(
 		guardrailsAPI+"/dashboard/repos/"+repo+"/baseline",
-		map[string]any{"branch": branch},
+		branchParam(branch),
 	)
 	if err != nil {
 		return err

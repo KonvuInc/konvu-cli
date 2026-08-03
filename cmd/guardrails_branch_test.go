@@ -70,8 +70,10 @@ func TestAnUnrelatedCheckoutDoesNotLendItsDefaultBranch(t *testing.T) {
 	checkoutOf(t, "git@github.com:acme/web.git", "trunk", "trunk")
 	clearBranchFlag(t)
 
-	if got := resolveBranch(guardrailsRatifyCmd, "AcmeKonvu/pygoat", "."); got != "main" {
-		t.Errorf("branch = %q, want the fallback when the checkout is a different repo", got)
+	// Empty, not "main": the CLI says nothing and the server resolves the repository's default.
+	// Guessing here would override an answer only the server can look up.
+	if got := resolveBranch(guardrailsRatifyCmd, "AcmeKonvu/pygoat", "."); got != "" {
+		t.Errorf("branch = %q, want empty so the server resolves it", got)
 	}
 }
 
@@ -86,8 +88,8 @@ func TestTheSameRepoInAnotherCaseStillResolves(t *testing.T) {
 	}
 }
 
-func TestWithoutAKnownDefaultItFallsBackRatherThanGuessingTheCheckout(t *testing.T) {
-	// A repository with no origin/HEAD (git init, never cloned) knows no default. Falling back to
+func TestWithoutAKnownDefaultItSaysNothingRatherThanGuessingTheCheckout(t *testing.T) {
+	// A repository with no origin/HEAD (git init, never cloned) knows no default. Answering with
 	// the checked-out branch here is what would file a baseline under `feature/x`.
 	dir := t.TempDir()
 	run := func(args ...string) {
@@ -106,7 +108,18 @@ func TestWithoutAKnownDefaultItFallsBackRatherThanGuessingTheCheckout(t *testing
 	t.Cleanup(func() { _ = os.Chdir(prev) })
 	clearBranchFlag(t)
 
-	if got := resolveBranch(guardrailsRatifyCmd, "acme/web", "."); got != "main" {
-		t.Errorf("branch = %q, want main rather than the checked-out branch", got)
+	if got := resolveBranch(guardrailsRatifyCmd, "acme/web", "."); got != "" {
+		t.Errorf("branch = %q, want empty rather than the checked-out branch", got)
+	}
+}
+
+func TestAnUnknownBranchIsOmittedFromTheRequest(t *testing.T) {
+	// The half that matters on the wire: "" must travel as an absent field. Sending branch=main
+	// looks identical to a deliberate choice, and the server stops resolving.
+	if got := branchParam(""); len(got) != 0 {
+		t.Errorf("branchParam(\"\") = %v, want an empty map", got)
+	}
+	if got := branchParam("master"); got["branch"] != "master" {
+		t.Errorf("branchParam(master) = %v, want the branch carried", got)
 	}
 }

@@ -86,13 +86,8 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	if repoID == "" {
 		repoID = gitbundle.RepoSlug(repoPath)
 	}
-	// After repoID, because the inference only applies when the checkout is the repo being
-	// recorded -- an explicit --repo pointing elsewhere must not borrow this branch name.
-	// After repoID, because the default branch is only read when the checkout IS the repository
-	// being recorded -- an explicit --repo pointing elsewhere must not borrow this one's.
-	//
-	// A local, deliberately: blBranch is the flag's own storage, so assigning back to it would
-	// make the flag read as explicitly set on any later resolution in the same process.
+	// A local, not blBranch: that is the flag's own storage, so assigning back to it would make
+	// the flag read as explicitly set on any later resolution in the same process.
 	branch := resolveBranch(cmd, repoID, repoPath)
 
 	bundlePath, cleanup, err := gitbundle.Create(repoPath, head)
@@ -105,9 +100,11 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	defer client.Close()
 
 	// No policy field: the server rejects one outright now, rather than ignoring it.
-	fields := url.Values{
-		"repo":   {repoID},
-		"branch": {branch},
+	fields := url.Values{"repo": {repoID}}
+	// Omitted when unknown, so the server resolves the repository's default branch rather than
+	// receiving a guess it cannot tell apart from a deliberate choice.
+	if branch != "" {
+		fields.Set("branch", branch)
 	}
 
 	// Upload out of band, so the bundle does not travel through the API. A server that cannot
