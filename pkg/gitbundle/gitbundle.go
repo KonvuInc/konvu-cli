@@ -35,17 +35,16 @@ func Head(dir, ref string) (string, error) {
 	return git(dir, "rev-parse", ref)
 }
 
-// CurrentBranch is the checked-out branch, or "" on a detached HEAD or outside a repository.
+// There is deliberately no DefaultBranch here. A clone records its remote's default in
+// refs/remotes/origin/HEAD when it is created, and nothing routinely refreshes it: after the
+// remote's default branch is renamed, a plain `git fetch` leaves both that symbolic ref and the
+// old remote-tracking branch in place, so reading it locally cannot tell a current default from
+// one that moved months ago. Only `git fetch --prune` repairs it, and asking the remote directly
+// costs a network round trip and the user's git credentials.
 //
-// The bundle carries no branch name -- Create stages the sha under fixed synthetic refs and drops
-// them again -- so the label travels beside it, and only this side can know what it should be.
-func CurrentBranch(dir string) string {
-	b, err := git(dir, "rev-parse", "--abbrev-ref", "HEAD")
-	if err != nil || b == "HEAD" {
-		return ""
-	}
-	return b
-}
+// The branch is an address, and sending one is what makes it authoritative, so a stale read would
+// file or look up a baseline under a branch no pull request targets. The server already asks the
+// host for the current default when the field is omitted -- see cmd.requestedBranch.
 
 // RepoSlug infers "owner/name" from the origin remote, falling back to the directory name.
 func RepoSlug(dir string) string {

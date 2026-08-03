@@ -57,7 +57,7 @@ func init() {
 	// client-supplied policies: it proposes one from the baseline and you ratify it.
 	f.StringVarP(&blPolicy, "policy", "p", "", "retired; the policy is proposed and ratified in the dashboard")
 	_ = f.MarkDeprecated("policy", "the policy is proposed from the baseline and ratified in the dashboard")
-	f.StringVar(&blBranch, "branch", "main", "branch this baseline applies to (default: the branch you are on)")
+	f.StringVar(&blBranch, "branch", "", "branch to act on (default: the repository's default branch, resolved by the server)")
 	f.StringVar(&blRepo, "repo", "", "repo id (default: inferred from origin)")
 	f.DurationVar(&blTimeout, "timeout", 30*time.Minute, "how long to wait for the baseline to build")
 }
@@ -73,7 +73,6 @@ func runGuardrailsBaseline(cmd *cobra.Command, args []string) error {
 }
 
 func baselineFlow(cmd *cobra.Command, args []string) error {
-	blBranch = branchOrCheckout(cmd)
 	repoPath := "."
 	if len(args) == 1 {
 		repoPath = args[0]
@@ -87,6 +86,9 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	if repoID == "" {
 		repoID = gitbundle.RepoSlug(repoPath)
 	}
+	// A local, not blBranch: that is the flag's own storage, so assigning back to it would make
+	// the flag read as explicitly set on any later read in the same process.
+	branch := requestedBranch(cmd)
 
 	bundlePath, cleanup, err := gitbundle.Create(repoPath, head)
 	if err != nil {
@@ -98,29 +100,33 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	defer client.Close()
 
 	// No policy field: the server rejects one outright now, rather than ignoring it.
-	fields := url.Values{
-		"repo":   {repoID},
-		"branch": {blBranch},
+	fields := url.Values{"repo": {repoID}}
+	// Omitted when unknown, so the server resolves the repository's default branch rather than
+	// receiving a guess it cannot tell apart from a deliberate choice.
+	if branch != "" {
+		fields.Set("branch", branch)
 	}
 
-	// Upload out of band, so the bundle does not travel through the API. A server that cannot
-	// issue an upload URL answers 501; this command has no inline path, so that is an error
-	// rather than a fallback.
+	// Out of band by preference, so a large bundle does not travel through the API at all. A
+	// server that cannot issue an upload URL answers 501, and then the bundle goes in the request
+	// itself — the same endpoint takes it either way, so there is nothing to refuse here. Refusing
+	// instead gave up on a fallback the endpoint already offers, which made the command unusable
+	// against such a server rather than slower.
+	//
+	// Exactly one of the two, never both: the endpoint rejects a request carrying a key and a
+	// bundle together rather than picking one.
 	key, err := uploadBundle(client, bundlePath)
 	if err != nil {
 		return err
 	}
+	var job map[string]any
 	if key == "" {
-		return &clierrors.CLIError{
-			Code:       "UPLOAD_UNAVAILABLE",
-			Message:    "this server cannot issue an upload URL for the bundle",
-			Suggestion: "Update the CLI, or ask whoever runs the service.",
-			ExitCode:   clierrors.ExitGeneralError,
-		}
+		job, err = client.PostMultipart(
+			guardrailsAPI+"/baselines", fields, "bundle", bundlePath, baselineUploadTimeout)
+	} else {
+		fields.Set("bundle_key", key)
+		job, err = client.PostForm(guardrailsAPI+"/baselines", fields)
 	}
-	fields.Set("bundle_key", key)
-
-	job, err := client.PostForm(guardrailsAPI+"/baselines", fields)
 	if err != nil {
 		return err
 	}
@@ -128,7 +134,14 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	if jobID == "" {
 		return fmt.Errorf("server did not return a job id")
 	}
-	fmt.Printf("Baseline queued for %s@%s — building…\n", repoID, blBranch)
+	// No label when the branch was not stated: "acme/web@ — building" reads as a bug, and inventing
+	// one here would name a branch the server may not have resolved to. The finished result prints
+	// the branch the server actually used.
+	if branch == "" {
+		fmt.Printf("Baseline queued for %s — building…\n", repoID)
+	} else {
+		fmt.Printf("Baseline queued for %s@%s — building…\n", repoID, branch)
+	}
 
 	return waitForBaseline(client, jobID)
 }

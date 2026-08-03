@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/KonvuInc/konvu-cli/pkg/gitbundle"
 	"github.com/spf13/cobra"
 )
 
@@ -30,22 +29,29 @@ func init() {
 	rootCmd.AddCommand(guardrailsCmd)
 }
 
-// branchOrCheckout is the branch a command should act on: what was asked for, else the branch you
-// are standing on, else "main".
+// requestedBranch is the branch a command acts on: what the caller asked for, else "" meaning
+// "not stated, you decide".
 //
-// The default used to be the constant "main" while `baseline` bundled HEAD, so on a repository
-// whose default branch is `master` the two disagreed and nothing noticed: the baseline recorded
-// under a branch no pull request has, `show` said it was there, and the gate -- which looks up the
-// PR's base branch -- found nothing. `--repo` has always been inferred from the remote; this is
-// the same idea for the other half of the address.
-func branchOrCheckout(cmd *cobra.Command) string {
-	if cmd.Flags().Changed("branch") {
-		v, _ := cmd.Flags().GetString("branch")
-		return v
-	}
-	if b := gitbundle.CurrentBranch("."); b != "" {
-		return b
-	}
+// Nothing is inferred from the checkout, deliberately. The obvious local source is
+// refs/remotes/origin/HEAD, and it is a cache with no invalidation: a clone records it once and a
+// plain `git fetch` after the remote's default branch is renamed leaves the stale name in place
+// (only `git fetch --prune` repairs it). Sending a branch is what makes it authoritative, so
+// reading that ref would let a months-old clone address a branch no pull request targets --
+// the same silent miss this command set exists to prevent, through a different door.
+//
+// So the rule is: say what you were told, and otherwise say nothing. The server holds the
+// integration and asks the host for the current default, which cannot go stale.
+func requestedBranch(cmd *cobra.Command) string {
 	v, _ := cmd.Flags().GetString("branch")
 	return v
+}
+
+// branchParam carries the branch only when the caller named one. An omitted field asks the server
+// to resolve the repository's default; sending a guess is indistinguishable from a deliberate
+// choice, and stops it resolving.
+func branchParam(branch string) map[string]any {
+	if branch == "" {
+		return map[string]any{}
+	}
+	return map[string]any{"branch": branch}
 }

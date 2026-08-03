@@ -420,3 +420,111 @@ func TestBaselineDoesNotSendAPolicy(t *testing.T) {
 		t.Error("policy was sent; the server rejects the field outright (422)")
 	}
 }
+
+func TestBaselineSendsNoBranchAndTheBundledRepositorysID(t *testing.T) {
+	// Two claims, on the wire rather than through the helper, because a helper-only assertion
+	// passes even when the call site is wired wrong.
+	//
+	// The repo id comes from the checkout being bundled: `baseline ../web` records THAT repository,
+	// and stamping the directory you are standing in onto another one addresses a real baseline,
+	// so it lands on the wrong one silently.
+	//
+	// The branch is absent. Both checkouts here record a default branch in the ref a clone writes,
+	// and neither is read: that ref goes stale on a rename and nothing local can tell. Sending a
+	// name is what makes it authoritative, so the server is left to resolve the current default.
+	var gotBranch, gotRepo string
+	var sawBranch bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/upload-url"):
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"bundle_key": "k", "url": "http://" + r.Host + "/put", "expires_in": 900,
+			})
+		case r.URL.Path == "/put":
+			w.WriteHeader(http.StatusOK)
+		case strings.Contains(r.URL.Path, "/jobs/"):
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"job_id": "j1", "status": "error", "error": "stop here",
+			})
+		default:
+			_ = r.ParseForm()
+			gotBranch, gotRepo = r.FormValue("branch"), r.FormValue("repo")
+			_, sawBranch = r.Form["branch"]
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{"job_id": "j1", "status": "pending"})
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("KONVU_API_URL", srv.URL)
+	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+
+	// Stand in one repository, bundle another. Each records a different default branch, so a local
+	// read of either would be visible in what goes on the wire.
+	here := newRepoOn(t, "git@github.com:acme/here.git", "here-default", "feature/here")
+	inDir(t, here)
+	there := newRepoOn(t, "git@github.com:acme/there.git", "there-default", "feature/there")
+
+	_ = guardrailsBaselineCmd.Flags().Set("timeout", "1ns")
+	defer func() { _ = guardrailsBaselineCmd.Flags().Set("timeout", "30m") }()
+	_ = baselineFlow(guardrailsBaselineCmd, []string{there})
+
+	if gotRepo != "acme/there" {
+		t.Fatalf("repo = %q, want the bundled checkout's", gotRepo)
+	}
+	if sawBranch {
+		t.Errorf("branch = %q was sent; it must be absent so the server resolves the current default",
+			gotBranch)
+	}
+}
+
+// A server that cannot issue an upload URL answers 501, and the same endpoint accepts the bundle
+// in the request instead. Erroring there gave up on a fallback the server already offers, which
+// made the whole command unusable against such a server.
+func TestBaselinePostsTheBundleWhenTheServerCannotPresign(t *testing.T) {
+	var contentType, gotRepo string
+	var sawBundle, sawKey bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/upload-url"):
+			w.WriteHeader(http.StatusNotImplemented)
+		case strings.Contains(r.URL.Path, "/jobs/"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"job_id": "j1", "status": "done"})
+		default:
+			contentType = r.Header.Get("Content-Type")
+			if err := r.ParseMultipartForm(8 << 20); err != nil {
+				t.Errorf("the body did not parse as multipart: %v", err)
+			}
+			gotRepo = r.FormValue("repo")
+			_, sawKey = r.Form["bundle_key"]
+			if r.MultipartForm != nil {
+				_, sawBundle = r.MultipartForm.File["bundle"]
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{"job_id": "j1", "status": "pending"})
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("KONVU_API_URL", srv.URL)
+	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+
+	repo := newRepoOn(t, "git@github.com:acme/web.git", "main", "main")
+	if err := baselineFlow(guardrailsBaselineCmd, []string{repo}); err != nil {
+		t.Fatalf("baselineFlow: %v", err)
+	}
+	if !sawBundle {
+		t.Error("no bundle part was sent, so a server that cannot presign has no way to receive it")
+	}
+	// The endpoint takes exactly one of the two and rejects a request carrying both (422), so
+	// sending a key alongside the bundle would fail every one of these uploads.
+	if sawKey {
+		t.Error("bundle_key was sent alongside the bundle")
+	}
+	if !strings.HasPrefix(contentType, "multipart/form-data") {
+		t.Errorf("Content-Type = %q, want multipart/form-data", contentType)
+	}
+	if gotRepo != "acme/web" {
+		t.Errorf("repo = %q, want the fields to travel with the bundle", gotRepo)
+	}
+}

@@ -56,7 +56,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth
 
 func init() {
 	rf := guardrailsRatifyCmd.Flags()
-	rf.String("branch", "main", "branch the baseline was recorded for (default: the branch you are on)")
+	rf.String("branch", "", "branch to act on (default: the repository's default branch, resolved by the server)")
 	rf.StringP("output", "o", "", "output format: table, json, or csv")
 
 	ef := guardrailsExplainCmd.Flags()
@@ -72,7 +72,6 @@ func runGuardrailsRatify(cmd *cobra.Command, args []string) error {
 }
 
 func ratifyFlow(cmd *cobra.Command, args []string) error {
-	branch := branchOrCheckout(cmd)
 	format := output.DetectOutputFormat(mustGuardrailsOutput(cmd))
 
 	if len(args) == 0 {
@@ -80,13 +79,14 @@ func ratifyFlow(cmd *cobra.Command, args []string) error {
 		os.Exit(clierrors.ExitUsageError)
 	}
 	repo := args[0]
+	branch := requestedBranch(cmd)
 
 	client := api.NewClient("", "")
 	defer client.Close()
 
 	// The route matches on a path, so the repo's slash is part of it and must not be escaped.
 	data, err := client.Post(guardrailsAPI+"/dashboard/repos/"+repo+"/ratify",
-		map[string]any{"branch": branch})
+		branchParam(branch))
 	if err != nil {
 		return err
 	}

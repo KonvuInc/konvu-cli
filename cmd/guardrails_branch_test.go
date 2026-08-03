@@ -4,24 +4,35 @@ import (
 	"os"
 	"os/exec"
 	"testing"
-
-	"github.com/KonvuInc/konvu-cli/pkg/gitbundle"
 )
 
-// repoOn makes a checkout sitting on `branch` and chdirs into it for the test.
-func repoOn(t *testing.T, branch string) {
+// newRepoOn builds a clone-like repository: `origin` as its remote, `dflt` recorded as the
+// default branch the way `git clone` records it in refs/remotes/origin/HEAD, checked out on `on`.
+// Both are reproduced rather than mocked because the point of these tests is that a real checkout
+// carrying a real default-branch ref does not get read.
+func newRepoOn(t *testing.T, origin, dflt, on string) string {
 	t.Helper()
 	dir := t.TempDir()
-	for _, args := range [][]string{
-		{"init", "-q", "-b", branch},
-		{"-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x"},
-	} {
-		c := exec.Command("git", args...)
-		c.Dir = dir
-		if out, err := c.CombinedOutput(); err != nil {
+	run := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 	}
+	run("init", "-q", "-b", dflt)
+	run("remote", "add", "origin", origin)
+	run("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x")
+	run("update-ref", "refs/remotes/origin/"+dflt, "HEAD")
+	run("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/"+dflt)
+	if on != dflt {
+		run("checkout", "-q", "-b", on)
+	}
+	return dir
+}
+
+// inDir runs the rest of the test from dir, since the commands read the checkout they are in.
+func inDir(t *testing.T, dir string) {
+	t.Helper()
 	prev, _ := os.Getwd()
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
@@ -29,55 +40,45 @@ func repoOn(t *testing.T, branch string) {
 	t.Cleanup(func() { _ = os.Chdir(prev) })
 }
 
-func TestBranchDefaultsToTheCheckoutNotMain(t *testing.T) {
-	// The bug this exists for: on a `master` repo the label said `main`, so the baseline was filed
-	// under a branch no pull request has and the gate never found it.
-	repoOn(t, "master")
-	if got := branchOrCheckout(guardrailsRatifyCmd); got != "master" {
-		t.Errorf("branch = %q, want %q", got, "master")
-	}
+func clearBranchFlag(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() { _ = guardrailsRatifyCmd.Flags().Set("branch", "") })
 }
 
-func TestAnExplicitBranchStillWins(t *testing.T) {
-	repoOn(t, "master")
+func TestAnExplicitBranchIsHonoured(t *testing.T) {
+	inDir(t, newRepoOn(t, "git@github.com:acme/web.git", "master", "master"))
 	if err := guardrailsRatifyCmd.Flags().Set("branch", "release-2.3"); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		_ = guardrailsRatifyCmd.Flags().Set("branch", "main")
-		guardrailsRatifyCmd.Flags().Lookup("branch").Changed = false
-	})
-	if got := branchOrCheckout(guardrailsRatifyCmd); got != "release-2.3" {
+	clearBranchFlag(t)
+
+	if got := requestedBranch(guardrailsRatifyCmd); got != "release-2.3" {
 		t.Errorf("branch = %q, want the explicit value", got)
 	}
 }
 
-func TestOutsideACheckoutItFallsBackToTheFlagDefault(t *testing.T) {
-	// Nothing to infer from, so the documented default stands rather than an empty label.
-	dir := t.TempDir()
-	prev, _ := os.Getwd()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
+func TestTheCheckoutIsNeverReadForABranch(t *testing.T) {
+	// The checkout records a default branch, in exactly the ref a clone writes, and the repository
+	// being named IS this one -- every reason a client-side read would have fired. It must still
+	// say nothing, because that ref is a cache with no invalidation: a plain `git fetch` after the
+	// remote's default is renamed leaves the old name in it, and sending a name is what makes it
+	// authoritative. A stale read addresses a branch no pull request targets, which is the silent
+	// miss this whole change exists to prevent.
+	inDir(t, newRepoOn(t, "git@github.com:acme/web.git", "master", "feature/add-export"))
+	clearBranchFlag(t)
 
-	if got := gitbundle.CurrentBranch("."); got != "" {
-		t.Fatalf("CurrentBranch = %q outside a repo, want empty", got)
-	}
-	if got := branchOrCheckout(guardrailsRatifyCmd); got != "main" {
-		t.Errorf("branch = %q, want the flag default", got)
+	if got := requestedBranch(guardrailsRatifyCmd); got != "" {
+		t.Errorf("branch = %q, want empty so the server resolves the current default", got)
 	}
 }
 
-func TestADetachedHeadInfersNothing(t *testing.T) {
-	// `rev-parse --abbrev-ref HEAD` answers "HEAD" when detached, which is not a branch name and
-	// must never be recorded as one.
-	repoOn(t, "master")
-	c := exec.Command("git", "checkout", "-q", "--detach")
-	if out, err := c.CombinedOutput(); err != nil {
-		t.Fatalf("detach: %v %s", err, out)
+func TestAnUnknownBranchIsOmittedFromTheRequest(t *testing.T) {
+	// The half that matters on the wire: "" must travel as an absent field. Sending branch=main
+	// looks identical to a deliberate choice, and the server stops resolving.
+	if got := branchParam(""); len(got) != 0 {
+		t.Errorf("branchParam(\"\") = %v, want an empty map", got)
 	}
-	if got := gitbundle.CurrentBranch("."); got != "" {
-		t.Errorf("CurrentBranch = %q on a detached HEAD, want empty", got)
+	if got := branchParam("master"); got["branch"] != "master" {
+		t.Errorf("branchParam(master) = %v, want the branch carried", got)
 	}
 }
