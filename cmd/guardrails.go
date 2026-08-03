@@ -32,34 +32,29 @@ func init() {
 	rootCmd.AddCommand(guardrailsCmd)
 }
 
-// branchOrCheckout is the branch a command should act on: what was asked for, else the branch you
-// are standing on WHEN that checkout is the repo being named, else "main".
+// resolveBranch is the branch a command acts on: what was asked for, else the default branch of
+// the repository being named, else "main".
 //
-// The default used to be the constant "main" while `baseline` bundled HEAD, so on a repository
-// whose default branch is `master` the two disagreed and nothing noticed: the baseline recorded
-// under a branch no pull request has, `show` said it was there, and the gate -- which looks up the
-// PR's base branch -- found nothing.
+// The default branch, not the one you are standing on. A baseline describes what pull requests are
+// measured against, and they target the default branch -- so a developer on `feature/x` still means
+// `master`, and recording a baseline for the feature branch would file it at an address no pull
+// request queries and that disappears at merge.
 //
-// `repo` is what makes the inference safe. For `baseline` the checkout IS the subject, but `show`
-// and `ratify` take the repository as an argument and the directory is incidental: run
-// `ratify AcmeKonvu/pygoat` from an unrelated checkout sitting on `main` and an unconditional
-// inference hands you `main` -- another repository's branch name, addressing a baseline that may
-// well exist and be the wrong one. Pass "" for repo when there is nothing to compare against.
-//
-// `dir` is the checkout to read, which is not always ".": `baseline ../web` bundles somewhere else,
-// and that is the checkout whose branch labels the result.
-func branchOrCheckout(cmd *cobra.Command, repo, dir string) string {
-	fallback, _ := cmd.Flags().GetString("branch")
-	if cmd.Flags().Changed("branch") {
-		return fallback
+// It is read from the checkout only when that checkout IS the repository being named: `show` and
+// `ratify` take the repository as an argument, so run from an unrelated directory they would
+// otherwise borrow a stranger's branch. `dir` is the checkout to read, which is not always "." --
+// `baseline ../web` records somewhere else, and that is the repository whose default branch labels
+// the result.
+func resolveBranch(cmd *cobra.Command, repo, dir string) string {
+	if v, _ := cmd.Flags().GetString("branch"); v != "" {
+		return v
 	}
-	if repo == "" || !sameRepo(repo, gitbundle.RepoSlug(dir)) {
-		return fallback
+	if sameRepo(repo, gitbundle.RepoSlug(dir)) {
+		if b := gitbundle.DefaultBranch(dir); b != "" {
+			return b
+		}
 	}
-	if b := gitbundle.CurrentBranch(dir); b != "" {
-		return b
-	}
-	return fallback
+	return "main"
 }
 
 // sameRepo compares two "owner/name" ids. GitHub treats them case-insensitively and so must this,

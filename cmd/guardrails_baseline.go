@@ -57,7 +57,7 @@ func init() {
 	// client-supplied policies: it proposes one from the baseline and you ratify it.
 	f.StringVarP(&blPolicy, "policy", "p", "", "retired; the policy is proposed and ratified in the dashboard")
 	_ = f.MarkDeprecated("policy", "the policy is proposed from the baseline and ratified in the dashboard")
-	f.StringVar(&blBranch, "branch", "main", "branch this baseline applies to (default: the branch you are on)")
+	f.StringVar(&blBranch, "branch", "", "branch to act on (default: the repository's default branch)")
 	f.StringVar(&blRepo, "repo", "", "repo id (default: inferred from origin)")
 	f.DurationVar(&blTimeout, "timeout", 30*time.Minute, "how long to wait for the baseline to build")
 }
@@ -88,7 +88,12 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	}
 	// After repoID, because the inference only applies when the checkout is the repo being
 	// recorded -- an explicit --repo pointing elsewhere must not borrow this branch name.
-	blBranch = branchOrCheckout(cmd, repoID, repoPath)
+	// After repoID, because the default branch is only read when the checkout IS the repository
+	// being recorded -- an explicit --repo pointing elsewhere must not borrow this one's.
+	//
+	// A local, deliberately: blBranch is the flag's own storage, so assigning back to it would
+	// make the flag read as explicitly set on any later resolution in the same process.
+	branch := resolveBranch(cmd, repoID, repoPath)
 
 	bundlePath, cleanup, err := gitbundle.Create(repoPath, head)
 	if err != nil {
@@ -102,7 +107,7 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	// No policy field: the server rejects one outright now, rather than ignoring it.
 	fields := url.Values{
 		"repo":   {repoID},
-		"branch": {blBranch},
+		"branch": {branch},
 	}
 
 	// Upload out of band, so the bundle does not travel through the API. A server that cannot
@@ -130,7 +135,7 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	if jobID == "" {
 		return fmt.Errorf("server did not return a job id")
 	}
-	fmt.Printf("Baseline queued for %s@%s — building…\n", repoID, blBranch)
+	fmt.Printf("Baseline queued for %s@%s — building…\n", repoID, branch)
 
 	return waitForBaseline(client, jobID)
 }

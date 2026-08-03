@@ -421,10 +421,10 @@ func TestBaselineDoesNotSendAPolicy(t *testing.T) {
 	}
 }
 
-func TestBaselineLabelsWithTheBundledCheckoutsBranch(t *testing.T) {
-	// `baseline ../web` records THAT checkout, so its branch is the label. Reading the current
-	// directory instead would stamp whatever you happen to be standing in onto another
-	// repository -- and it addresses a real baseline, so it lands on the wrong one silently.
+func TestBaselineLabelsWithTheBundledRepositorysDefaultBranch(t *testing.T) {
+	// `baseline ../web` records THAT repository, so its default branch is the label. Reading the
+	// current directory instead stamps whatever you are standing in onto another repository -- and
+	// it addresses a real baseline, so it lands on the wrong one silently.
 	//
 	// Driven through baselineFlow on purpose: asserting on branchOrCheckout alone passes even
 	// when the call site hands it ".", which is exactly the wiring this covers.
@@ -453,14 +453,16 @@ func TestBaselineLabelsWithTheBundledCheckoutsBranch(t *testing.T) {
 	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
 	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
 
-	// Stand in a checkout on `cwd-branch`; bundle a different one on `bundled-branch`.
-	here := newRepoOn(t, "cwd-branch", "git@github.com:acme/here.git")
+	// Stand in one repository; bundle another. Both are on a feature branch, so the label can only
+	// come from the bundled repository's DEFAULT branch -- not from either checkout, and not from
+	// the directory we happen to be in.
+	here := newRepoOn(t, "git@github.com:acme/here.git", "here-default", "feature/here")
 	prev, _ := os.Getwd()
 	if err := os.Chdir(here); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(prev) })
-	there := newRepoOn(t, "bundled-branch", "git@github.com:acme/there.git")
+	there := newRepoOn(t, "git@github.com:acme/there.git", "there-default", "feature/there")
 
 	_ = guardrailsBaselineCmd.Flags().Set("timeout", "1ns")
 	defer func() { _ = guardrailsBaselineCmd.Flags().Set("timeout", "30m") }()
@@ -469,22 +471,30 @@ func TestBaselineLabelsWithTheBundledCheckoutsBranch(t *testing.T) {
 	if gotRepo != "acme/there" {
 		t.Fatalf("repo = %q, want the bundled checkout's", gotRepo)
 	}
-	if gotBranch != "bundled-branch" {
-		t.Errorf("branch = %q, want the bundled checkout's branch, not the current directory's", gotBranch)
+	if gotBranch != "there-default" {
+		t.Errorf("branch = %q, want the bundled repository's default branch", gotBranch)
 	}
 }
 
-// newRepoOn is newRepo with a chosen branch and origin remote.
-func newRepoOn(t *testing.T, branch, origin string) string {
+// newRepoOn is newRepo with an origin remote and a recorded default branch, as a clone has, then
+// checked out on `on`. The default branch is what labels a baseline; `on` is where you happen to
+// be standing, and must not.
+func newRepoOn(t *testing.T, origin, dflt, on string) string {
 	t.Helper()
 	dir := t.TempDir()
-	for _, a := range [][]string{
-		{"init", "-q", "-b", branch},
+	steps := [][]string{
+		{"init", "-q", "-b", dflt},
 		{"remote", "add", "origin", origin},
 		{"config", "user.email", "t@example.com"},
 		{"config", "user.name", "t"},
 		{"commit", "-q", "--allow-empty", "-m", "one"},
-	} {
+		{"update-ref", "refs/remotes/origin/" + dflt, "HEAD"},
+		{"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/" + dflt},
+	}
+	if on != dflt {
+		steps = append(steps, []string{"checkout", "-q", "-b", on})
+	}
+	for _, a := range steps {
 		if out, err := exec.Command("git", append([]string{"-C", dir}, a...)...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", a, err, out)
 		}

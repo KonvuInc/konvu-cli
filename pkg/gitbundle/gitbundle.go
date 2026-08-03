@@ -35,16 +35,19 @@ func Head(dir, ref string) (string, error) {
 	return git(dir, "rev-parse", ref)
 }
 
-// CurrentBranch is the checked-out branch, or "" on a detached HEAD or outside a repository.
+// DefaultBranch is the repository's default branch, or "" if the clone does not record one.
 //
-// The bundle carries no branch name -- Create stages the sha under fixed synthetic refs and drops
-// them again -- so the label travels beside it, and only this side can know what it should be.
-func CurrentBranch(dir string) string {
-	b, err := git(dir, "rev-parse", "--abbrev-ref", "HEAD")
-	if err != nil || b == "HEAD" {
+// The default branch and not the checked-out one: a baseline describes what pull requests are
+// measured against, and they target the default branch. Someone sitting on `feature/x` wants the
+// baseline for `master`, not one for a branch that disappears at merge -- and the bundle carries
+// no branch name at all (Create stages the sha under fixed synthetic refs and drops them again),
+// so the label has to travel beside it.
+func DefaultBranch(dir string) string {
+	ref, err := git(dir, "symbolic-ref", "refs/remotes/origin/HEAD")
+	if err != nil {
 		return ""
 	}
-	return b
+	return strings.TrimPrefix(ref, "refs/remotes/origin/")
 }
 
 // RepoSlug infers "owner/name" from the origin remote, falling back to the directory name.
