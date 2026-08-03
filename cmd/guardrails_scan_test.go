@@ -19,7 +19,7 @@ import (
 func TestGuardrailsScanRegistered(t *testing.T) {
 	found := false
 	for _, c := range guardrailsCmd.Commands() {
-		if c.Name() == "baseline" {
+		if c.Name() == "scan" {
 			found = true
 		}
 	}

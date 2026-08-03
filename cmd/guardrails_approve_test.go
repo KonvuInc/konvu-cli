@@ -10,7 +10,7 @@ import (
 )
 
 func TestApproveExplainReviewRegistered(t *testing.T) {
-	want := map[string]bool{"ratify": false, "review": false, "explain": false}
+	want := map[string]bool{"approve": false, "review": false, "explain": false}
 	for _, c := range guardrailsCmd.Commands() {
 		if _, ok := want[c.Name()]; ok {
 			want[c.Name()] = true

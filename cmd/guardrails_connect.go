@@ -28,13 +28,13 @@ const (
 )
 
 var guardrailsConnectCmd = &cobra.Command{
-	Use:   "install",
-	Short: "Connect your GitHub organization to Konvu Guardrails",
-	Long: `Connect your GitHub organization to Konvu Guardrails.
+	Use:   "connect",
+	Short: "Connect your GitHub organization to Konvu",
+	Long: `Connect your GitHub organization to Konvu.
 
 Guardrails watches pull requests through a GitHub App. This connects the App's
-installation on your GitHub organization to your Konvu account, which is what lets a
-baseline you record here be the one checks read on your pull requests.
+installation on your GitHub organization to your Konvu account, which is what lets
+the rules you approve here be the ones checked on your pull requests.
 
 If the App is not installed yet, this prints the link to install it; run the command
 again once you have. Once connected it prints the link to your repository selection,
@@ -48,10 +48,10 @@ The organization defaults to the owner of your 'origin' remote.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 	Example: `  # Connect the organization owning the repo you are in
-  konvu guardrails install
+  konvu guardrails connect
 
   # Name it explicitly, outside a checkout
-  konvu guardrails install --org acme`,
+  konvu guardrails connect --org acme`,
 	Args: cobra.NoArgs,
 	RunE: runGuardrailsConnect,
 }
@@ -90,7 +90,7 @@ func connectFlow(cmd *cobra.Command, _ []string) error {
 	}
 	if account == "" {
 		fmt.Fprintln(os.Stderr,
-			"Error: no 'origin' remote to read the organization from; pass --org, e.g. 'konvu guardrails install --org acme'")
+			"Error: no 'origin' remote to read the organization from; pass --org, e.g. 'konvu guardrails connect --org acme'")
 		os.Exit(clierrors.ExitUsageError)
 	}
 
@@ -115,8 +115,8 @@ func connectFlow(cmd *cobra.Command, _ []string) error {
 	}
 	if linked, _ := getBool(data, "linked"); !linked {
 		if url := getStr(data, "install_url"); url != "" {
-			fmt.Printf("Konvu Guardrails is not installed on %s yet. Install it here:\n\n  %s\n\n", account, url)
-			fmt.Println("Then run 'konvu guardrails install' again.")
+			fmt.Printf("Konvu is not connected to %s yet. Connect it here:\n\n  %s\n\n", account, url)
+			fmt.Println("Then run 'konvu guardrails connect' again.")
 			return nil
 		}
 		// No link came back, so print what did rather than inventing a URL to send people to.
@@ -138,7 +138,7 @@ func connectFlow(cmd *cobra.Command, _ []string) error {
 	if manage != "" {
 		fmt.Printf("  Choose which repositories Konvu can see:\n    %s\n", manage)
 	}
-	fmt.Println("  Run 'konvu guardrails baseline' in a repository to record its authorization.")
+	fmt.Println("  Run 'konvu guardrails scan' in a repository to draft its access rules.")
 	return nil
 }
 
@@ -168,12 +168,12 @@ func waitForRepo(client *api.Client, account, repo, manage string) error {
 		}
 		if visible, known := getBool(data, "repo_visible"); known && visible {
 			fmt.Printf("\n%s is connected.\n", repo)
-			fmt.Println("  Run 'konvu guardrails baseline' to record its authorization.")
+			fmt.Println("  Run 'konvu guardrails scan' to draft its access rules.")
 			return nil
 		}
 		if time.Now().After(deadline) {
 			fmt.Printf("\nStill cannot see %s after %s.\n", repo, repoWait)
-			fmt.Println("Add it at the link above, then run 'konvu guardrails install' again.")
+			fmt.Println("Add it at the link above, then run 'konvu guardrails connect' again.")
 			return nil
 		}
 	}

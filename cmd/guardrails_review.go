@@ -13,15 +13,15 @@ import (
 
 var guardrailsReviewCmd = &cobra.Command{
 	Use:   "review <repo>",
-	Short: "Review the capabilities a pull request asks for, and allow or deny them",
-	Long: `Review the capabilities a pull request asks for, and allow or deny them.
+	Short: "Review new access a pull request asks for, and allow or deny it",
+	Long: `Review new access a pull request asks for, and allow or deny it.
 
-A change that reaches a resource in a way the policy has not covered is held for
-review rather than passed or failed. This lists what is waiting, and --allow or
---deny records your decision on it.
+A change that reaches a resource in a way no approved rule covers is held for review
+rather than passed or failed. This lists what is waiting, and --allow or --deny
+records your decision on it.
 
-Decisions apply to the policy when the pull request merges, so a decision recorded
-here can still be changed with --clear beforehand.
+Decisions apply to your access rules when the pull request merges, so a decision
+recorded here can still be changed with --clear beforehand.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth failed`,
 	Example: `  konvu guardrails review acme/web --pr 412
@@ -36,9 +36,9 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth
 func init() {
 	f := guardrailsReviewCmd.Flags()
 	f.Int("pr", 0, "pull request number — required")
-	f.StringSlice("allow", nil, "capability to allow (repeatable)")
-	f.StringSlice("deny", nil, "capability to deny (repeatable)")
-	f.StringSlice("clear", nil, "capability whose decision to remove (repeatable)")
+	f.StringSlice("allow", nil, "new access to allow, exactly as printed (repeatable)")
+	f.StringSlice("deny", nil, "new access to deny, exactly as printed (repeatable)")
+	f.StringSlice("clear", nil, "new access whose decision to remove (repeatable)")
 	f.StringP("output", "o", "", "output format: table, json, or csv")
 	_ = guardrailsReviewCmd.MarkFlagRequired("pr")
 }
@@ -120,7 +120,7 @@ func buildDecisions(allow, deny, clear []string) ([]map[string]any, error) {
 			}
 			if prev, seen := verb[k]; seen && prev != spec.decision {
 				return nil, fmt.Errorf(
-					"capability %q was passed to both --%s and --%s; pass it once", k, prev, spec.decision)
+					"%q was passed to both --%s and --%s; pass it once", k, prev, spec.decision)
 			}
 			if _, seen := verb[k]; seen {
 				continue // same verb twice is harmless; do not send it twice
@@ -145,7 +145,7 @@ func printReview(data map[string]any, wrote bool) {
 
 	pending, _ := getBool(data, "pending")
 	if !pending {
-		fmt.Println("Nothing is waiting for review on this pull request.")
+		fmt.Println("No new access to review on this pull request.")
 		return
 	}
 
@@ -153,26 +153,24 @@ func printReview(data map[string]any, wrote bool) {
 	scoped := getSlice(data, "scoped_rows")
 
 	if len(open) > 0 {
-		fmt.Println("Awaiting a decision:")
-		fmt.Println()
+		fmt.Printf("NEW ACCESS — WAITING FOR YOU (%d)\n\n", len(open))
 		printCapabilities(open)
 	}
 	if len(scoped) > 0 {
-		fmt.Println("Already covered by your policy:")
-		fmt.Println()
+		fmt.Printf("NEW ACCESS — ALREADY COVERED BY A RULE (%d)\n\n", len(scoped))
 		printCapabilities(scoped)
 	}
 
 	if canDecide, _ := getBool(data, "can_decide"); !canDecide {
-		fmt.Println("You can view this review but not decide it; that needs an owner.")
+		fmt.Println("You can view this but not decide it; that needs an owner.")
 		return
 	}
 	if wrote {
-		fmt.Println("Decisions recorded. They apply to the policy when the pull request merges.")
+		fmt.Println("Recorded. Your decisions apply to your access rules when the pull request merges.")
 		return
 	}
 	if len(open) > 0 {
-		fmt.Println("Decide with --allow, --deny or --clear, passing a capability exactly as printed.")
+		fmt.Println("Allow or deny with --allow, --deny or --clear, pasting a line exactly as printed.")
 	}
 }
 
@@ -188,11 +186,11 @@ func printCapabilities(rows []any) {
 		fmt.Printf("  %s\n", getStr(m, "key"))
 		route := strings.TrimSpace(getStr(m, "method") + " " + getStr(m, "path"))
 		fmt.Printf("    %s\n", route)
-		fmt.Printf("    %s may %s %s, enforcing %s\n",
-			getStr(m, "role"), getStr(m, "action"), getStr(m, "resource"),
-			orNone(getStr(m, "guard")))
+		fmt.Printf("    %s may %s %s\n",
+			getStr(m, "role"), getStr(m, "action"), getStr(m, "resource"))
+		fmt.Printf("    code checks:     %s\n", orNone(getStr(m, "guard")))
 		if src := getStr(m, "source"); src != "" {
-			fmt.Printf("    at %s\n", src)
+			fmt.Printf("    at:              %s\n", src)
 		}
 		if hint := getStr(m, "sibling_hint"); hint != "" {
 			fmt.Printf("    %s\n", hint)

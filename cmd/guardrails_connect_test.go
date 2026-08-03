@@ -12,7 +12,7 @@ import (
 
 func TestConnectRegistered(t *testing.T) {
 	for _, c := range guardrailsCmd.Commands() {
-		if c.Name() == "install" {
+		if c.Name() == "connect" {
 			return
 		}
 	}

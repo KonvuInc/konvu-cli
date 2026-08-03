@@ -33,7 +33,7 @@ func TestGuardrailsListFlags(t *testing.T) {
 }
 
 func TestGuardrailsShowFlags(t *testing.T) {
-	for _, flag := range []string{"branch", "policy-only", "output"} {
+	for _, flag := range []string{"branch", "rules-only", "output"} {
 		if guardrailsShowCmd.Flags().Lookup(flag) == nil {
 			t.Errorf("guardrails show missing flag: --%s", flag)
 		}
@@ -44,10 +44,10 @@ func TestGuardrailsShowFlags(t *testing.T) {
 // same flag means two things in sibling commands.
 func TestShowDoesNotReuseBaselinesPolicyFlag(t *testing.T) {
 	if guardrailsShowCmd.Flags().Lookup("policy") != nil {
-		t.Error("show should use --policy-only; --policy is baseline's file flag")
+		t.Error("show should use --rules-only; --policy is scan's file flag")
 	}
 	if f := guardrailsScanCmd.Flags().Lookup("policy"); f == nil || f.Value.Type() != "string" {
-		t.Error("baseline --policy should still be the policy file")
+		t.Error("scan --policy should still be the policy file")
 	}
 }
 
