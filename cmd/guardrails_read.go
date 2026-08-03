@@ -79,6 +79,10 @@ func listFlow(cmd *cobra.Command, args []string) error {
 	}
 	baselines := getSlice(data, "baselines")
 	skipped := getSlice(data, "skipped")
+	// Repositories a baseline was attempted for and not recorded. They hold no baseline, so no row
+	// above mentions them, and dropping them left a repository that failed looking exactly like one
+	// nobody ever asked about — the same silence the skipped list exists to break.
+	onboarding := getSlice(data, "onboarding")
 
 	if quiet {
 		// One repository can hold a baseline per branch, so print each name once — the point
@@ -100,7 +104,13 @@ func listFlow(cmd *cobra.Command, args []string) error {
 	}
 
 	if format == output.JSON {
-		fmt.Println(output.FormatJSON(map[string]any{"baselines": baselines, "skipped": skipped}))
+		// Unfiltered, unlike the table below: a program reading this wants what the server said,
+		// not this command's view of which rows are worth a line.
+		fmt.Println(output.FormatJSON(map[string]any{
+			"baselines":  baselines,
+			"skipped":    skipped,
+			"onboarding": onboarding,
+		}))
 		return nil
 	}
 
@@ -141,7 +151,55 @@ func listFlow(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Printf("Skipped: %s\n", strings.Join(names, ", "))
 	}
+	if rows := withoutABaseline(onboarding, baselines); len(rows) > 0 {
+		fmt.Println("No baseline recorded:")
+		for _, m := range rows {
+			line := fmt.Sprintf("  %s — %s", getStr(m, "repo"), onboardingState(m))
+			if reason := getStr(m, "error"); reason != "" {
+				line += ": " + reason
+			}
+			fmt.Println(line)
+		}
+	}
 	return nil
+}
+
+// withoutABaseline keeps the onboarding rows for repositories the table does not already carry.
+// A repository with a baseline is a row up there, and naming it again below invites reading the
+// second mention as a problem with the first.
+func withoutABaseline(onboarding, baselines []any) []map[string]any {
+	recorded := make(map[string]bool, len(baselines))
+	for _, b := range baselines {
+		if m, ok := b.(map[string]any); ok {
+			recorded[getStr(m, "repo")] = true
+		}
+	}
+	rows := make([]map[string]any, 0, len(onboarding))
+	for _, o := range onboarding {
+		m, ok := o.(map[string]any)
+		if !ok || recorded[getStr(m, "repo")] {
+			continue
+		}
+		rows = append(rows, m)
+	}
+	return rows
+}
+
+// onboardingState is how far a repository got, in the server's own words rather than a vocabulary
+// this command would have to keep in step with. The one thing it does interpret is the flag for
+// "waiting on you", which is the difference between a row to wait out and a row to act on.
+func onboardingState(m map[string]any) string {
+	state := getStr(m, "outcome")
+	if state == "" {
+		state = getStr(m, "status")
+	}
+	if state == "" {
+		state = "unknown"
+	}
+	if actionRequired, _ := getBool(m, "action_required"); actionRequired {
+		state += " (needs attention)"
+	}
+	return state
 }
 
 func runGuardrailsShow(cmd *cobra.Command, args []string) error {

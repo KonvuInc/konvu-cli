@@ -111,6 +111,102 @@ func TestListReadsBaselinesAndSkipped(t *testing.T) {
 	}
 }
 
+// A repository whose baseline was attempted and not recorded holds no row in the table, so
+// dropping these left it mentioned nowhere: indistinguishable from a repository nobody asked
+// about, on the one command whose job is saying what is covered.
+func TestListNamesRepositoriesWithNoBaseline(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"baselines": []any{map[string]any{"repo": "acme/web", "branch": "main"}},
+			"skipped":   []any{},
+			"onboarding": []any{
+				// Already in the table above, so it must not be listed again.
+				map[string]any{"repo": "acme/web", "status": "done", "outcome": "ok"},
+				map[string]any{
+					"repo": "acme/api", "status": "error", "outcome": "action_required",
+					"action_required": true, "error": "could not read the routes",
+				},
+				map[string]any{"repo": "acme/jobs", "status": "running", "outcome": "pending"},
+			},
+		})
+	}))
+	defer srv.Close()
+	t.Setenv("KONVU_API_URL", srv.URL)
+	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+
+	// Asked for explicitly: capturing stdout hands the command a pipe, and the format auto-detects
+	// to JSON off a TTY, so the table is not what an uninstructed run would print here.
+	_ = guardrailsListCmd.Flags().Set("output", "table")
+	defer func() { _ = guardrailsListCmd.Flags().Set("output", "") }()
+
+	out := captureStdout(t, func() {
+		if err := runGuardrailsList(guardrailsListCmd, nil); err != nil {
+			t.Fatal(err)
+		}
+	})
+	for _, want := range []string{
+		"acme/api", "needs attention", "could not read the routes", "acme/jobs",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output is missing %q\n%s", want, out)
+		}
+	}
+	if got := strings.Count(out, "acme/web"); got != 1 {
+		t.Errorf("acme/web named %d times, want 1 — it has a baseline\n%s", got, out)
+	}
+}
+
+// The JSON output is what a program reads, so it carries the rows unfiltered. It used to be
+// rebuilt from two of the server's three lists, which dropped these there as well.
+func TestListJSONKeepsTheOnboardingRows(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"baselines":  []any{},
+			"skipped":    []any{},
+			"onboarding": []any{map[string]any{"repo": "acme/api", "status": "running"}},
+		})
+	}))
+	defer srv.Close()
+	t.Setenv("KONVU_API_URL", srv.URL)
+	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+
+	_ = guardrailsListCmd.Flags().Set("output", "json")
+	defer func() { _ = guardrailsListCmd.Flags().Set("output", "") }()
+
+	out := captureStdout(t, func() {
+		if err := runGuardrailsList(guardrailsListCmd, nil); err != nil {
+			t.Fatal(err)
+		}
+	})
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, out)
+	}
+	rows, _ := got["onboarding"].([]any)
+	if len(rows) != 1 {
+		t.Errorf("onboarding = %v, want the server's row\n%s", got["onboarding"], out)
+	}
+}
+
+func TestOnboardingStateUsesTheServersWords(t *testing.T) {
+	// Falls back to `status` when there is no outcome yet, and never renders an empty state.
+	for _, c := range []struct {
+		row  map[string]any
+		want string
+	}{
+		{map[string]any{"outcome": "pending"}, "pending"},
+		{map[string]any{"status": "running"}, "running"},
+		{map[string]any{}, "unknown"},
+		{map[string]any{"outcome": "error", "action_required": true}, "error (needs attention)"},
+	} {
+		if got := onboardingState(c.row); got != c.want {
+			t.Errorf("onboardingState(%v) = %q, want %q", c.row, got, c.want)
+		}
+	}
+}
+
 func TestCountDisplayMarksAnAbsentCountUnknown(t *testing.T) {
 	// An omitted count must not read as zero routes.
 	if got := countDisplay(nil); got != "N/A" {
