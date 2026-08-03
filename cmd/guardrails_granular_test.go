@@ -904,3 +904,35 @@ func TestBulkWaitReportsAnAlreadyRunningScanItCannotFollow(t *testing.T) {
 		t.Errorf("error = %q, want it to name the repository", err)
 	}
 }
+
+// Declining is a path a JSON caller can reach: with a terminal to prompt at, --output json used to
+// answer a sentence. Every reachable path owes the format that was asked for.
+func TestDecliningTheDeleteStillAnswersInJSON(t *testing.T) {
+	srv, seen := newStub(t, map[string]any{"repo": "acme/web", "deleted": []any{"main"}})
+	defer srv.Close()
+
+	// Stand in for an interactive session that answers "n".
+	orig := confirmDelete
+	confirmDelete = func(repo, branch string, all bool) (bool, error) { return false, nil }
+	t.Cleanup(func() { confirmDelete = orig })
+
+	f := guardrailsDeleteCmd.Flags()
+	_ = f.Set("output", "json")
+	t.Cleanup(func() { _ = f.Set("output", "") })
+
+	out := captureStdout(t, func() {
+		if err := deleteFlow(guardrailsDeleteCmd, []string{"acme/web"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("declining emitted unparseable output (%v):\n%s", err, out)
+	}
+	if parsed["cancelled"] != true {
+		t.Errorf("document does not say it was cancelled: %v", parsed)
+	}
+	if seen.method != "" {
+		t.Errorf("it deleted anyway: %s", seen.method)
+	}
+}

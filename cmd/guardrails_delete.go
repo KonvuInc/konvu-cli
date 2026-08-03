@@ -80,19 +80,20 @@ func deleteFlow(cmd *cobra.Command, args []string) error {
 	}
 
 	if !assumeYes {
-		// Keyed on whether we can actually ask, not on the output format: DetectOutputFormat answers
-		// JSON for any pipe, so keying on that dropped the confirmation for
-		// `delete <repo> | tee log` -- piping is not consent. No terminal to ask at means refuse
-		// rather than proceed, which is the only safe direction for a deletion.
-		if !term.IsTerminal(int(os.Stdin.Fd())) {
-			return &clierrors.CLIError{
-				Code:       "CONFIRMATION_REQUIRED",
-				Message:    "this deletes the scan and the rules approved on it, and cannot be asked about here",
-				Suggestion: "Re-run with --yes if that is what you want.",
-				ExitCode:   clierrors.ExitUsageError,
-			}
+		proceed, err := confirmDelete(repo, branch, allBranches)
+		if err != nil {
+			return err
 		}
-		if !confirmDelete(repo, branch, allBranches) {
+		if !proceed {
+			// A caller that asked for JSON gets JSON on every path it can reach, declining
+			// included -- prose here breaks the reader the format was requested for. Not silence
+			// either: an empty stdout is no more parseable than a sentence.
+			if format == output.JSON {
+				fmt.Println(output.FormatJSON(map[string]any{
+					"repo": repo, "deleted": []any{}, "cancelled": true,
+				}))
+				return nil
+			}
 			fmt.Println("Left it alone.")
 			return nil
 		}
@@ -125,9 +126,23 @@ func deleteFlow(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// confirmDelete returns false on anything but "y", including a read error: a prompt guarding a
-// deletion has to fail closed.
-func confirmDelete(repo, branch string, allBranches bool) bool {
+// confirmDelete asks a human, and refuses outright when there is nobody to ask.
+//
+// Keyed on whether we can actually ask, not on the output format: DetectOutputFormat answers JSON
+// for any pipe, so keying on that dropped the confirmation for `delete <repo> | tee log`, and
+// piping is not consent. Returns false on anything but "y", including a read error -- a prompt
+// guarding a deletion fails closed.
+//
+// A var so a test can stand in for the terminal.
+var confirmDelete = func(repo, branch string, allBranches bool) (bool, error) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return false, &clierrors.CLIError{
+			Code:       "CONFIRMATION_REQUIRED",
+			Message:    "this deletes the scan and the rules approved on it, and cannot be asked about here",
+			Suggestion: "Re-run with --yes if that is what you want.",
+			ExitCode:   clierrors.ExitUsageError,
+		}
+	}
 	scope := fmt.Sprintf("the %s branch", branch)
 	if allBranches {
 		scope = "every branch"
@@ -140,5 +155,5 @@ func confirmDelete(repo, branch string, allBranches bool) bool {
 	fmt.Fprint(os.Stderr, "Type 'y' to continue: ")
 	var answer string
 	_, _ = fmt.Scanln(&answer)
-	return strings.EqualFold(strings.TrimSpace(answer), "y")
+	return strings.EqualFold(strings.TrimSpace(answer), "y"), nil
 }
