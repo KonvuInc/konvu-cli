@@ -80,7 +80,11 @@ func truncate(s string, maxLen int) string {
 		}
 		if visible >= maxLen-1 {
 			result.WriteRune('…')
-			result.WriteString("\033[0m")
+			// Only close a sequence we opened: an unconditional reset writes a bare escape into
+			// plain text, which renders as "[0m" wherever output is not a terminal.
+			if strings.ContainsRune(s, '\033') {
+				result.WriteString("\033[0m")
+			}
 			return result.String()
 		}
 		result.WriteRune(r)

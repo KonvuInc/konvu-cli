@@ -122,16 +122,22 @@ func listFlow(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		ratified, _ := getBool(m, "ratified")
+		enabled, _ := getBool(m, "enabled")
 		rows = append(rows, map[string]any{
 			"repository": getStr(m, "repo"),
 			"branch":     getStr(m, "branch"),
 			"routes":     countDisplay(m["n_paths"]),
 			"restricted": countDisplay(m["n_guarded"]),
 			"approved":   yesNo(ratified),
-			"scanned":    dateDisplay(getStr(m, "created_at")),
+			// Approved and checked are different questions: rules can be approved on a
+			// repository whose pull requests nothing is looking at yet.
+			"checking": yesNo(enabled),
+			"scanned":  dateDisplay(getStr(m, "created_at")),
 		})
 	}
-	columns := []string{"repository", "branch", "routes", "restricted", "approved", "scanned"}
+	columns := []string{
+		"repository", "branch", "routes", "restricted", "approved", "checking", "scanned",
+	}
 
 	if format == output.CSV {
 		fmt.Print(output.FormatCSV(map[string]any{"baselines": rows}, columns, "baselines"))
