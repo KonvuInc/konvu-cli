@@ -11,6 +11,7 @@ import (
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
+	"github.com/spf13/pflag"
 )
 
 // stubServer answers every call with one reply and records the last request it saw.
@@ -39,10 +40,13 @@ func newStub(t *testing.T, reply map[string]any) (*httptest.Server, *stubServer)
 
 // clearRepeatable empties a repeatable flag. These commands are package-level singletons, so a
 // value one test sets leaks into every test after it.
-func clearRepeatable(v any) {
-	if sv, ok := v.(interface{ Replace([]string) error }); ok {
+// Undoes a repeatable flag entirely: the collected values AND `Changed`. Both halves matter --
+// `rulesBody` keys on Changed, so leaving it set makes the next test look like it passed --rule.
+func clearRepeatable(f *pflag.Flag) {
+	if sv, ok := f.Value.(interface{ Replace([]string) error }); ok {
 		_ = sv.Replace(nil)
 	}
+	f.Changed = false
 }
 
 // Tests asserting on human output set --output table: stdout is a pipe under `go test`, and
@@ -60,7 +64,7 @@ func TestApproveSendsOnlyTheRulesNamed(t *testing.T) {
 	f := guardrailsApproveCmd.Flags()
 	_ = f.Set("rule", "USER|read|Document||02d8a853")
 	_ = f.Set("rule", "USER|write|Document||a6466bf8")
-	t.Cleanup(func() { clearRepeatable(f.Lookup("rule").Value) })
+	t.Cleanup(func() { clearRepeatable(f.Lookup("rule")) })
 
 	if err := approveFlow(guardrailsApproveCmd, []string{"acme/web"}); err != nil {
 		t.Fatalf("approveFlow: %v", err)
@@ -83,7 +87,7 @@ func TestRuleFlagDoesNotSplitOnCommas(t *testing.T) {
 	key := "USER|read|Document|GET /docs/{a,b}|5b3ad0e1"
 	f := guardrailsApproveCmd.Flags()
 	_ = f.Set("rule", key)
-	t.Cleanup(func() { clearRepeatable(f.Lookup("rule").Value) })
+	t.Cleanup(func() { clearRepeatable(f.Lookup("rule")) })
 
 	if err := approveFlow(guardrailsApproveCmd, []string{"a/b"}); err != nil {
 		t.Fatal(err)
@@ -113,7 +117,7 @@ func TestARuleFlagThatNamesNothingRefusesRatherThanApprovingEverything(t *testin
 
 	f := guardrailsApproveCmd.Flags()
 	_ = f.Set("rule", "   ")
-	t.Cleanup(func() { clearRepeatable(f.Lookup("rule").Value) })
+	t.Cleanup(func() { clearRepeatable(f.Lookup("rule")) })
 
 	err := approveFlow(guardrailsApproveCmd, []string{"a/b"})
 	if err == nil {
@@ -138,7 +142,7 @@ func TestUnapprovePostsToTheUnapproveRoute(t *testing.T) {
 
 	f := guardrailsUnapproveCmd.Flags()
 	_ = f.Set("rule", "USER|write|Document||a6466bf8")
-	t.Cleanup(func() { clearRepeatable(f.Lookup("rule").Value) })
+	t.Cleanup(func() { clearRepeatable(f.Lookup("rule")) })
 
 	if err := unapproveFlow(guardrailsUnapproveCmd, []string{"acme/web"}); err != nil {
 		t.Fatalf("unapproveFlow: %v", err)
@@ -351,7 +355,7 @@ func TestBulkRemoteSendsTheNamedRepos(t *testing.T) {
 	_ = f.Set("remote", "acme/api")
 	_ = f.Set("output", "table")
 	t.Cleanup(func() {
-		clearRepeatable(f.Lookup("remote").Value)
+		clearRepeatable(f.Lookup("remote"))
 		_ = f.Set("output", "")
 	})
 
@@ -378,7 +382,7 @@ func TestBulkRefusesAPathAtTheSameTime(t *testing.T) {
 
 	f := guardrailsScanCmd.Flags()
 	_ = f.Set("remote", "acme/web")
-	t.Cleanup(func() { clearRepeatable(f.Lookup("remote").Value) })
+	t.Cleanup(func() { clearRepeatable(f.Lookup("remote")) })
 
 	if err := scanFlow(guardrailsScanCmd, []string{"../web"}); err == nil {
 		t.Fatal("want a usage error")
@@ -438,7 +442,7 @@ func TestBulkRemoteThatNamesNothingRefuses(t *testing.T) {
 
 	f := guardrailsScanCmd.Flags()
 	_ = f.Set("remote", "  ")
-	t.Cleanup(func() { clearRepeatable(f.Lookup("remote").Value) })
+	t.Cleanup(func() { clearRepeatable(f.Lookup("remote")) })
 
 	if err := scanFlow(guardrailsScanCmd, nil); err == nil {
 		t.Fatal("want a usage error")
@@ -934,5 +938,37 @@ func TestDecliningTheDeleteStillAnswersInJSON(t *testing.T) {
 	}
 	if seen.method != "" {
 		t.Errorf("it deleted anyway: %s", seen.method)
+	}
+}
+
+// pflag records no entry for `--rule ""`, so testing the slice length let an unexpanded shell
+// variable read as "--rule was never passed" — and approve with no --rule approves every rule.
+func TestAnEmptyRuleIsNotEveryRule(t *testing.T) {
+	for _, name := range []string{"approve", "unapprove"} {
+		cmd := guardrailsApproveCmd
+		if name == "unapprove" {
+			cmd = guardrailsUnapproveCmd
+		}
+		if err := cmd.Flags().Set("rule", ""); err != nil {
+			t.Fatalf("set --rule: %v", err)
+		}
+		body, err := rulesBody(cmd)
+		if err == nil {
+			t.Errorf("%s --rule \"\" produced %v, want a refusal rather than every rule", name, body)
+		}
+		clearRepeatable(cmd.Flags().Lookup("rule"))
+	}
+}
+
+// ...and the near-miss: no --rule at all still means every rule.
+func TestNoRuleFlagStillMeansEveryRule(t *testing.T) {
+	cmd := guardrailsApproveCmd
+	clearRepeatable(cmd.Flags().Lookup("rule"))
+	body, err := rulesBody(cmd)
+	if err != nil {
+		t.Fatalf("no --rule should be allowed: %v", err)
+	}
+	if _, named := body["clauses"]; named {
+		t.Errorf("body = %v, want no clauses key so the server acts on all of them", body)
 	}
 }

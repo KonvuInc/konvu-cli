@@ -152,8 +152,21 @@ func listFlow(cmd *cobra.Command, args []string) error {
 	// reasons call for opposite responses, and one deleted on purpose must not read as
 	// "nothing found here".
 	reasons := getMap(data, "skipped_reasons")
+	// Still switched on despite having no scan: it keeps opening a check on every pull request,
+	// one that can only report it has nothing to judge against. Calling that "not watching" is the
+	// opposite of what its authors see happen.
+	stillOn := map[string]bool{}
+	for _, name := range strList(getSlice(data, "skipped_enabled")) {
+		stillOn[name] = true
+	}
 	for _, name := range strList(skipped) {
 		code, _ := reasons[name].(string)
+		if stillOn[name] {
+			fmt.Printf("%s has no scan (%s) but is still switched on, so its pull requests\n",
+				name, notWatchedReason(code))
+			fmt.Printf("  get a check that cannot judge them. Scan it again, or: konvu guardrails enable --off %s\n", name)
+			continue
+		}
 		fmt.Printf("Not watching %s: %s\n", name, notWatchedReason(code))
 	}
 	if rows := withoutABaseline(onboarding, baselines); len(rows) > 0 {
