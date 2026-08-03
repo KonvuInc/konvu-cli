@@ -107,24 +107,26 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 		fields.Set("branch", branch)
 	}
 
-	// Upload out of band, so the bundle does not travel through the API. A server that cannot
-	// issue an upload URL answers 501; this command has no inline path, so that is an error
-	// rather than a fallback.
+	// Out of band by preference, so a large bundle does not travel through the API at all. A
+	// server that cannot issue an upload URL answers 501, and then the bundle goes in the request
+	// itself — the same endpoint takes it either way, so there is nothing to refuse here. Refusing
+	// instead gave up on a fallback the endpoint already offers, which made the command unusable
+	// against such a server rather than slower.
+	//
+	// Exactly one of the two, never both: the endpoint rejects a request carrying a key and a
+	// bundle together rather than picking one.
 	key, err := uploadBundle(client, bundlePath)
 	if err != nil {
 		return err
 	}
+	var job map[string]any
 	if key == "" {
-		return &clierrors.CLIError{
-			Code:       "UPLOAD_UNAVAILABLE",
-			Message:    "this server cannot issue an upload URL for the bundle",
-			Suggestion: "Update the CLI, or ask whoever runs the service.",
-			ExitCode:   clierrors.ExitGeneralError,
-		}
+		job, err = client.PostMultipart(
+			guardrailsAPI+"/baselines", fields, "bundle", bundlePath, baselineUploadTimeout)
+	} else {
+		fields.Set("bundle_key", key)
+		job, err = client.PostForm(guardrailsAPI+"/baselines", fields)
 	}
-	fields.Set("bundle_key", key)
-
-	job, err := client.PostForm(guardrailsAPI+"/baselines", fields)
 	if err != nil {
 		return err
 	}

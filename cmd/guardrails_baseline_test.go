@@ -471,3 +471,54 @@ func TestBaselineLabelsWithTheBundledRepositorysDefaultBranch(t *testing.T) {
 		t.Errorf("branch = %q, want the bundled repository's default branch", gotBranch)
 	}
 }
+
+// A server that cannot issue an upload URL answers 501, and the same endpoint accepts the bundle
+// in the request instead. Erroring there gave up on a fallback the server already offers, which
+// made the whole command unusable against such a server.
+func TestBaselinePostsTheBundleWhenTheServerCannotPresign(t *testing.T) {
+	var contentType, gotRepo string
+	var sawBundle, sawKey bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/upload-url"):
+			w.WriteHeader(http.StatusNotImplemented)
+		case strings.Contains(r.URL.Path, "/jobs/"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"job_id": "j1", "status": "done"})
+		default:
+			contentType = r.Header.Get("Content-Type")
+			if err := r.ParseMultipartForm(8 << 20); err != nil {
+				t.Errorf("the body did not parse as multipart: %v", err)
+			}
+			gotRepo = r.FormValue("repo")
+			_, sawKey = r.Form["bundle_key"]
+			if r.MultipartForm != nil {
+				_, sawBundle = r.MultipartForm.File["bundle"]
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{"job_id": "j1", "status": "pending"})
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("KONVU_API_URL", srv.URL)
+	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+
+	repo := newRepoOn(t, "git@github.com:acme/web.git", "main", "main")
+	if err := baselineFlow(guardrailsBaselineCmd, []string{repo}); err != nil {
+		t.Fatalf("baselineFlow: %v", err)
+	}
+	if !sawBundle {
+		t.Error("no bundle part was sent, so a server that cannot presign has no way to receive it")
+	}
+	// The endpoint takes exactly one of the two and rejects a request carrying both (422), so
+	// sending a key alongside the bundle would fail every one of these uploads.
+	if sawKey {
+		t.Error("bundle_key was sent alongside the bundle")
+	}
+	if !strings.HasPrefix(contentType, "multipart/form-data") {
+		t.Errorf("Content-Type = %q, want multipart/form-data", contentType)
+	}
+	if gotRepo != "acme/web" {
+		t.Errorf("repo = %q, want the fields to travel with the bundle", gotRepo)
+	}
+}
