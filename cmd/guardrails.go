@@ -55,7 +55,7 @@ func resolveBranch(cmd *cobra.Command, repo, dir string) string {
 }
 
 // sameRepo compares two "owner/name" ids. GitHub treats them case-insensitively and so must this,
-// or standing in `acmekonvu/pygoat` while naming `AcmeKonvu/pygoat` silently stops inferring.
+// or standing in `acme/web` while naming `Acme/Web` silently stops resolving.
 func sameRepo(a, b string) bool {
 	return a != "" && b != "" && strings.EqualFold(a, b)
 }

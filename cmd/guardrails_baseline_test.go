@@ -457,11 +457,7 @@ func TestBaselineLabelsWithTheBundledRepositorysDefaultBranch(t *testing.T) {
 	// come from the bundled repository's DEFAULT branch -- not from either checkout, and not from
 	// the directory we happen to be in.
 	here := newRepoOn(t, "git@github.com:acme/here.git", "here-default", "feature/here")
-	prev, _ := os.Getwd()
-	if err := os.Chdir(here); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
+	inDir(t, here)
 	there := newRepoOn(t, "git@github.com:acme/there.git", "there-default", "feature/there")
 
 	_ = guardrailsBaselineCmd.Flags().Set("timeout", "1ns")
@@ -474,30 +470,4 @@ func TestBaselineLabelsWithTheBundledRepositorysDefaultBranch(t *testing.T) {
 	if gotBranch != "there-default" {
 		t.Errorf("branch = %q, want the bundled repository's default branch", gotBranch)
 	}
-}
-
-// newRepoOn is newRepo with an origin remote and a recorded default branch, as a clone has, then
-// checked out on `on`. The default branch is what labels a baseline; `on` is where you happen to
-// be standing, and must not.
-func newRepoOn(t *testing.T, origin, dflt, on string) string {
-	t.Helper()
-	dir := t.TempDir()
-	steps := [][]string{
-		{"init", "-q", "-b", dflt},
-		{"remote", "add", "origin", origin},
-		{"config", "user.email", "t@example.com"},
-		{"config", "user.name", "t"},
-		{"commit", "-q", "--allow-empty", "-m", "one"},
-		{"update-ref", "refs/remotes/origin/" + dflt, "HEAD"},
-		{"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/" + dflt},
-	}
-	if on != dflt {
-		steps = append(steps, []string{"checkout", "-q", "-b", on})
-	}
-	for _, a := range steps {
-		if out, err := exec.Command("git", append([]string{"-C", dir}, a...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", a, err, out)
-		}
-	}
-	return dir
 }

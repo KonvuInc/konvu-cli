@@ -6,16 +6,15 @@ import (
 	"testing"
 )
 
-// checkoutOf makes a clone-like repository for `origin`, whose default branch is `dflt`, sitting
-// on `on`, and chdirs into it. `git clone` records the default branch in refs/remotes/origin/HEAD;
-// this reproduces that rather than mocking it, because that ref is the whole mechanism.
-func checkoutOf(t *testing.T, origin, dflt, on string) string {
+// newRepoOn builds a clone-like repository: `origin` as its remote, `dflt` recorded as the
+// default branch the way `git clone` records it in refs/remotes/origin/HEAD, checked out on `on`.
+// That ref is the mechanism under test, so it is reproduced rather than mocked.
+func newRepoOn(t *testing.T, origin, dflt, on string) string {
 	t.Helper()
 	dir := t.TempDir()
 	run := func(args ...string) {
 		t.Helper()
-		c := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		if out, err := c.CombinedOutput(); err != nil {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 	}
@@ -27,12 +26,17 @@ func checkoutOf(t *testing.T, origin, dflt, on string) string {
 	if on != dflt {
 		run("checkout", "-q", "-b", on)
 	}
+	return dir
+}
+
+// inDir runs the rest of the test from dir, since the commands read the checkout they are in.
+func inDir(t *testing.T, dir string) {
+	t.Helper()
 	prev, _ := os.Getwd()
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(prev) })
-	return dir
 }
 
 func clearBranchFlag(t *testing.T) {
@@ -44,7 +48,7 @@ func TestOnAFeatureBranchItStillMeansTheDefaultBranch(t *testing.T) {
 	// The scenario that was broken: a developer on a feature branch asked about their own repo and
 	// was told "no such baseline", because the tool searched the branch they happened to be on.
 	// A baseline describes what pull requests are measured against, which is the default branch.
-	checkoutOf(t, "git@github.com:acme/web.git", "master", "feature/add-export")
+	inDir(t, newRepoOn(t, "git@github.com:acme/web.git", "master", "feature/add-export"))
 	clearBranchFlag(t)
 
 	if got := resolveBranch(guardrailsRatifyCmd, "acme/web", "."); got != "master" {
@@ -53,7 +57,7 @@ func TestOnAFeatureBranchItStillMeansTheDefaultBranch(t *testing.T) {
 }
 
 func TestAnExplicitBranchStillWins(t *testing.T) {
-	checkoutOf(t, "git@github.com:acme/web.git", "master", "master")
+	inDir(t, newRepoOn(t, "git@github.com:acme/web.git", "master", "master"))
 	if err := guardrailsRatifyCmd.Flags().Set("branch", "release-2.3"); err != nil {
 		t.Fatal(err)
 	}
@@ -67,12 +71,12 @@ func TestAnExplicitBranchStillWins(t *testing.T) {
 func TestAnUnrelatedCheckoutDoesNotLendItsDefaultBranch(t *testing.T) {
 	// Standing in one repository and naming another: an unguarded read would hand over a branch
 	// belonging to neither, and it addresses a real baseline, so it lands on the wrong one.
-	checkoutOf(t, "git@github.com:acme/web.git", "trunk", "trunk")
+	inDir(t, newRepoOn(t, "git@github.com:acme/web.git", "trunk", "trunk"))
 	clearBranchFlag(t)
 
 	// Empty, not "main": the CLI says nothing and the server resolves the repository's default.
 	// Guessing here would override an answer only the server can look up.
-	if got := resolveBranch(guardrailsRatifyCmd, "AcmeKonvu/pygoat", "."); got != "" {
+	if got := resolveBranch(guardrailsRatifyCmd, "other/repo", "."); got != "" {
 		t.Errorf("branch = %q, want empty so the server resolves it", got)
 	}
 }
@@ -80,7 +84,7 @@ func TestAnUnrelatedCheckoutDoesNotLendItsDefaultBranch(t *testing.T) {
 func TestTheSameRepoInAnotherCaseStillResolves(t *testing.T) {
 	// GitHub is case-insensitive about owner/name, so a differently-cased remote must not silently
 	// stop resolving and quietly fall back to main.
-	checkoutOf(t, "git@github.com:acme/web.git", "master", "master")
+	inDir(t, newRepoOn(t, "git@github.com:acme/web.git", "master", "master"))
 	clearBranchFlag(t)
 
 	if got := resolveBranch(guardrailsRatifyCmd, "Acme/Web", "."); got != "master" {
