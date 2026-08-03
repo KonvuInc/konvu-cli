@@ -148,15 +148,13 @@ func listFlow(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Println(output.FormatTable(map[string]any{"baselines": rows}, columns, "baselines", nil))
 	}
-	// Silence about skipped repositories would read as full coverage.
-	if len(skipped) > 0 {
-		names := make([]string, 0, len(skipped))
-		for _, s := range skipped {
-			if str, ok := s.(string); ok {
-				names = append(names, str)
-			}
-		}
-		fmt.Printf("Skipped: %s\n", strings.Join(names, ", "))
+	// Silence about these would read as full coverage. One line each with its own reason: the
+	// reasons call for opposite responses, and one deleted on purpose must not read as
+	// "nothing found here".
+	reasons := getMap(data, "skipped_reasons")
+	for _, name := range strList(skipped) {
+		code, _ := reasons[name].(string)
+		fmt.Printf("Not watching %s: %s\n", name, notWatchedReason(code))
 	}
 	if rows := withoutABaseline(onboarding, baselines); len(rows) > 0 {
 		fmt.Println("No scan recorded:")
@@ -209,6 +207,21 @@ func onboardingState(m map[string]any) string {
 	return state
 }
 
+// notWatchedReason turns a reason code into something a reader can act on. An unrecognised code
+// travels through: an unfamiliar explanation beats a blank one.
+func notWatchedReason(code string) string {
+	switch {
+	case code == "deleted-by-owner":
+		return "you deleted it; scan the repository again when you want it back"
+	case strings.HasPrefix(code, "abstain:"):
+		// Not the same as having nothing to check; reporting it as that would hide a gap of ours.
+		return "Konvu could not read it - tell us, this one is on our side"
+	case code == "no-authz-surface" || code == "":
+		return "no access checks found in the code, so there is nothing to judge"
+	}
+	return code
+}
+
 func runGuardrailsShow(cmd *cobra.Command, args []string) error {
 	if err := showFlow(cmd, args); err != nil {
 		handleGuardrailsError(err, output.DetectOutputFormat(mustGuardrailsOutput(cmd)))
@@ -256,19 +269,27 @@ func showFlow(cmd *cobra.Command, args []string) error {
 
 	policy := getSlice(data, "policy")
 	rows := make([]any, 0, len(policy))
+	var drafted []string
 	for _, p := range policy {
 		m, ok := p.(map[string]any)
 		if !ok {
 			continue
 		}
+		approved, _ := getBool(m, "ratified")
 		rows = append(rows, map[string]any{
-			"who":  getStr(m, "role"),
-			"may":  getStr(m, "action"),
-			"on":   getStr(m, "resource"),
-			"when": conditionDisplay(getStr(m, "condition")),
+			"who":      getStr(m, "role"),
+			"may":      getStr(m, "action"),
+			"on":       getStr(m, "resource"),
+			"where":    orAnyRoute(getStr(m, "route")),
+			"when":     conditionDisplay(getStr(m, "condition")),
+			"approved": yesNo(approved),
 		})
+		if key := getStr(m, "key"); !approved && key != "" {
+			drafted = append(drafted, key)
+		}
 	}
-	columns := []string{"who", "may", "on", "when"}
+	// `approved` per row, now that rules can be approved one at a time.
+	columns := []string{"who", "may", "on", "where", "when", "approved"}
 
 	if format == output.CSV {
 		fmt.Print(output.FormatCSV(map[string]any{"policy": rows}, columns, "policy"))
@@ -295,7 +316,35 @@ func showFlow(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("ACCESS RULES (%d)\n", len(rows))
 	fmt.Println(output.FormatTable(map[string]any{"policy": rows}, columns, "policy", nil))
+	printDraftedRules(repo, drafted)
 	return nil
+}
+
+// printDraftedRules lists the keys still awaiting approval, one per line and untruncated. A block
+// rather than a table column, like `review` prints its rows: a table would truncate the one value
+// the reader has to copy back.
+func printDraftedRules(repo string, keys []string) {
+	if len(keys) == 0 {
+		return
+	}
+	fmt.Println()
+	fmt.Printf("%d rule(s) not approved yet, so pull request checks stay paused.\n", len(keys))
+	fmt.Println("Approve one by passing its key:")
+	fmt.Println()
+	for _, k := range keys {
+		fmt.Printf("  %s\n", k)
+	}
+	fmt.Println()
+	fmt.Printf("  konvu guardrails approve %s --rule %q\n", repo, keys[0])
+}
+
+// orAnyRoute renders a rule's route scope. Empty means every route reaching that resource, which is
+// wider rather than narrower, so it must not read as missing data.
+func orAnyRoute(route string) string {
+	if route == "" {
+		return "(any)"
+	}
+	return route
 }
 
 // countDisplay renders a count the server may omit, so an absent number reads as unknown
