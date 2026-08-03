@@ -57,7 +57,7 @@ func init() {
 	// client-supplied policies: it proposes one from the baseline and you ratify it.
 	f.StringVarP(&blPolicy, "policy", "p", "", "retired; the policy is proposed and ratified in the dashboard")
 	_ = f.MarkDeprecated("policy", "the policy is proposed from the baseline and ratified in the dashboard")
-	f.StringVar(&blBranch, "branch", "", "branch to act on (default: the repository's default branch)")
+	f.StringVar(&blBranch, "branch", "", "branch to act on (default: the repository's default branch, resolved by the server)")
 	f.StringVar(&blRepo, "repo", "", "repo id (default: inferred from origin)")
 	f.DurationVar(&blTimeout, "timeout", 30*time.Minute, "how long to wait for the baseline to build")
 }
@@ -87,8 +87,8 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 		repoID = gitbundle.RepoSlug(repoPath)
 	}
 	// A local, not blBranch: that is the flag's own storage, so assigning back to it would make
-	// the flag read as explicitly set on any later resolution in the same process.
-	branch := resolveBranch(cmd, repoID, repoPath)
+	// the flag read as explicitly set on any later read in the same process.
+	branch := requestedBranch(cmd)
 
 	bundlePath, cleanup, err := gitbundle.Create(repoPath, head)
 	if err != nil {
@@ -134,7 +134,14 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	if jobID == "" {
 		return fmt.Errorf("server did not return a job id")
 	}
-	fmt.Printf("Baseline queued for %s@%s — building…\n", repoID, branch)
+	// No label when the branch was not stated: "acme/web@ — building" reads as a bug, and inventing
+	// one here would name a branch the server may not have resolved to. The finished result prints
+	// the branch the server actually used.
+	if branch == "" {
+		fmt.Printf("Baseline queued for %s — building…\n", repoID)
+	} else {
+		fmt.Printf("Baseline queued for %s@%s — building…\n", repoID, branch)
+	}
 
 	return waitForBaseline(client, jobID)
 }

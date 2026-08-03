@@ -35,20 +35,16 @@ func Head(dir, ref string) (string, error) {
 	return git(dir, "rev-parse", ref)
 }
 
-// DefaultBranch is the repository's default branch, or "" if the clone does not record one.
+// There is deliberately no DefaultBranch here. A clone records its remote's default in
+// refs/remotes/origin/HEAD when it is created, and nothing routinely refreshes it: after the
+// remote's default branch is renamed, a plain `git fetch` leaves both that symbolic ref and the
+// old remote-tracking branch in place, so reading it locally cannot tell a current default from
+// one that moved months ago. Only `git fetch --prune` repairs it, and asking the remote directly
+// costs a network round trip and the user's git credentials.
 //
-// The default branch and not the checked-out one: a baseline describes what pull requests are
-// measured against, and they target the default branch. Someone sitting on `feature/x` wants the
-// baseline for `master`, not one for a branch that disappears at merge -- and the bundle carries
-// no branch name at all (Create stages the sha under fixed synthetic refs and drops them again),
-// so the label has to travel beside it.
-func DefaultBranch(dir string) string {
-	ref, err := git(dir, "symbolic-ref", "refs/remotes/origin/HEAD")
-	if err != nil {
-		return ""
-	}
-	return strings.TrimPrefix(ref, "refs/remotes/origin/")
-}
+// The branch is an address, and sending one is what makes it authoritative, so a stale read would
+// file or look up a baseline under a branch no pull request targets. The server already asks the
+// host for the current default when the field is omitted -- see cmd.requestedBranch.
 
 // RepoSlug infers "owner/name" from the origin remote, falling back to the directory name.
 func RepoSlug(dir string) string {

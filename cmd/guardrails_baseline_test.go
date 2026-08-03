@@ -421,14 +421,19 @@ func TestBaselineDoesNotSendAPolicy(t *testing.T) {
 	}
 }
 
-func TestBaselineLabelsWithTheBundledRepositorysDefaultBranch(t *testing.T) {
-	// `baseline ../web` records THAT repository, so its default branch is the label. Reading the
-	// current directory instead stamps whatever you are standing in onto another repository -- and
-	// it addresses a real baseline, so it lands on the wrong one silently.
+func TestBaselineSendsNoBranchAndTheBundledRepositorysID(t *testing.T) {
+	// Two claims, on the wire rather than through the helper, because a helper-only assertion
+	// passes even when the call site is wired wrong.
 	//
-	// Driven through baselineFlow on purpose: asserting on branchOrCheckout alone passes even
-	// when the call site hands it ".", which is exactly the wiring this covers.
+	// The repo id comes from the checkout being bundled: `baseline ../web` records THAT repository,
+	// and stamping the directory you are standing in onto another one addresses a real baseline,
+	// so it lands on the wrong one silently.
+	//
+	// The branch is absent. Both checkouts here record a default branch in the ref a clone writes,
+	// and neither is read: that ref goes stale on a rename and nothing local can tell. Sending a
+	// name is what makes it authoritative, so the server is left to resolve the current default.
 	var gotBranch, gotRepo string
+	var sawBranch bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/upload-url"):
@@ -444,6 +449,7 @@ func TestBaselineLabelsWithTheBundledRepositorysDefaultBranch(t *testing.T) {
 		default:
 			_ = r.ParseForm()
 			gotBranch, gotRepo = r.FormValue("branch"), r.FormValue("repo")
+			_, sawBranch = r.Form["branch"]
 			w.WriteHeader(http.StatusAccepted)
 			_ = json.NewEncoder(w).Encode(map[string]any{"job_id": "j1", "status": "pending"})
 		}
@@ -453,9 +459,8 @@ func TestBaselineLabelsWithTheBundledRepositorysDefaultBranch(t *testing.T) {
 	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
 	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
 
-	// Stand in one repository; bundle another. Both are on a feature branch, so the label can only
-	// come from the bundled repository's DEFAULT branch -- not from either checkout, and not from
-	// the directory we happen to be in.
+	// Stand in one repository, bundle another. Each records a different default branch, so a local
+	// read of either would be visible in what goes on the wire.
 	here := newRepoOn(t, "git@github.com:acme/here.git", "here-default", "feature/here")
 	inDir(t, here)
 	there := newRepoOn(t, "git@github.com:acme/there.git", "there-default", "feature/there")
@@ -467,8 +472,9 @@ func TestBaselineLabelsWithTheBundledRepositorysDefaultBranch(t *testing.T) {
 	if gotRepo != "acme/there" {
 		t.Fatalf("repo = %q, want the bundled checkout's", gotRepo)
 	}
-	if gotBranch != "there-default" {
-		t.Errorf("branch = %q, want the bundled repository's default branch", gotBranch)
+	if sawBranch {
+		t.Errorf("branch = %q was sent; it must be absent so the server resolves the current default",
+			gotBranch)
 	}
 }
 

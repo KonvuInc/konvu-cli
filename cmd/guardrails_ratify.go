@@ -56,7 +56,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth
 
 func init() {
 	rf := guardrailsRatifyCmd.Flags()
-	rf.String("branch", "", "branch to act on (default: the repository's default branch)")
+	rf.String("branch", "", "branch to act on (default: the repository's default branch, resolved by the server)")
 	rf.StringP("output", "o", "", "output format: table, json, or csv")
 
 	ef := guardrailsExplainCmd.Flags()
@@ -79,7 +79,7 @@ func ratifyFlow(cmd *cobra.Command, args []string) error {
 		os.Exit(clierrors.ExitUsageError)
 	}
 	repo := args[0]
-	branch := resolveBranch(cmd, repo, ".")
+	branch := requestedBranch(cmd)
 
 	client := api.NewClient("", "")
 	defer client.Close()

@@ -53,7 +53,7 @@ func init() {
 	lf.Bool("quiet", false, "print only repo names")
 
 	sf := guardrailsShowCmd.Flags()
-	sf.String("branch", "", "branch to act on (default: the repository's default branch)")
+	sf.String("branch", "", "branch to act on (default: the repository's default branch, resolved by the server)")
 	sf.Bool("policy-only", false, "print just the policy table, no baseline summary")
 	sf.StringP("output", "o", "", "output format: table, json, or csv")
 }
@@ -224,7 +224,7 @@ func showFlow(cmd *cobra.Command, args []string) error {
 		os.Exit(clierrors.ExitUsageError)
 	}
 	repo := args[0]
-	branch := resolveBranch(cmd, repo, ".")
+	branch := requestedBranch(cmd)
 
 	client := api.NewClient("", "")
 	defer client.Close()

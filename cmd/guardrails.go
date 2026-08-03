@@ -1,9 +1,6 @@
 package cmd
 
 import (
-	"strings"
-
-	"github.com/KonvuInc/konvu-cli/pkg/gitbundle"
 	"github.com/spf13/cobra"
 )
 
@@ -32,36 +29,26 @@ func init() {
 	rootCmd.AddCommand(guardrailsCmd)
 }
 
-// resolveBranch is the branch a command acts on: what was asked for, else the default branch of
-// the repository being named, else "" meaning "I do not know, you decide".
+// requestedBranch is the branch a command acts on: what the caller asked for, else "" meaning
+// "not stated, you decide".
 //
-// The DEFAULT branch, not the checked-out one: a baseline describes what pull requests are
-// measured against, so a developer on `feature/x` still means `master`.
+// Nothing is inferred from the checkout, deliberately. The obvious local source is
+// refs/remotes/origin/HEAD, and it is a cache with no invalidation: a clone records it once and a
+// plain `git fetch` after the remote's default branch is renamed leaves the stale name in place
+// (only `git fetch --prune` repairs it). Sending a branch is what makes it authoritative, so
+// reading that ref would let a months-old clone address a branch no pull request targets --
+// the same silent miss this command set exists to prevent, through a different door.
 //
-// Read from the checkout only when that checkout IS the repository named, since `show` and
-// `ratify` take it as an argument and would otherwise borrow an unrelated repo's branch. `dir` is
-// the checkout to read: `baseline ../web` records somewhere else.
-//
-// Empty must travel as an omitted field, never as "main" -- only the server can ask GitHub for a
-// repository's default, and a client-side guess overrides an answer it would have got right.
-func resolveBranch(cmd *cobra.Command, repo, dir string) string {
-	if v, _ := cmd.Flags().GetString("branch"); v != "" {
-		return v
-	}
-	if sameRepo(repo, gitbundle.RepoSlug(dir)) {
-		return gitbundle.DefaultBranch(dir)
-	}
-	return ""
+// So the rule is: say what you were told, and otherwise say nothing. The server holds the
+// integration and asks the host for the current default, which cannot go stale.
+func requestedBranch(cmd *cobra.Command) string {
+	v, _ := cmd.Flags().GetString("branch")
+	return v
 }
 
-// sameRepo compares two "owner/name" ids. GitHub treats them case-insensitively and so must this,
-// or standing in `acme/web` while naming `Acme/Web` silently stops resolving.
-func sameRepo(a, b string) bool {
-	return a != "" && b != "" && strings.EqualFold(a, b)
-}
-
-// branchParam carries the branch only when we know it. An omitted field asks the server to resolve
-// the repository's default; sending a guess instead would override an answer it can look up.
+// branchParam carries the branch only when the caller named one. An omitted field asks the server
+// to resolve the repository's default; sending a guess is indistinguishable from a deliberate
+// choice, and stops it resolving.
 func branchParam(branch string) map[string]any {
 	if branch == "" {
 		return map[string]any{}
