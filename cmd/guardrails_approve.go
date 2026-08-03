@@ -159,7 +159,9 @@ func rulesBody(cmd *cobra.Command) (map[string]any, error) {
 		body["clauses"] = named
 		return body, nil
 	}
-	if len(rules) > 0 {
+	// Changed, not len(rules): pflag records no entry for `--rule ""`, so an unexpanded shell
+	// variable left the slice empty and read as "--rule was never passed" -- approving every rule.
+	if cmd.Flags().Changed("rule") {
 		// Falling through to an omitted field would turn a mistyped selection into approval of
 		// every rule.
 		return nil, &clierrors.CLIError{
