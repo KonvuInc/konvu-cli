@@ -119,7 +119,8 @@ func deleteFlow(cmd *cobra.Command, args []string) error {
 	if stillOn, _ := getBool(data, "still_enabled"); stillOn {
 		fmt.Println()
 		fmt.Printf("%s is still switched on, so its pull request checks will report that there\n", repo)
-		fmt.Println("is nothing to judge against until you scan it again.")
+		fmt.Println("is nothing to judge against. Scan it again, or stop checking it with")
+		fmt.Printf("  konvu guardrails enable --off %s\n", repo)
 	}
 	return nil
 }
