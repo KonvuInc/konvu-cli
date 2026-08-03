@@ -36,6 +36,10 @@ Packages the current commit, uploads it, and reads the access your code enforces
 who may do what. Later pull requests are checked against this scan, so a change
 that breaks a rule is reported as a change rather than re-derived from scratch.
 
+To do several repositories at once, or one you have not cloned, pass --all or --remote:
+Konvu fetches the code itself, so no checkout is needed. Only repositories Konvu can
+see are eligible, and it reports the ones it cannot.
+
 The rules are drafted from the scan; approve them with
 'konvu guardrails approve <repo>'. This command no longer takes any.
 
@@ -46,7 +50,13 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
   konvu guardrails scan
 
   # Scan another checkout, on a named branch
-  konvu guardrails scan ../web --branch release-2.3`,
+  konvu guardrails scan ../web --branch release-2.3
+
+  # Several at once, no checkout needed
+  konvu guardrails scan --remote acme/web --remote acme/api
+
+  # Every repository Konvu can see, and wait for them
+  konvu guardrails scan --all --wait`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runGuardrailsScan,
 }
@@ -60,6 +70,7 @@ func init() {
 	f.StringVar(&scanBranch, "branch", "", "branch to act on (default: the repository's default branch, resolved by the server)")
 	f.StringVar(&scanRepo, "repo", "", "repo id (default: inferred from origin)")
 	f.DurationVar(&scanTimeout, "timeout", 30*time.Minute, "how long to wait for the scan")
+	f.StringP("output", "o", "", "output format: table or json")
 }
 
 // runGuardrailsScan splits the work into an inner function that returns, because
@@ -67,12 +78,16 @@ func init() {
 // from inside the flow would leave the staged refs and the temp bundle in the user's repo.
 func runGuardrailsScan(cmd *cobra.Command, args []string) error {
 	if err := scanFlow(cmd, args); err != nil {
-		handleGuardrailsError(err, output.DetectOutputFormat(""))
+		handleGuardrailsError(err, output.DetectOutputFormat(mustGuardrailsOutput(cmd)))
 	}
 	return nil
 }
 
 func scanFlow(cmd *cobra.Command, args []string) error {
+	// --all/--remote hand the fetching to Konvu instead of bundling a checkout.
+	if bulkRequested(cmd) {
+		return bulkScanFlow(cmd, args)
+	}
 	repoPath := "."
 	if len(args) == 1 {
 		repoPath = args[0]
@@ -176,6 +191,14 @@ func guardrailsCLIError(err error) *clierrors.CLIError {
 				Message:    detail,
 				Suggestion: "Run 'konvu guardrails list' to see the repositories you have scanned.",
 				ExitCode:   clierrors.ExitNotFound,
+			}
+		case http.StatusUnprocessableEntity:
+			// The caller's own request is wrong and the server's detail says which. The default arm
+			// below suggests checking your session, the wrong remedy for a mistyped argument.
+			return &clierrors.CLIError{
+				Code:     "INVALID_REQUEST",
+				Message:  detail,
+				ExitCode: clierrors.ExitUsageError,
 			}
 		case http.StatusConflict:
 			// 409 covers more than a stale baseline (a draft that cannot be ratified answers it

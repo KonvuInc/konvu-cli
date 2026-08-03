@@ -133,6 +133,15 @@ func (c *Client) checkResponse(resp *http.Response) error {
 }
 
 func (c *Client) Get(path string, params map[string]any) (map[string]any, error) {
+	return c.query("GET", path, params)
+}
+
+// Delete calls an endpoint whose arguments travel as query parameters and which sends no body.
+func (c *Client) Delete(path string, params map[string]any) (map[string]any, error) {
+	return c.query("DELETE", path, params)
+}
+
+func (c *Client) query(method, path string, params map[string]any) (map[string]any, error) {
 	reqURL := c.baseURL + path
 	if len(params) > 0 {
 		values := url.Values{}
@@ -151,7 +160,7 @@ func (c *Client) Get(path string, params map[string]any) (map[string]any, error)
 		reqURL += "?" + values.Encode()
 	}
 
-	req, err := http.NewRequest("GET", reqURL, nil)
+	req, err := http.NewRequest(method, reqURL, nil)
 	if err != nil {
 		return nil, err
 	}
