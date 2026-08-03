@@ -13,11 +13,11 @@ import (
 
 var guardrailsListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List the authorization baselines recorded for your repositories",
-	Long: `List the authorization baselines recorded for your repositories.
+	Short: "List the repositories you have scanned",
+	Long: `List the repositories you have scanned.
 
-One row per repository and branch, with how much of the route surface each baseline
-models and whether it has been ratified. Repositories that were skipped are listed
+One row per repository and branch, with how much of the route surface each scan
+covers and whether its rules have been approved. Repositories that were skipped are listed
 after the table, so a short list is never mistaken for full coverage.
 
 Exit codes: 0 success, 1 general error, 4 auth failed`,
@@ -30,19 +30,20 @@ Exit codes: 0 success, 1 general error, 4 auth failed`,
 
 var guardrailsShowCmd = &cobra.Command{
 	Use:   "show <repo>",
-	Short: "Show a baseline and the authorization policy it is checked against",
-	Long: `Show a baseline and the authorization policy it is checked against.
+	Short: "Show a repository's access rules",
+	Long: `Show a repository's access rules.
 
-Reports how many routes the baseline models, how many enforce a guard, and the
-policy rows drift is measured against. Pass --policy-only to print just the policy table.
+Reports how many routes the scan analyzed, how many restrict who may reach them,
+and the access rules pull requests are checked against. Pass --rules-only to print
+just the rules table.
 
-The repo is the id the baseline was recorded under, usually owner/name.
+The repo is the id the scan was recorded under, usually owner/name.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth failed`,
 	Example: `  konvu guardrails show acme/web
 
-  # A specific branch, policy table only
-  konvu guardrails show acme/web --branch release-2.3 --policy-only`,
+  # A specific branch, rules table only
+  konvu guardrails show acme/web --branch release-2.3 --rules-only`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runGuardrailsShow,
 }
@@ -54,7 +55,7 @@ func init() {
 
 	sf := guardrailsShowCmd.Flags()
 	sf.String("branch", "", "branch to act on (default: the repository's default branch, resolved by the server)")
-	sf.Bool("policy-only", false, "print just the policy table, no baseline summary")
+	sf.Bool("rules-only", false, "print just the rules table, no summary")
 	sf.StringP("output", "o", "", "output format: table, json, or csv")
 }
 
@@ -125,19 +126,19 @@ func listFlow(cmd *cobra.Command, args []string) error {
 			"repository": getStr(m, "repo"),
 			"branch":     getStr(m, "branch"),
 			"routes":     countDisplay(m["n_paths"]),
-			"guarded":    countDisplay(m["n_guarded"]),
-			"ratified":   yesNo(ratified),
-			"recorded":   dateDisplay(getStr(m, "created_at")),
+			"restricted": countDisplay(m["n_guarded"]),
+			"approved":   yesNo(ratified),
+			"scanned":    dateDisplay(getStr(m, "created_at")),
 		})
 	}
-	columns := []string{"repository", "branch", "routes", "guarded", "ratified", "recorded"}
+	columns := []string{"repository", "branch", "routes", "restricted", "approved", "scanned"}
 
 	if format == output.CSV {
 		fmt.Print(output.FormatCSV(map[string]any{"baselines": rows}, columns, "baselines"))
 		return nil
 	}
 	if len(rows) == 0 {
-		fmt.Println("No baselines recorded yet. Run 'konvu guardrails baseline' in a repository.")
+		fmt.Println("No repositories scanned yet. Run 'konvu guardrails scan' in a repository.")
 	} else {
 		fmt.Println(output.FormatTable(map[string]any{"baselines": rows}, columns, "baselines", nil))
 	}
@@ -152,7 +153,7 @@ func listFlow(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Skipped: %s\n", strings.Join(names, ", "))
 	}
 	if rows := withoutABaseline(onboarding, baselines); len(rows) > 0 {
-		fmt.Println("No baseline recorded:")
+		fmt.Println("No scan recorded:")
 		for _, m := range rows {
 			line := fmt.Sprintf("  %s — %s", getStr(m, "repo"), onboardingState(m))
 			if reason := getStr(m, "error"); reason != "" {
@@ -215,7 +216,7 @@ func mustGuardrailsOutput(cmd *cobra.Command) string {
 }
 
 func showFlow(cmd *cobra.Command, args []string) error {
-	policyOnly, _ := cmd.Flags().GetBool("policy-only")
+	rulesOnly, _ := cmd.Flags().GetBool("rules-only")
 	outputFlag, _ := cmd.Flags().GetString("output")
 	format := output.DetectOutputFormat(outputFlag)
 
@@ -239,7 +240,7 @@ func showFlow(cmd *cobra.Command, args []string) error {
 	}
 
 	if format == output.JSON {
-		if policyOnly {
+		if rulesOnly {
 			fmt.Println(output.FormatJSON(map[string]any{"policy": getSlice(data, "policy")}))
 			return nil
 		}
@@ -255,34 +256,38 @@ func showFlow(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		rows = append(rows, map[string]any{
-			"role":      getStr(m, "role"),
-			"action":    getStr(m, "action"),
-			"resource":  getStr(m, "resource"),
-			"condition": getStr(m, "condition"),
+			"who":  getStr(m, "role"),
+			"may":  getStr(m, "action"),
+			"on":   getStr(m, "resource"),
+			"when": conditionDisplay(getStr(m, "condition")),
 		})
 	}
-	columns := []string{"role", "action", "resource", "condition"}
+	columns := []string{"who", "may", "on", "when"}
 
 	if format == output.CSV {
 		fmt.Print(output.FormatCSV(map[string]any{"policy": rows}, columns, "policy"))
 		return nil
 	}
 
-	if !policyOnly {
+	if !rulesOnly {
 		ratified, _ := getBool(data, "ratified")
-		fmt.Printf("%s @ %s\n", getStr(data, "repo"), getStr(data, "branch"))
-		fmt.Printf("  fingerprint: %s\n", getStr(data, "fingerprint"))
-		fmt.Printf("  ratified:    %s\n", yesNo(ratified))
-		fmt.Printf("  routes:      %s modelled, %s guarded, %s unguarded\n",
+		approval := "not approved yet"
+		if ratified {
+			approval = "approved"
+		}
+		fmt.Printf("%s @ %s — %s\n", getStr(data, "repo"), getStr(data, "branch"), approval)
+		fmt.Printf("  scan id: %s\n", getStr(data, "fingerprint"))
+		fmt.Printf("  routes:  %s analyzed, %s restricted, %s open to anyone\n",
 			countDisplay(data["n_paths"]),
 			countDisplay(data["n_guarded"]),
 			countDisplay(data["n_unguarded"]))
 		fmt.Println()
 	}
 	if len(rows) == 0 {
-		fmt.Println("No policy rows recorded for this baseline.")
+		fmt.Println("No access rules drafted for this repository yet.")
 		return nil
 	}
+	fmt.Printf("ACCESS RULES (%d)\n", len(rows))
 	fmt.Println(output.FormatTable(map[string]any{"policy": rows}, columns, "policy", nil))
 	return nil
 }
@@ -298,6 +303,14 @@ func countDisplay(v any) string {
 		return fmt.Sprintf("%d", n)
 	}
 	return "N/A"
+}
+
+// conditionDisplay translates the always-true condition only; the rest is passed through.
+func conditionDisplay(s string) string {
+	if s == "true" {
+		return "always"
+	}
+	return s
 }
 
 // dateDisplay keeps the date and drops the time, matching how other commands show one.

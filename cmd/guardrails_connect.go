@@ -27,14 +27,14 @@ const (
 	repoWait = 5 * time.Minute
 )
 
-var guardrailsInstallCmd = &cobra.Command{
-	Use:   "install",
-	Short: "Connect your GitHub organization to Konvu Guardrails",
-	Long: `Connect your GitHub organization to Konvu Guardrails.
+var guardrailsConnectCmd = &cobra.Command{
+	Use:   "connect",
+	Short: "Connect your GitHub organization to Konvu",
+	Long: `Connect your GitHub organization to Konvu.
 
 Guardrails watches pull requests through a GitHub App. This connects the App's
-installation on your GitHub organization to your Konvu account, which is what lets a
-baseline you record here be the one checks read on your pull requests.
+installation on your GitHub organization to your Konvu account, which is what lets
+the rules you approve here be the ones checked on your pull requests.
 
 If the App is not installed yet, this prints the link to install it; run the command
 again once you have. Once connected it prints the link to your repository selection,
@@ -48,22 +48,22 @@ The organization defaults to the owner of your 'origin' remote.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 	Example: `  # Connect the organization owning the repo you are in
-  konvu guardrails install
+  konvu guardrails connect
 
   # Name it explicitly, outside a checkout
-  konvu guardrails install --org acme`,
+  konvu guardrails connect --org acme`,
 	Args: cobra.NoArgs,
-	RunE: runGuardrailsInstall,
+	RunE: runGuardrailsConnect,
 }
 
 func init() {
-	f := guardrailsInstallCmd.Flags()
+	f := guardrailsConnectCmd.Flags()
 	f.StringVar(&inOrg, "org", "", "GitHub organization (default: owner of your origin remote)")
 	f.StringP("output", "o", "", "output format: table or json")
 }
 
-func runGuardrailsInstall(cmd *cobra.Command, args []string) error {
-	if err := installFlow(cmd, args); err != nil {
+func runGuardrailsConnect(cmd *cobra.Command, args []string) error {
+	if err := connectFlow(cmd, args); err != nil {
 		handleGuardrailsError(err, output.DetectOutputFormat(mustGuardrailsOutput(cmd)))
 	}
 	return nil
@@ -81,7 +81,7 @@ func githubOwner(dir string) string {
 	return owner
 }
 
-func installFlow(cmd *cobra.Command, _ []string) error {
+func connectFlow(cmd *cobra.Command, _ []string) error {
 	format := output.DetectOutputFormat(mustGuardrailsOutput(cmd))
 
 	account := inOrg
@@ -90,7 +90,7 @@ func installFlow(cmd *cobra.Command, _ []string) error {
 	}
 	if account == "" {
 		fmt.Fprintln(os.Stderr,
-			"Error: no 'origin' remote to read the organization from; pass --org, e.g. 'konvu guardrails install --org acme'")
+			"Error: no 'origin' remote to read the organization from; pass --org, e.g. 'konvu guardrails connect --org acme'")
 		os.Exit(clierrors.ExitUsageError)
 	}
 
@@ -104,7 +104,7 @@ func installFlow(cmd *cobra.Command, _ []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 
-	data, err := askInstall(client, account, repo)
+	data, err := askConnect(client, account, repo)
 	if err != nil {
 		return err
 	}
@@ -115,8 +115,8 @@ func installFlow(cmd *cobra.Command, _ []string) error {
 	}
 	if linked, _ := getBool(data, "linked"); !linked {
 		if url := getStr(data, "install_url"); url != "" {
-			fmt.Printf("Konvu Guardrails is not installed on %s yet. Install it here:\n\n  %s\n\n", account, url)
-			fmt.Println("Then run 'konvu guardrails install' again.")
+			fmt.Printf("Konvu is not connected to %s yet. Connect it here:\n\n  %s\n\n", account, url)
+			fmt.Println("Then run 'konvu guardrails connect' again.")
 			return nil
 		}
 		// No link came back, so print what did rather than inventing a URL to send people to.
@@ -138,11 +138,11 @@ func installFlow(cmd *cobra.Command, _ []string) error {
 	if manage != "" {
 		fmt.Printf("  Choose which repositories Konvu can see:\n    %s\n", manage)
 	}
-	fmt.Println("  Run 'konvu guardrails baseline' in a repository to record its authorization.")
+	fmt.Println("  Run 'konvu guardrails scan' in a repository to draft its access rules.")
 	return nil
 }
 
-func askInstall(client *api.Client, account, repo string) (map[string]any, error) {
+func askConnect(client *api.Client, account, repo string) (map[string]any, error) {
 	body := map[string]any{"account": account}
 	if repo != "" {
 		body["repo"] = repo
@@ -162,18 +162,18 @@ func waitForRepo(client *api.Client, account, repo, manage string) error {
 	deadline := time.Now().Add(repoWait)
 	for {
 		time.Sleep(repoPollEvery)
-		data, err := askInstall(client, account, repo)
+		data, err := askConnect(client, account, repo)
 		if err != nil {
 			return err
 		}
 		if visible, known := getBool(data, "repo_visible"); known && visible {
 			fmt.Printf("\n%s is connected.\n", repo)
-			fmt.Println("  Run 'konvu guardrails baseline' to record its authorization.")
+			fmt.Println("  Run 'konvu guardrails scan' to draft its access rules.")
 			return nil
 		}
 		if time.Now().After(deadline) {
 			fmt.Printf("\nStill cannot see %s after %s.\n", repo, repoWait)
-			fmt.Println("Add it at the link above, then run 'konvu guardrails install' again.")
+			fmt.Println("Add it at the link above, then run 'konvu guardrails connect' again.")
 			return nil
 		}
 	}

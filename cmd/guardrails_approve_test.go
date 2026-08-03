@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-func TestRatifyExplainReviewRegistered(t *testing.T) {
-	want := map[string]bool{"ratify": false, "review": false, "explain": false}
+func TestApproveExplainReviewRegistered(t *testing.T) {
+	want := map[string]bool{"approve": false, "review": false, "explain": false}
 	for _, c := range guardrailsCmd.Commands() {
 		if _, ok := want[c.Name()]; ok {
 			want[c.Name()] = true
@@ -23,7 +23,7 @@ func TestRatifyExplainReviewRegistered(t *testing.T) {
 	}
 }
 
-func TestRatifySendsTheBranchAndKeepsTheSlash(t *testing.T) {
+func TestApproveSendsTheBranchAndKeepsTheSlash(t *testing.T) {
 	var gotPath, gotBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
@@ -38,11 +38,11 @@ func TestRatifySendsTheBranchAndKeepsTheSlash(t *testing.T) {
 	t.Setenv("KONVU_ACCESS_TOKEN", "tok")
 	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
 
-	_ = guardrailsRatifyCmd.Flags().Set("branch", "release-2.3")
-	defer func() { _ = guardrailsRatifyCmd.Flags().Set("branch", "main") }()
+	_ = guardrailsApproveCmd.Flags().Set("branch", "release-2.3")
+	defer func() { _ = guardrailsApproveCmd.Flags().Set("branch", "main") }()
 
-	if err := ratifyFlow(guardrailsRatifyCmd, []string{"acme/web"}); err != nil {
-		t.Fatalf("ratifyFlow: %v", err)
+	if err := approveFlow(guardrailsApproveCmd, []string{"acme/web"}); err != nil {
+		t.Fatalf("approveFlow: %v", err)
 	}
 	want := guardrailsAPI + "/dashboard/repos/acme/web/ratify"
 	if gotPath != want {

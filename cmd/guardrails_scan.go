@@ -18,61 +18,61 @@ import (
 )
 
 var (
-	blPolicy  string
-	blBranch  string
-	blRepo    string
-	blTimeout time.Duration
+	scanPolicy  string
+	scanBranch  string
+	scanRepo    string
+	scanTimeout time.Duration
 )
 
 // Bundles are large, so the upload gets a longer budget than an API call.
-const baselineUploadTimeout = 15 * time.Minute
+const scanUploadTimeout = 15 * time.Minute
 
-var guardrailsBaselineCmd = &cobra.Command{
-	Use:   "baseline [repo-path]",
-	Short: "Scan a repo and freeze an authorization baseline",
-	Long: `Scan a repo and freeze an authorization baseline.
+var guardrailsScanCmd = &cobra.Command{
+	Use:   "scan [repo-path]",
+	Short: "Scan a repository and draft its access rules",
+	Long: `Scan a repository and draft its access rules.
 
-Packages the current commit, uploads it, and records the authorization your code
-enforces. Later checks compare against this baseline, so drift is reported as a
-change rather than re-derived from scratch.
+Packages the current commit, uploads it, and reads the access your code enforces —
+who may do what. Later pull requests are checked against this scan, so a change
+that breaks a rule is reported as a change rather than re-derived from scratch.
 
-The policy is proposed from the recorded baseline; agree to it with
-'konvu guardrails ratify <repo>'. This command no longer takes one.
+The rules are drafted from the scan; approve them with
+'konvu guardrails approve <repo>'. This command no longer takes any.
 
 The repo id defaults to owner/name from your 'origin' remote.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
-	Example: `  # Baseline the repo you are in
-  konvu guardrails baseline
+	Example: `  # Scan the repo you are in
+  konvu guardrails scan
 
-  # Baseline another checkout, on a named branch
-  konvu guardrails baseline ../web --branch release-2.3`,
+  # Scan another checkout, on a named branch
+  konvu guardrails scan ../web --branch release-2.3`,
 	Args: cobra.MaximumNArgs(1),
-	RunE: runGuardrailsBaseline,
+	RunE: runGuardrailsScan,
 }
 
 func init() {
-	f := guardrailsBaselineCmd.Flags()
+	f := guardrailsScanCmd.Flags()
 	// Kept so existing invocations do not fail on an unknown flag, but the server retired
 	// client-supplied policies: it proposes one from the baseline and you ratify it.
-	f.StringVarP(&blPolicy, "policy", "p", "", "retired; the policy is proposed and ratified in the dashboard")
-	_ = f.MarkDeprecated("policy", "the policy is proposed from the baseline and ratified in the dashboard")
-	f.StringVar(&blBranch, "branch", "", "branch to act on (default: the repository's default branch, resolved by the server)")
-	f.StringVar(&blRepo, "repo", "", "repo id (default: inferred from origin)")
-	f.DurationVar(&blTimeout, "timeout", 30*time.Minute, "how long to wait for the baseline to build")
+	f.StringVarP(&scanPolicy, "policy", "p", "", "retired; rules are drafted by the scan and approved with 'approve'")
+	_ = f.MarkDeprecated("policy", "rules are drafted from the scan and approved with 'konvu guardrails approve'")
+	f.StringVar(&scanBranch, "branch", "", "branch to act on (default: the repository's default branch, resolved by the server)")
+	f.StringVar(&scanRepo, "repo", "", "repo id (default: inferred from origin)")
+	f.DurationVar(&scanTimeout, "timeout", 30*time.Minute, "how long to wait for the scan")
 }
 
-// runGuardrailsBaseline splits the work into an inner function that returns, because
+// runGuardrailsScan splits the work into an inner function that returns, because
 // handleGuardrailsError calls os.Exit and os.Exit does not run deferred functions — exiting
 // from inside the flow would leave the staged refs and the temp bundle in the user's repo.
-func runGuardrailsBaseline(cmd *cobra.Command, args []string) error {
-	if err := baselineFlow(cmd, args); err != nil {
+func runGuardrailsScan(cmd *cobra.Command, args []string) error {
+	if err := scanFlow(cmd, args); err != nil {
 		handleGuardrailsError(err, output.DetectOutputFormat(""))
 	}
 	return nil
 }
 
-func baselineFlow(cmd *cobra.Command, args []string) error {
+func scanFlow(cmd *cobra.Command, args []string) error {
 	repoPath := "."
 	if len(args) == 1 {
 		repoPath = args[0]
@@ -82,11 +82,11 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	repoID := blRepo
+	repoID := scanRepo
 	if repoID == "" {
 		repoID = gitbundle.RepoSlug(repoPath)
 	}
-	// A local, not blBranch: that is the flag's own storage, so assigning back to it would make
+	// A local, not scanBranch: that is the flag's own storage, so assigning back to it would make
 	// the flag read as explicitly set on any later read in the same process.
 	branch := requestedBranch(cmd)
 
@@ -122,7 +122,7 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	var job map[string]any
 	if key == "" {
 		job, err = client.PostMultipart(
-			guardrailsAPI+"/baselines", fields, "bundle", bundlePath, baselineUploadTimeout)
+			guardrailsAPI+"/baselines", fields, "bundle", bundlePath, scanUploadTimeout)
 	} else {
 		fields.Set("bundle_key", key)
 		job, err = client.PostForm(guardrailsAPI+"/baselines", fields)
@@ -138,12 +138,12 @@ func baselineFlow(cmd *cobra.Command, args []string) error {
 	// one here would name a branch the server may not have resolved to. The finished result prints
 	// the branch the server actually used.
 	if branch == "" {
-		fmt.Printf("Baseline queued for %s — building…\n", repoID)
+		fmt.Printf("Scan queued for %s — reading your code…\n", repoID)
 	} else {
-		fmt.Printf("Baseline queued for %s@%s — building…\n", repoID, branch)
+		fmt.Printf("Scan queued for %s@%s — reading your code…\n", repoID, branch)
 	}
 
-	return waitForBaseline(client, jobID)
+	return waitForScan(client, jobID)
 }
 
 // guardrailsCLIError classifies a failure into the shared CLI error shape: a real exit code
@@ -174,7 +174,7 @@ func guardrailsCLIError(err error) *clierrors.CLIError {
 			return &clierrors.CLIError{
 				Code:       "NOT_FOUND",
 				Message:    detail,
-				Suggestion: "Run 'konvu guardrails list' to see recorded baselines.",
+				Suggestion: "Run 'konvu guardrails list' to see the repositories you have scanned.",
 				ExitCode:   clierrors.ExitNotFound,
 			}
 		case http.StatusConflict:
@@ -245,14 +245,14 @@ func uploadBundle(client *api.Client, bundlePath string) (string, error) {
 	if target == "" || key == "" {
 		return "", fmt.Errorf("server did not return an upload url")
 	}
-	if err := client.PutPresigned(target, bundlePath, st.Size(), baselineUploadTimeout); err != nil {
+	if err := client.PutPresigned(target, bundlePath, st.Size(), scanUploadTimeout); err != nil {
 		return "", err
 	}
 	return key, nil
 }
 
-func waitForBaseline(client *api.Client, jobID string) error {
-	deadline := time.Now().Add(blTimeout)
+func waitForScan(client *api.Client, jobID string) error {
+	deadline := time.Now().Add(scanTimeout)
 	for {
 		st, err := client.Get(guardrailsAPI+"/baselines/jobs/"+jobID, nil)
 		if err != nil {
@@ -260,23 +260,23 @@ func waitForBaseline(client *api.Client, jobID string) error {
 		}
 		switch status, _ := st["status"].(string); status {
 		case "done":
-			printBaselineResult(st)
+			printScanResult(st)
 			return nil
 		case "error":
 			msg, _ := st["error"].(string)
 			if msg == "" {
-				msg = "the baseline could not be built"
+				msg = "the scan could not be completed"
 			}
 			return &clierrors.CLIError{
-				Code:     "BASELINE_FAILED",
+				Code:     "SCAN_FAILED",
 				Message:  msg,
 				ExitCode: clierrors.ExitGeneralError,
 			}
 		}
 		if time.Now().After(deadline) {
 			return &clierrors.CLIError{
-				Code:       "STILL_BUILDING",
-				Message:    fmt.Sprintf("the baseline was still building after %s", blTimeout),
+				Code:       "STILL_RUNNING",
+				Message:    fmt.Sprintf("the scan was still running after %s", scanTimeout),
 				Suggestion: "It may finish on its own; check with 'konvu guardrails list'.",
 				ExitCode:   clierrors.ExitGeneralError,
 			}
@@ -285,20 +285,20 @@ func waitForBaseline(client *api.Client, jobID string) error {
 	}
 }
 
-func printBaselineResult(st map[string]any) {
+func printScanResult(st map[string]any) {
 	bl, _ := st["baseline"].(map[string]any)
 	if bl == nil {
-		fmt.Println("Baseline recorded.")
+		fmt.Println("Scan complete.")
 		return
 	}
 	repo, _ := bl["repo"].(string)
 	branch, _ := bl["branch"].(string)
-	fmt.Printf("Baseline recorded for %s@%s\n", repo, branch)
+	fmt.Printf("Scan complete for %s@%s\n", repo, branch)
 	if paths, ok := bl["access_paths"].(float64); ok {
-		fmt.Printf("  routes modelled: %d\n", int(paths))
+		fmt.Printf("  routes analyzed: %d\n", int(paths))
 	}
 	if inv, ok := bl["invariants"].(float64); ok {
-		fmt.Printf("  invariants:      %d\n", int(inv))
+		fmt.Printf("  rules drafted:   %d\n", int(inv))
 	}
 	if notes, ok := st["grounding_notes"].([]any); ok && len(notes) > 0 {
 		fmt.Println("  notes:")

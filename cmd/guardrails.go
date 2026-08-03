@@ -10,20 +10,23 @@ const guardrailsAPI = "/services/guardrails/v1"
 
 var guardrailsCmd = &cobra.Command{
 	Use:   "guardrails",
-	Short: "Authorization baselines and checks",
-	Long: `Authorization baselines and checks.
+	Short: "Access rules for your code, checked on every pull request",
+	Long: `Access rules for your code, checked on every pull request.
 
-Guardrails records the authorization your code enforces as a baseline, then reports
-when a change drifts from it. These commands run against the repo you are in and
-use your 'konvu login' session.`,
+Konvu scans your repo, drafts the access rules your code already enforces — who
+may do what — and you approve them. From then on every pull request is checked
+against them, and anything that breaks a rule is flagged down to the line that
+did it.
+
+These commands run against the repo you are in and use your 'konvu login' session.`,
 }
 
 func init() {
-	guardrailsCmd.AddCommand(guardrailsInstallCmd)
-	guardrailsCmd.AddCommand(guardrailsBaselineCmd)
+	guardrailsCmd.AddCommand(guardrailsConnectCmd)
+	guardrailsCmd.AddCommand(guardrailsScanCmd)
 	guardrailsCmd.AddCommand(guardrailsListCmd)
 	guardrailsCmd.AddCommand(guardrailsShowCmd)
-	guardrailsCmd.AddCommand(guardrailsRatifyCmd)
+	guardrailsCmd.AddCommand(guardrailsApproveCmd)
 	guardrailsCmd.AddCommand(guardrailsReviewCmd)
 	guardrailsCmd.AddCommand(guardrailsExplainCmd)
 	rootCmd.AddCommand(guardrailsCmd)

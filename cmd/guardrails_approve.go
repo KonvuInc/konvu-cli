@@ -11,71 +11,71 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var guardrailsRatifyCmd = &cobra.Command{
-	Use:   "ratify <repo>",
-	Short: "Agree to a repository's proposed authorization policy",
-	Long: `Agree to a repository's proposed authorization policy.
+var guardrailsApproveCmd = &cobra.Command{
+	Use:   "approve <repo>",
+	Short: "Approve the access rules drafted for a repository",
+	Long: `Approve the access rules drafted for a repository.
 
-A recorded baseline starts as a draft: checks report that a change was not evaluated
-rather than passing or failing it. Ratifying is you agreeing the proposed policy is
-the authorization you intend, which is what lets a later change be reported as a
-breach of it.
+Drafted rules start unapproved, and until you approve them a pull request check
+reports that it could not judge the change rather than passing or failing it.
+Approving says these rules are what you intend, which is what lets a later change
+be flagged for breaking one.
 
-Read it first with 'konvu guardrails show <repo>'.
+Read them first with 'konvu guardrails show <repo>'.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth failed`,
-	Example: `  konvu guardrails ratify acme/web
+	Example: `  konvu guardrails approve acme/web
 
   # A specific branch
-  konvu guardrails ratify acme/web --branch release-2.3`,
+  konvu guardrails approve acme/web --branch release-2.3`,
 	Args: cobra.MaximumNArgs(1),
-	RunE: runGuardrailsRatify,
+	RunE: runGuardrailsApprove,
 }
 
 var guardrailsExplainCmd = &cobra.Command{
 	Use:   "explain <token>",
-	Short: "Explain what a check flagged on a pull request, and optionally state your intent",
-	Long: `Explain what a check flagged on a pull request, and optionally state your intent.
+	Short: "Explain the findings on a pull request",
+	Long: `Explain the findings on a pull request.
 
-The token comes from the check's own comment on the pull request. For each flagged
-route this prints the guard the code enforces today, what comparable routes enforce,
-and the policy already covering the resource.
+The token comes from the check's own comment on the pull request. For each finding
+this prints what the code checks today, what comparable routes check, and the access
+rule covering the resource.
 
-Pass --intent to record the guard you actually want. Nothing is applied to the
-policy here: the check re-runs on your next push and clears itself if the code
+Pass --intent to record what the route should check instead. Nothing is applied to
+your rules here: the check re-runs on your next push and clears itself if the code
 matches.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth failed`,
 	Example: `  konvu guardrails explain kb-36-9f3a1c
 
-  # Say what the route is supposed to enforce
+  # Say what the route is supposed to check
   konvu guardrails explain kb-36-9f3a1c --intent "only the owner may read a document"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runGuardrailsExplain,
 }
 
 func init() {
-	rf := guardrailsRatifyCmd.Flags()
+	rf := guardrailsApproveCmd.Flags()
 	rf.String("branch", "", "branch to act on (default: the repository's default branch, resolved by the server)")
 	rf.StringP("output", "o", "", "output format: table, json, or csv")
 
 	ef := guardrailsExplainCmd.Flags()
-	ef.String("intent", "", "the guard this route is supposed to enforce, in your own words")
+	ef.String("intent", "", "what this route should check, in your own words")
 	ef.StringP("output", "o", "", "output format: table, json, or csv")
 }
 
-func runGuardrailsRatify(cmd *cobra.Command, args []string) error {
-	if err := ratifyFlow(cmd, args); err != nil {
+func runGuardrailsApprove(cmd *cobra.Command, args []string) error {
+	if err := approveFlow(cmd, args); err != nil {
 		handleGuardrailsError(err, output.DetectOutputFormat(mustGuardrailsOutput(cmd)))
 	}
 	return nil
 }
 
-func ratifyFlow(cmd *cobra.Command, args []string) error {
+func approveFlow(cmd *cobra.Command, args []string) error {
 	format := output.DetectOutputFormat(mustGuardrailsOutput(cmd))
 
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: specify a repository, e.g. 'konvu guardrails ratify owner/name'")
+		fmt.Fprintln(os.Stderr, "Error: specify a repository, e.g. 'konvu guardrails approve owner/name'")
 		os.Exit(clierrors.ExitUsageError)
 	}
 	repo := args[0]
@@ -95,8 +95,8 @@ func ratifyFlow(cmd *cobra.Command, args []string) error {
 		fmt.Println(output.FormatJSON(data))
 		return nil
 	}
-	fmt.Printf("Ratified %s@%s\n", getStr(data, "repo"), getStr(data, "branch"))
-	fmt.Println("  Changes are now reported against this policy.")
+	fmt.Printf("Approved the access rules for %s@%s\n", getStr(data, "repo"), getStr(data, "branch"))
+	fmt.Println("  Pull requests are now checked against them.")
 	return nil
 }
 
@@ -144,7 +144,7 @@ func printExplain(data map[string]any) {
 
 	flagged := getSlice(data, "flagged")
 	if len(flagged) == 0 {
-		fmt.Println("Nothing flagged on this pull request.")
+		fmt.Println("No findings on this pull request.")
 		return
 	}
 	for _, f := range flagged {
@@ -160,18 +160,18 @@ func printExplain(data map[string]any) {
 		}
 		fmt.Printf("%s\n", route)
 		fmt.Printf("  %s may %s %s\n", getStr(m, "role"), getStr(m, "action"), getStr(m, "resource"))
-		fmt.Printf("  enforces now:  %s\n", orNone(getStr(m, "current_guard")))
+		fmt.Printf("  code checks:     %s\n", orNone(getStr(m, "current_guard")))
 		if src := getStr(m, "source"); src != "" {
-			fmt.Printf("  at:            %s\n", src)
+			fmt.Printf("  at:              %s\n", src)
 		}
 		if reason := getStr(m, "reason"); reason != "" {
-			fmt.Printf("  flagged since: %s\n", reason)
+			fmt.Printf("  why:             %s\n", reason)
 		}
 		if sib := strList(m["sibling_guards"]); len(sib) > 0 {
-			fmt.Printf("  siblings:      %s\n", strings.Join(sib, ", "))
+			fmt.Printf("  similar routes:  %s\n", strings.Join(sib, ", "))
 		}
 		if cl := strList(m["ratified_clauses"]); len(cl) > 0 {
-			fmt.Printf("  policy covers: %s\n", strings.Join(cl, ", "))
+			fmt.Printf("  rule broken:     %s\n", strings.Join(cl, ", "))
 		}
 		fmt.Println()
 	}
@@ -182,7 +182,7 @@ func printExplain(data map[string]any) {
 	case "recorded":
 		fmt.Println("Your intent was recorded.")
 	case "not_formalized":
-		fmt.Println("Your intent was not recorded: it could not be expressed as a guard.")
+		fmt.Println("Your intent was not recorded: it could not be expressed as an access rule.")
 		if d := getStr(data, "intent_detail"); d != "" {
 			fmt.Printf("  %s\n", d)
 		}
