@@ -234,15 +234,16 @@ func offerSkills() {
 	}
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Konvu ships with Claude Code skills for AI-assisted security workflows.")
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "  Weekly Triage — guided review of your security findings with inline")
-	fmt.Fprintln(os.Stderr, "  rating, bulk dismiss, and ticket creation. Run it in Claude Code")
-	fmt.Fprintln(os.Stderr, "  with: /konvu-recipe-weekly-triage")
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "  Guardrails Onboarding — set up access-control checks on a repository:")
-	fmt.Fprintln(os.Stderr, "  read the rules your code already enforces, approve them, and have every")
-	fmt.Fprintln(os.Stderr, "  pull request checked against them. Run it in Claude Code with:")
-	fmt.Fprintln(os.Stderr, "  /konvu-guardrails-onboarding, or just ask it to set up guardrails.")
+	// Straight from the bundled inventory, so a skill cannot ship without being named here.
+	for _, sd := range skills.SkillDirs() {
+		if len(sd.Pitch) == 0 {
+			continue
+		}
+		fmt.Fprintln(os.Stderr)
+		for _, line := range sd.Pitch {
+			fmt.Fprintln(os.Stderr, line)
+		}
+	}
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Skills are installed to ~/.claude/skills/.")
 	fmt.Fprintln(os.Stderr, "You can always install or update them later with: konvu skills install")
