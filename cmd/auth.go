@@ -145,28 +145,7 @@ func loginWithAPIKey(apiKey string) error {
 
 	fmt.Printf("Logged in to: %v\n", company["name"])
 
-	// Offer to install bundled Claude Code skills (skip if already up to date)
-	if skills.NeedsUpdate() {
-		if !output.IsInteractive() {
-			fmt.Fprintln(os.Stderr, "Run 'konvu skills install' to install Claude Code skills.")
-		} else {
-			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, "Konvu ships with Claude Code skills for AI-assisted security workflows.")
-			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, "  Weekly Triage — guided review of your security findings with inline")
-			fmt.Fprintln(os.Stderr, "  rating, bulk dismiss, and ticket creation. Run it in Claude Code")
-			fmt.Fprintln(os.Stderr, "  with: /konvu-recipe-weekly-triage")
-			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, "Skills are installed to ~/.claude/skills/.")
-			fmt.Fprintln(os.Stderr, "You can always install or update them later with: konvu skills install")
-			fmt.Fprintln(os.Stderr)
-			if output.Confirm("Install now?", true) {
-				RunSkillsInstall(false, true)
-			} else {
-				fmt.Fprintln(os.Stderr, "Skipped. You can install later with: konvu skills install")
-			}
-		}
-	}
+	offerSkills()
 
 	return nil
 }
@@ -200,28 +179,7 @@ func loginWithOAuth(timeout int) error {
 		fmt.Printf("Logged in to: %v\n", company["name"])
 	}
 
-	// Offer to install bundled Claude Code skills (skip if already up to date)
-	if skills.NeedsUpdate() {
-		if !output.IsInteractive() {
-			fmt.Fprintln(os.Stderr, "Run 'konvu skills install' to install Claude Code skills.")
-		} else {
-			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, "Konvu ships with Claude Code skills for AI-assisted security workflows.")
-			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, "  Weekly Triage — guided review of your security findings with inline")
-			fmt.Fprintln(os.Stderr, "  rating, bulk dismiss, and ticket creation. Run it in Claude Code")
-			fmt.Fprintln(os.Stderr, "  with: /konvu-recipe-weekly-triage")
-			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, "Skills are installed to ~/.claude/skills/.")
-			fmt.Fprintln(os.Stderr, "You can always install or update them later with: konvu skills install")
-			fmt.Fprintln(os.Stderr)
-			if output.Confirm("Install now?", true) {
-				RunSkillsInstall(false, true)
-			} else {
-				fmt.Fprintln(os.Stderr, "Skipped. You can install later with: konvu skills install")
-			}
-		}
-	}
+	offerSkills()
 
 	return nil
 }
@@ -261,4 +219,38 @@ func init() {
 		Run:   logoutCmd.Run,
 	}
 	rootCmd.AddCommand(logoutAlias)
+}
+
+// offerSkills offers the bundled Claude Code skills after a successful login. One function for
+// both login paths: they carried a byte-identical copy each, so a skill added to one pitch was
+// invisible to whoever used the other.
+func offerSkills() {
+	if !skills.NeedsUpdate() {
+		return
+	}
+	if !output.IsInteractive() {
+		fmt.Fprintln(os.Stderr, "Run 'konvu skills install' to install Claude Code skills.")
+		return
+	}
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Konvu ships with Claude Code skills for AI-assisted security workflows.")
+	// Straight from the bundled inventory, so a skill cannot ship without being named here.
+	for _, sd := range skills.SkillDirs() {
+		if len(sd.Pitch) == 0 {
+			continue
+		}
+		fmt.Fprintln(os.Stderr)
+		for _, line := range sd.Pitch {
+			fmt.Fprintln(os.Stderr, line)
+		}
+	}
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Skills are installed to ~/.claude/skills/.")
+	fmt.Fprintln(os.Stderr, "You can always install or update them later with: konvu skills install")
+	fmt.Fprintln(os.Stderr)
+	if output.Confirm("Install now?", true) {
+		RunSkillsInstall(false, true)
+	} else {
+		fmt.Fprintln(os.Stderr, "Skipped. You can install later with: konvu skills install")
+	}
 }

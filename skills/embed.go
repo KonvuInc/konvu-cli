@@ -14,17 +14,41 @@ import (
 //go:embed konvu-shared recipe-weekly-triage guardrails-onboarding
 var embedded embed.FS
 
-// SkillDir pairs an embed directory name with its install directory name.
+// SkillDir pairs an embed directory name with its install directory name, and carries what the
+// login offer says about it.
 type SkillDir struct {
 	EmbedName   string
 	InstallName string
+	// Support marks reference material a user never invokes, so the offer does not name it.
+	// Everything else must carry a Pitch: a skill installed without being mentioned is one the
+	// user was asked to accept sight unseen.
+	Support bool
+	// Pitch is the offer's lines for this skill, printed as given.
+	Pitch []string
 }
 
 // skillDirs lists the skills to embed and their install names.
 var skillDirs = []SkillDir{
-	{EmbedName: "konvu-shared", InstallName: "konvu-shared"},
-	{EmbedName: "recipe-weekly-triage", InstallName: "konvu-recipe-weekly-triage"},
-	{EmbedName: "guardrails-onboarding", InstallName: "konvu-guardrails-onboarding"},
+	{EmbedName: "konvu-shared", InstallName: "konvu-shared", Support: true},
+	{
+		EmbedName:   "recipe-weekly-triage",
+		InstallName: "konvu-recipe-weekly-triage",
+		Pitch: []string{
+			"  Weekly Triage — guided review of your security findings with inline",
+			"  rating, bulk dismiss, and ticket creation. Run it in Claude Code",
+			"  with: /konvu-recipe-weekly-triage",
+		},
+	},
+	{
+		EmbedName:   "guardrails-onboarding",
+		InstallName: "konvu-guardrails-onboarding",
+		Pitch: []string{
+			"  Guardrails Onboarding — set up access-control checks on a repository:",
+			"  read the rules your code already enforces, approve them, and have every",
+			"  pull request checked against them. Run it in Claude Code with:",
+			"  /konvu-guardrails-onboarding, or just ask it to set up guardrails.",
+		},
+	},
 }
 
 // SkillDirs returns the list of skill directories that are embedded.
