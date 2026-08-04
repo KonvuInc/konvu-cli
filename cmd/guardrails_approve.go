@@ -293,32 +293,23 @@ func printExplain(data map[string]any) {
 		fmt.Println("No findings on this pull request.")
 		return
 	}
-	for _, f := range flagged {
-		m, ok := f.(map[string]any)
-		if !ok {
-			continue
-		}
-		// `route` already carries the method here, unlike the review rows which split method
-		// and path. Only prepend when it does not.
-		route, method := getStr(m, "route"), getStr(m, "method")
-		if method != "" && !strings.HasPrefix(route, method+" ") {
-			route = method + " " + route
-		}
-		fmt.Printf("%s\n", route)
-		fmt.Printf("  %s may %s %s\n", getStr(m, "role"), getStr(m, "action"), getStr(m, "resource"))
-		fmt.Printf("  code checks:     %s\n", orNone(getStr(m, "current_guard")))
-		if src := getStr(m, "source"); src != "" {
-			fmt.Printf("  at:              %s\n", src)
-		}
-		if reason := getStr(m, "reason"); reason != "" {
-			fmt.Printf("  why:             %s\n", reason)
-		}
-		if sib := strList(m["sibling_guards"]); len(sib) > 0 {
-			fmt.Printf("  similar routes:  %s\n", strings.Join(sib, ", "))
-		}
-		if cl := strList(m["ratified_clauses"]); len(cl) > 0 {
-			fmt.Printf("  rule broken:     %s\n", strings.Join(cl, ", "))
-		}
+	// Two kinds, and they call for opposite responses: one says the code broke a rule you already
+	// approved, the other says the code does something no rule covers yet. Printed as one flat
+	// list they read the same, and on a long list you sort them by hand.
+	broken, unapproved, unknown := splitFindings(flagged)
+	printFindings("BREAKS A RULE YOU APPROVED", broken)
+	printFindings("NEW ACCESS — NEEDS YOUR APPROVAL", unapproved)
+	// A server that does not send the kind yet: one list, as before, rather than a wrong label.
+	printFindings("", unknown)
+
+	if len(broken) > 0 {
+		fmt.Println("Fix the code, or take back the rule it breaks with 'konvu guardrails unapprove'.")
+	}
+	if len(unapproved) > 0 {
+		fmt.Println("Approve this access with 'konvu guardrails review', or say what the code")
+		fmt.Println("should check instead:  konvu guardrails explain <token> --intent \"...\"")
+	}
+	if len(broken) > 0 || len(unapproved) > 0 {
 		fmt.Println()
 	}
 
@@ -367,4 +358,79 @@ func strList(v any) []string {
 		}
 	}
 	return out
+}
+
+// splitFindings separates findings by kind, keeping the server's order within each. Anything whose
+// kind is missing or unrecognised goes to `unknown` and is printed unlabelled -- guessing would be
+// worse than not saying.
+func splitFindings(flagged []any) (broken, unapproved, unknown []map[string]any) {
+	for _, f := range flagged {
+		m, ok := f.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch getStr(m, "category") {
+		case "breach":
+			broken = append(broken, m)
+		case "coverage_gap":
+			unapproved = append(unapproved, m)
+		default:
+			unknown = append(unknown, m)
+		}
+	}
+	return broken, unapproved, unknown
+}
+
+func printFindings(heading string, findings []map[string]any) {
+	if len(findings) == 0 {
+		return
+	}
+	if heading != "" {
+		fmt.Printf("%s (%d)\n\n", heading, len(findings))
+	}
+	for _, m := range findings {
+		// `route` already carries the method here, unlike the review rows which split method
+		// and path. Only prepend when it does not.
+		route, method := getStr(m, "route"), getStr(m, "method")
+		if method != "" && !strings.HasPrefix(route, method+" ") {
+			route = method + " " + route
+		}
+		fmt.Printf("  %s\n", route)
+		fmt.Printf("    %s may %s %s\n", getStr(m, "role"), getStr(m, "action"), getStr(m, "resource"))
+		fmt.Printf("    code checks:     %s\n", orNone(getStr(m, "current_guard")))
+		if src := getStr(m, "source"); src != "" {
+			fmt.Printf("    at:              %s\n", src)
+		}
+		// Trim the kind only when a heading states it. With no heading the prefix is the only
+		// thing naming the kind, so removing it would leave less than printing nothing had.
+		reason := getStr(m, "reason")
+		if heading != "" {
+			reason = withoutKindPrefix(reason)
+		}
+		if reason != "" {
+			fmt.Printf("    why:             %s\n", reason)
+		}
+		if sib := strList(m["sibling_guards"]); len(sib) > 0 {
+			fmt.Printf("    similar routes:  %s\n", strings.Join(sib, ", "))
+		}
+		if cl := strList(m["ratified_clauses"]); len(cl) > 0 {
+			label := "rules on this:  "
+			if getStr(m, "category") == "breach" {
+				label = "rule broken:    "
+			}
+			fmt.Printf("    %s %s\n", label, strings.Join(cl, ", "))
+		}
+		fmt.Println()
+	}
+}
+
+// The reason repeats the kind as a prefix, which the heading above now states. Cosmetic only: an
+// unrecognised wording is left whole, which is what printed before.
+func withoutKindPrefix(reason string) string {
+	for _, p := range []string{"breach: ", "coverage gap: "} {
+		if strings.HasPrefix(reason, p) {
+			return strings.TrimPrefix(reason, p)
+		}
+	}
+	return reason
 }

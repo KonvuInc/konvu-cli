@@ -972,3 +972,68 @@ func TestNoRuleFlagStillMeansEveryRule(t *testing.T) {
 		t.Errorf("body = %v, want no clauses key so the server acts on all of them", body)
 	}
 }
+
+func explainFinding(category, route string) map[string]any {
+	return map[string]any{
+		"route": route, "method": "GET", "role": "USER", "action": "read",
+		"resource": "Document", "current_guard": "NONE", "category": category,
+		"reason": "coverage gap: nothing covers this yet",
+	}
+}
+
+// The two kinds call for opposite responses, so they are grouped and labelled rather than printed
+// as one list the reader has to sort by hand.
+func TestExplainGroupsTheTwoKindsOfFinding(t *testing.T) {
+	out := captureStdout(t, func() {
+		printExplain(map[string]any{
+			"repo": "a/b", "pr_number": float64(1), "flagged": []any{
+				explainFinding("coverage_gap", "GET /b"),
+				explainFinding("breach", "GET /a"),
+			},
+		})
+	})
+	broken := strings.Index(out, "BREAKS A RULE YOU APPROVED")
+	needs := strings.Index(out, "NEEDS YOUR APPROVAL")
+	if broken < 0 || needs < 0 {
+		t.Fatalf("output = %q, want both headings", out)
+	}
+	if broken > needs {
+		t.Error("a rule already broken should come before access merely awaiting approval")
+	}
+	if !strings.Contains(out, "GET /a") || !strings.Contains(out, "GET /b") {
+		t.Errorf("output = %q, want both routes", out)
+	}
+}
+
+// A server that does not send the kind yet must still print the finding, unlabelled. Guessing a
+// label would be worse than not saying.
+func TestExplainStillPrintsAFindingWithNoKind(t *testing.T) {
+	f := explainFinding("", "GET /c")
+	delete(f, "category")
+	out := captureStdout(t, func() {
+		printExplain(map[string]any{"repo": "a/b", "pr_number": float64(1), "flagged": []any{f}})
+	})
+	if !strings.Contains(out, "GET /c") {
+		t.Errorf("output = %q, want the finding printed", out)
+	}
+	if strings.Contains(out, "BREAKS A RULE") || strings.Contains(out, "NEEDS YOUR APPROVAL") {
+		t.Errorf("output = %q, want no guessed heading", out)
+	}
+	// With no heading, the prefix in the reason is the only thing naming the kind.
+	if !strings.Contains(out, "coverage gap:") {
+		t.Errorf("output = %q, want the kind kept in the reason when nothing else states it", out)
+	}
+}
+
+// Stripping the kind from the reason is cosmetic: the heading states it. An unrecognised wording
+// must survive whole rather than being mangled.
+func TestTheKindPrefixIsOnlyTrimmedWhenRecognised(t *testing.T) {
+	if got := withoutKindPrefix("breach: lost its check"); got != "lost its check" {
+		t.Errorf("got %q, want the prefix gone", got)
+	}
+	for _, in := range []string{"something else entirely", "breaches: not the prefix", ""} {
+		if got := withoutKindPrefix(in); got != in {
+			t.Errorf("withoutKindPrefix(%q) = %q, want it unchanged", in, got)
+		}
+	}
+}
