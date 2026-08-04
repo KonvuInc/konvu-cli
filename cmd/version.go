@@ -21,13 +21,27 @@ func resolveVersion() string {
 		return Version
 	}
 
-	// Order matters: info is nil unless ok, so the short-circuit guards it.
 	info, ok := debug.ReadBuildInfo()
-	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
+	if !ok {
 		return Version
 	}
 
-	return strings.TrimPrefix(info.Main.Version, "v")
+	if moduleVersion := normalizeModuleVersion(info.Main.Version); moduleVersion != "" {
+		return moduleVersion
+	}
+
+	return Version
+}
+
+// normalizeModuleVersion turns the module version Go stamps into a binary into a
+// display version, returning "" when Go recorded nothing usable. Kept separate
+// from resolveVersion because debug.ReadBuildInfo cannot be stubbed in tests.
+func normalizeModuleVersion(moduleVersion string) string {
+	if moduleVersion == "" || moduleVersion == "(devel)" {
+		return ""
+	}
+
+	return strings.TrimPrefix(moduleVersion, "v")
 }
 
 var versionCmd = &cobra.Command{
