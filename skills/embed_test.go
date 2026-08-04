@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -87,5 +88,46 @@ func TestInstall(t *testing.T) {
 	}
 	if n3 == 0 {
 		t.Fatal("expected files on force install")
+	}
+}
+
+// Every embedded directory must also be registered for install. Iterating only the register
+// would be vacuous: a directory added to the go:embed line but left out of it ships inside the
+// binary and installs nowhere, which is the mistake this guards.
+func TestEveryEmbeddedSkillIsRegisteredAndInstalls(t *testing.T) {
+	entries, err := fs.ReadDir(embedded, ".")
+	if err != nil {
+		t.Fatalf("read embedded root: %v", err)
+	}
+	registered := map[string]string{}
+	for _, sd := range SkillDirs() {
+		registered[sd.EmbedName] = sd.InstallName
+	}
+	var want []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		install, ok := registered[e.Name()]
+		if !ok {
+			t.Errorf("%s is embedded but not registered for install", e.Name())
+			continue
+		}
+		want = append(want, install)
+	}
+	if len(want) == 0 {
+		t.Fatal("no embedded skills found, so this asserts nothing")
+	}
+
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	if _, err := Install(true); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	for _, name := range want {
+		md := filepath.Join(tmp, ".claude", "skills", name, "SKILL.md")
+		if _, err := os.Stat(md); err != nil {
+			t.Errorf("%s did not install with a SKILL.md: %v", name, err)
+		}
 	}
 }

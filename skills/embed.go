@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-//go:embed konvu-shared recipe-weekly-triage
+//go:embed konvu-shared recipe-weekly-triage guardrails-onboarding
 var embedded embed.FS
 
 // SkillDir pairs an embed directory name with its install directory name.
@@ -24,6 +24,7 @@ type SkillDir struct {
 var skillDirs = []SkillDir{
 	{EmbedName: "konvu-shared", InstallName: "konvu-shared"},
 	{EmbedName: "recipe-weekly-triage", InstallName: "konvu-recipe-weekly-triage"},
+	{EmbedName: "guardrails-onboarding", InstallName: "konvu-guardrails-onboarding"},
 }
 
 // SkillDirs returns the list of skill directories that are embedded.
