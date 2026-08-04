@@ -55,14 +55,16 @@ func bulkScanFlow(cmd *cobra.Command, args []string) error {
 			ExitCode:   clierrors.ExitUsageError,
 		}
 	}
-	// --branch and --repo describe the one local checkout. Konvu resolves each repository's own
-	// default branch here, so carrying one branch across many is meaningless -- and accepting the
-	// flag while dropping it would record somewhere the caller did not ask for.
-	if named := requestedBranch(cmd); named != "" {
+	// --branch names ONE branch, so it is only meaningful when the scope is one repository. With
+	// --all, or more than one --remote, there is no single repository for it to describe and
+	// accepting it would record somewhere the caller did not ask for. Exactly one --remote is
+	// unambiguous, so it is allowed and sent; anything else stays a usage error.
+	branch := requestedBranch(cmd)
+	if branch != "" && (all || len(remotes) != 1) {
 		return &clierrors.CLIError{
 			Code:       "CONFLICTING_SCOPE",
-			Message:    "--branch names one branch, but --all/--remote covers many repositories",
-			Suggestion: "Drop --branch, or scan the one checkout without --all/--remote.",
+			Message:    "--branch names one branch, but --all or several --remote covers many repositories",
+			Suggestion: "Name a single repository with one --remote, or scan a checkout without --all/--remote.",
 			ExitCode:   clierrors.ExitUsageError,
 		}
 	}
@@ -93,6 +95,12 @@ func bulkScanFlow(cmd *cobra.Command, args []string) error {
 		}
 		// Omitted, not empty: an omitted list asks for every visible repository, [] for none.
 		body["repos"] = named
+	}
+	// Omitted when unknown, so Konvu resolves the repository's own default branch rather than
+	// receiving a guess it cannot tell apart from a deliberate choice. Requires the matching API
+	// support, released separately; an older server ignores the field and scans the default branch.
+	if branch != "" {
+		body["branch"] = branch
 	}
 
 	client := api.NewClient("", "")
