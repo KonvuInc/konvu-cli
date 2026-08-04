@@ -401,7 +401,13 @@ func printFindings(heading string, findings []map[string]any) {
 		if src := getStr(m, "source"); src != "" {
 			fmt.Printf("    at:              %s\n", src)
 		}
-		if reason := withoutKindPrefix(getStr(m, "reason")); reason != "" {
+		// Trim the kind only when a heading states it. With no heading the prefix is the only
+		// thing naming the kind, so removing it would leave less than printing nothing had.
+		reason := getStr(m, "reason")
+		if heading != "" {
+			reason = withoutKindPrefix(reason)
+		}
+		if reason != "" {
 			fmt.Printf("    why:             %s\n", reason)
 		}
 		if sib := strList(m["sibling_guards"]); len(sib) > 0 {

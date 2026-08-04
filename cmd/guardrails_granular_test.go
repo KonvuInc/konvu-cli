@@ -1019,6 +1019,10 @@ func TestExplainStillPrintsAFindingWithNoKind(t *testing.T) {
 	if strings.Contains(out, "BREAKS A RULE") || strings.Contains(out, "NEEDS YOUR APPROVAL") {
 		t.Errorf("output = %q, want no guessed heading", out)
 	}
+	// With no heading, the prefix in the reason is the only thing naming the kind.
+	if !strings.Contains(out, "coverage gap:") {
+		t.Errorf("output = %q, want the kind kept in the reason when nothing else states it", out)
+	}
 }
 
 // Stripping the kind from the reason is cosmetic: the heading states it. An unrecognised wording
