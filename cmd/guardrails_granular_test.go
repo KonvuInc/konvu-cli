@@ -510,8 +510,76 @@ func TestBulkWaitFollowsEveryScanAndReportsEachOutcome(t *testing.T) {
 	}
 }
 
-// --branch and --repo describe the one local checkout. Accepting either alongside --all/--remote
-// and then dropping it would record somewhere the caller did not ask for.
+// clearRemotes resets the repeatable --remote flag. Set() APPENDS to a StringArray, so setting it
+// to "" leaves an empty entry behind and the next test reads a non-empty scope.
+func clearRemotes(t *testing.T) {
+	t.Helper()
+	v := guardrailsScanCmd.Flags().Lookup("remote").Value
+	if r, ok := v.(interface{ Replace([]string) error }); ok {
+		_ = r.Replace(nil)
+	}
+}
+
+// --branch names ONE branch, so it is meaningful exactly when the scope is one repository: it is
+// sent with a single --remote and refused with anything wider. --repo labels a local checkout and
+// is never meaningful here.
+func TestBulkSendsBranchWithASingleRemote(t *testing.T) {
+	srv, seen := newStub(t, map[string]any{"rows": []any{}})
+	defer srv.Close()
+
+	f := guardrailsScanCmd.Flags()
+	_ = f.Set("remote", "acme/web")
+	_ = f.Set("branch", "release-2.3")
+	t.Cleanup(func() { clearRemotes(t); _ = f.Set("branch", "") })
+
+	if err := scanFlow(guardrailsScanCmd, nil); err != nil {
+		t.Fatalf("scanFlow: %v", err)
+	}
+	if seen.body["branch"] != "release-2.3" {
+		t.Errorf("branch not sent: body = %v", seen.body)
+	}
+}
+
+// Omitted, not empty: Konvu resolves the repository's own default branch, and "" is not
+// distinguishable from a deliberate choice.
+func TestBulkOmitsBranchWhenNotAskedFor(t *testing.T) {
+	srv, seen := newStub(t, map[string]any{"rows": []any{}})
+	defer srv.Close()
+
+	f := guardrailsScanCmd.Flags()
+	_ = f.Set("remote", "acme/web")
+	t.Cleanup(func() { clearRemotes(t) })
+
+	if err := scanFlow(guardrailsScanCmd, nil); err != nil {
+		t.Fatalf("scanFlow: %v", err)
+	}
+	if _, present := seen.body["branch"]; present {
+		t.Errorf("branch sent when not asked for: body = %v", seen.body)
+	}
+}
+
+// Several --remote gives --branch no single repository to describe, so it stays a usage error --
+// the same reason --all does.
+func TestBulkRefusesBranchAcrossSeveralRemotes(t *testing.T) {
+	srv, seen := newStub(t, map[string]any{"rows": []any{}})
+	defer srv.Close()
+
+	f := guardrailsScanCmd.Flags()
+	_ = f.Set("remote", "acme/web")
+	_ = f.Set("remote", "acme/api")
+	_ = f.Set("branch", "release-2.3")
+	t.Cleanup(func() { clearRemotes(t); _ = f.Set("branch", "") })
+
+	if err := scanFlow(guardrailsScanCmd, nil); err == nil {
+		t.Fatal("--branch across several --remote should be refused")
+	}
+	if seen.method != "" {
+		t.Errorf("a request was sent anyway: %s", seen.method)
+	}
+}
+
+// --repo labels the one local checkout, and --branch alongside --all has no single repository to
+// describe. Accepting either and then dropping it would record somewhere the caller did not ask for.
 func TestBulkRefusesLocalOnlyScopeFlags(t *testing.T) {
 	for _, tc := range []struct{ flag, value string }{{"branch", "release-2.3"}, {"repo", "other/name"}} {
 		t.Run(tc.flag, func(t *testing.T) {
