@@ -31,7 +31,8 @@ Each finding object accepts:
   dependency_name      (required) affected package
   dependency_version   affected version
   dependency_ecosystem npm, maven, pypi, … (derived from the manifest when omitted)
-  source               reporting scanner (snyk, dependabot, …)
+  source               reporting scanner (snyk, dependabot, …); kept verbatim, read
+                       back as 'scanner' and filterable with 'finding list --source'
   state                open (default), dismissed, or fixed
   transitivity         direct or transitive
 

@@ -74,6 +74,12 @@ func getFloat(m map[string]any, key string) (float64, bool) {
 	return v, ok
 }
 
+// scannerLabel reads the submitted scanner label, falling back to source_name
+// (the ingestion channel) for backends that don't send scanner yet.
+func scannerLabel(source map[string]any) string {
+	return orDefault(getStr(source, "scanner"), getStr(source, "source_name"))
+}
+
 func normalizeAssessmentResult(result string) string {
 	if result == "" {
 		return string(mapping.NotAssessed)
@@ -119,7 +125,7 @@ func transformFinding(finding map[string]any) map[string]any {
 		"first_seen":         getStr(source, "remote_created_at"),
 		"state":              getStr(source, "state"),
 		"source_id":          getStr(source, "identifier"),
-		"scanner":            getStr(source, "source_name"),
+		"scanner":            scannerLabel(source),
 	}
 }
 
@@ -694,7 +700,7 @@ func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]
 		"dependency": getStr(dep, "name"),
 		"repository": getStr(ml, "vcs_repository_url"),
 		"manifest":   getStr(ml, "location"),
-		"scanner":    getStr(source, "source_name"),
+		"scanner":    scannerLabel(source),
 		"source_id":  getStr(source, "identifier"),
 		"state":      getStr(source, "state"),
 		"first_seen": getStr(source, "remote_created_at"),
@@ -1321,7 +1327,7 @@ func init() {
 	findingListCmd.Flags().StringP("repo", "r", "", "Filter by repository URL or name")
 	findingListCmd.Flags().String("cve", "", "Filter by CVE ID")
 	findingListCmd.Flags().StringP("dependency", "d", "", "Filter by dependency name")
-	findingListCmd.Flags().String("source", "", "Filter by scanner source: snyk, dependabot, etc.")
+	findingListCmd.Flags().String("source", "", "Filter by scanner source: snyk, dependabot, or a label submitted via 'finding submit'")
 	findingListCmd.Flags().String("source-id", "", "Filter by external source identifier")
 	findingListCmd.Flags().String("sort", "recommendation", "Sort: severity,recommendation,first_seen_at,updated_at,dependency_name,cve")
 	findingListCmd.Flags().String("order", "desc", "Order: asc,desc")
@@ -1349,7 +1355,7 @@ func init() {
 	findingCountsCmd.Flags().String("until", "", "End date: 'now' or ISO date")
 	findingCountsCmd.Flags().StringSliceP("severity", "s", nil, "Filter: critical,high,moderate,low")
 	findingCountsCmd.Flags().StringP("repo", "r", "", "Filter by repository URL or name")
-	findingCountsCmd.Flags().String("source", "", "Filter by scanner source")
+	findingCountsCmd.Flags().String("source", "", "Filter by scanner source, incl. a label submitted via 'finding submit'")
 	findingCountsCmd.Flags().StringP("group-by", "g", "", "Break down by: severity, week, month")
 	findingCountsCmd.Flags().StringP("output", "o", "", "Output format: json, table")
 

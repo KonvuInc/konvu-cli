@@ -219,3 +219,19 @@ func TestBuildFindingResultNoEvidence(t *testing.T) {
 		t.Errorf("vulnerability.cve = %q, want GHSA-x", getStr(vuln, "cve"))
 	}
 }
+
+func TestTransformFindingScanner(t *testing.T) {
+	cases := []struct {
+		source map[string]any
+		want   string
+	}{
+		{map[string]any{"scanner": "vendor-sca", "source_name": "api"}, "vendor-sca"},
+		{map[string]any{"source_name": "dependabot"}, "dependabot"},
+	}
+	for _, tc := range cases {
+		got := getStr(transformFinding(map[string]any{"source": tc.source}), "scanner")
+		if got != tc.want {
+			t.Errorf("scanner = %q, want %q", got, tc.want)
+		}
+	}
+}

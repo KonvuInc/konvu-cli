@@ -187,7 +187,7 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 			}
 
 			fDepName, _ := fDep["name"].(string)
-			fScanner, _ := fSource["source_name"].(string)
+			fScanner := scannerLabel(fSource)
 			fSourceID, _ := fSource["identifier"].(string)
 			fID, _ := finding["id"].(string)
 
