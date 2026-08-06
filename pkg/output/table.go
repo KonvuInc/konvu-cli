@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/KonvuInc/konvu-cli/pkg/mapping"
 	"golang.org/x/term"
@@ -51,9 +52,12 @@ func stripAnsi(s string) string {
 	return result.String()
 }
 
-// visibleLen returns the visible length of a string (ignoring ANSI codes).
+// visibleLen returns the visible length of a string (ignoring ANSI codes),
+// counted in runes so multibyte glyphs (e.g. "—") occupy one column, not one
+// column per UTF-8 byte — otherwise cells holding them under-pad and the
+// following columns drift left.
 func visibleLen(s string) int {
-	return len(stripAnsi(s))
+	return utf8.RuneCountInString(stripAnsi(s))
 }
 
 // truncate shortens s to maxLen visible characters, adding "…" if truncated.
