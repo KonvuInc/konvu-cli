@@ -50,6 +50,7 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          build-args: VERSION=${{ github.ref_name }}
+          # {{version}} strips the leading v; github.ref_name keeps it.
+          build-args: VERSION=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -4,35 +4,51 @@ import (
 	"testing"
 )
 
-func TestResolveVersionPrefersLdflagsValue(t *testing.T) {
-	original := Version
-	t.Cleanup(func() { Version = original })
+func TestDevBuildVersion(t *testing.T) {
+	tests := []struct {
+		name     string
+		revision string
+		dirty    bool
+		want     string
+	}{
+		{"shortens the revision", "9c1a51edd2d25f1b574eb86923f9d8f3d2dc1f94", false, "dev+9c1a51e"},
+		{"marks a dirty tree", "9c1a51edd2d25f1b574eb86923f9d8f3d2dc1f94", true, "dev+9c1a51e-dirty"},
+		{"tolerates a revision shorter than the cut", "abc", false, "dev+abc"},
+	}
 
-	Version = "0.7.0"
-	if got := resolveVersion(); got != "0.7.0" {
-		t.Errorf("resolveVersion() = %q, want %q", got, "0.7.0")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := devBuildVersion(tt.revision, tt.dirty); got != tt.want {
+				t.Errorf("devBuildVersion(%q, %v) = %q, want %q", tt.revision, tt.dirty, got, tt.want)
+			}
+		})
 	}
 }
 
-func TestResolveVersionFallsBackWhenUnset(t *testing.T) {
-	original := Version
-	t.Cleanup(func() { Version = original })
-
-	// A test binary has no module version recorded, so the placeholder stands.
-	Version = "dev"
-	if got := resolveVersion(); got != "dev" {
-		t.Errorf("resolveVersion() = %q, want %q", got, "dev")
+// A test binary records no module version, so anything that is not a usable
+// ldflags value falls through to the placeholder.
+func TestResolveVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		want    string
+	}{
+		{"ldflags value wins", "0.7.0", "0.7.0"},
+		{"only the module fallback is normalized, ldflags pass through", "v1.2.3", "v1.2.3"},
+		{"the placeholder stands when unset", devVersion, devVersion},
+		{"empty is not a version", "", devVersion},
 	}
-}
 
-func TestResolveVersionDoesNotRewriteLdflagsValue(t *testing.T) {
-	original := Version
-	t.Cleanup(func() { Version = original })
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original := Version
+			t.Cleanup(func() { Version = original })
 
-	// Only the module-version fallback is normalized; ldflags pass through.
-	Version = "v1.2.3"
-	if got := resolveVersion(); got != "v1.2.3" {
-		t.Errorf("resolveVersion() = %q, want %q", got, "v1.2.3")
+			Version = tt.version
+			if got := resolveVersion(); got != tt.want {
+				t.Errorf("resolveVersion() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

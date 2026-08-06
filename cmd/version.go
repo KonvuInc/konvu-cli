@@ -11,26 +11,61 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var Version = "dev" // overridden at build time via ldflags
+// Named so that changing it cannot silently disable the fallback below.
+const devVersion = "dev"
+
+var Version = devVersion // overridden at build time via ldflags
 
 // resolveVersion returns the build-time version, falling back to the Go module
 // version stamped into the binary when no ldflags were supplied (for example
-// `go install github.com/KonvuInc/konvu-cli/cmd/konvu@v0.7.0`).
+// `go install github.com/KonvuInc/konvu-cli/cmd/konvu@v0.7.0`). It never reports
+// a version that was not released.
 func resolveVersion() string {
-	if Version != "dev" {
+	// A malformed `-X` sets an empty value, which is not a version.
+	if Version != devVersion && Version != "" {
 		return Version
 	}
 
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
-		return Version
+		return devVersion
 	}
 
-	if moduleVersion := normalizeModuleVersion(info.Main.Version); moduleVersion != "" {
-		return moduleVersion
+	// A checkout build records vcs.* settings; a proxy install records none.
+	// Since Go 1.24 the former stamps Main.Version with a pseudo-version, which
+	// would name a release that never existed.
+	var revision, modified string
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = setting.Value
+		case "vcs.modified":
+			modified = setting.Value
+		}
 	}
 
-	return Version
+	if revision == "" {
+		if moduleVersion := normalizeModuleVersion(info.Main.Version); moduleVersion != "" {
+			return moduleVersion
+		}
+		return devVersion
+	}
+
+	return devBuildVersion(revision, modified == "true")
+}
+
+// devBuildVersion labels a checkout build: "dev+9c1a51e", "-dirty" if modified.
+func devBuildVersion(revision string, dirty bool) string {
+	const shortLen = 7
+	if len(revision) > shortLen {
+		revision = revision[:shortLen]
+	}
+
+	version := devVersion + "+" + revision
+	if dirty {
+		version += "-dirty"
+	}
+	return version
 }
 
 // normalizeModuleVersion turns the module version Go stamps into a binary into a
@@ -69,4 +104,10 @@ var versionCmd = &cobra.Command{
 func init() {
 	versionCmd.Flags().StringP("output", "o", "", "Output format: json, text")
 	rootCmd.AddCommand(versionCmd)
+
+	// Setting Version makes Cobra honour --version. Registered here rather than
+	// left to Cobra so it does not also claim -v, which is --verbose elsewhere.
+	rootCmd.Version = resolveVersion()
+	rootCmd.Flags().Bool("version", false, "version for konvu")
+	rootCmd.SetVersionTemplate("konvu-cli {{.Version}}\n")
 }
