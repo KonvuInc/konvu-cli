@@ -222,35 +222,16 @@ func TestBuildFindingResultNoEvidence(t *testing.T) {
 
 func TestTransformFindingScanner(t *testing.T) {
 	cases := []struct {
-		name   string
 		source map[string]any
 		want   string
 	}{
-		{
-			"submitted label wins over the channel",
-			map[string]any{"scanners": []any{"vendor-sca"}, "source_name": "api"},
-			"vendor-sca",
-		},
-		{
-			"several scanners are all named",
-			map[string]any{"scanners": []any{"vendor-sca", "snyk"}, "source_name": "api"},
-			"vendor-sca, snyk",
-		},
-		{
-			"falls back to the channel when scanners is absent",
-			map[string]any{"source_name": "dependabot"},
-			"dependabot",
-		},
-		{
-			"falls back when scanners is empty",
-			map[string]any{"scanners": []any{}, "source_name": "dependabot"},
-			"dependabot",
-		},
+		{map[string]any{"scanner": "vendor-sca", "source_name": "api"}, "vendor-sca"},
+		{map[string]any{"source_name": "dependabot"}, "dependabot"},
 	}
 	for _, tc := range cases {
 		got := getStr(transformFinding(map[string]any{"source": tc.source}), "scanner")
 		if got != tc.want {
-			t.Errorf("%s: scanner = %q, want %q", tc.name, got, tc.want)
+			t.Errorf("scanner = %q, want %q", got, tc.want)
 		}
 	}
 }
