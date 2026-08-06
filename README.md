@@ -205,9 +205,13 @@ cat findings.json | konvu finding submit --repo github:acme/web --file - --dry-r
 
 Each finding object accepts `vulnerability_id`, `manifest_location`, and
 `dependency_name` (required), plus optional `dependency_version`,
-`dependency_ecosystem`, `source`, `state`, and `transitivity`. Every item is
-processed independently and reported back as created / updated / accepted_unmapped
-/ rejected (with a reason); a submission where every item is rejected exits `1`.
+`dependency_ecosystem`, `source`, `state`, and `transitivity`. `source` is kept
+verbatim: it comes back as the finding's `scanner` and filters with
+`konvu finding list --source <value>`. It is replaced on every update, so a
+changed value renames the scanner and an omitted one clears the label — send it
+on every submission. Every item is processed independently and reported back as
+created / updated / accepted_unmapped / rejected (with a reason); a submission
+where every item is rejected exits `1`.
 
 ### `konvu finding counts` — Assessment metrics
 

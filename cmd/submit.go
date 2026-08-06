@@ -23,7 +23,9 @@ var findingSubmitCmd = &cobra.Command{
 
 Reads a JSON array of findings from --file (or stdin with '-') and posts them
 against --repo. Findings on a Konvu-connected, scanned repo flow into AI triage
-automatically. Re-submitting the same finding updates it instead of duplicating.
+automatically. Re-submitting the same finding updates it instead of duplicating;
+an update replaces every optional field from the payload, so a changed 'source'
+renames the scanner and an omitted one clears the label — send it every time.
 
 Each finding object accepts:
   vulnerability_id     (required) CVE or GHSA id
@@ -31,7 +33,9 @@ Each finding object accepts:
   dependency_name      (required) affected package
   dependency_version   affected version
   dependency_ecosystem npm, maven, pypi, … (derived from the manifest when omitted)
-  source               reporting scanner (snyk, dependabot, …)
+  source               reporting scanner (snyk, dependabot, …), max 64 chars; kept
+                       verbatim, read back as 'scanner', filterable with
+                       'finding list --source'; last submission wins
   state                open (default), dismissed, or fixed
   transitivity         direct or transitive
 
