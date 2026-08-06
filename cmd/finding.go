@@ -21,6 +21,10 @@ var findingCmd = &cobra.Command{
 }
 
 var defaultTableColumns = []string{"cve", "dependency", "repository", "assessment", "assessment_summary"}
+
+// defaultCSVColumns is a report-oriented column set: it includes state and dates so
+// a CSV export is usable on its own (the table view stays compact).
+var defaultCSVColumns = []string{"id", "cve", "severity", "dependency", "repository", "state", "first_seen", "has_fix", "assessment", "dismissed_at", "autofix_status", "fix_source"}
 var validCountsGroupBy = map[string]bool{"severity": true, "week": true, "month": true}
 var validListGroupBy = map[string]bool{"repository": true, "dependency": true, "severity": true, "assessment": true}
 
@@ -35,6 +39,34 @@ func parseRelativeDate(value string) string {
 		return t.Format(time.RFC3339)
 	}
 	return value
+}
+
+// parseClientDate resolves a --since-style value ('7d', ISO date, or RFC3339) to a
+// concrete UTC time for client-side comparisons.
+func parseClientDate(value string) (time.Time, error) {
+	v := parseRelativeDate(value)
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02"} {
+		if t, err := time.Parse(layout, v); err == nil {
+			return t.UTC(), nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unrecognized date %q (use '7d', 'now', or an ISO date)", value)
+}
+
+// parseDismissedWindow parses the optional --dismissed-since / --dismissed-before
+// bounds. Zero times mean the bound is open.
+func parseDismissedWindow(since, before string) (lo, hi time.Time, err error) {
+	if since != "" {
+		if lo, err = parseClientDate(since); err != nil {
+			return lo, hi, err
+		}
+	}
+	if before != "" && before != "now" {
+		if hi, err = parseClientDate(before); err != nil {
+			return lo, hi, err
+		}
+	}
+	return lo, hi, nil
 }
 
 func getStr(m map[string]any, key string) string {
@@ -79,6 +111,8 @@ func transformFinding(finding map[string]any) map[string]any {
 	dep := getMap(finding, "dependency")
 	source := getMap(finding, "source")
 	assess := getMap(finding, "assessment")
+	autofix := getMap(finding, "autofix_pr")
+	risk := getMap(finding, "risk_score")
 
 	cve := getStr(vuln, "display_id")
 	if cve == "" {
@@ -97,6 +131,9 @@ func transformFinding(finding map[string]any) map[string]any {
 		hasFix = "unknown"
 	}
 
+	state := getStr(source, "state")
+	autofixStatus := getStr(autofix, "status")
+
 	return map[string]any{
 		"id":                 getStr(finding, "id"),
 		"cve":                cve,
@@ -108,10 +145,34 @@ func transformFinding(finding map[string]any) map[string]any {
 		"assessment_summary": assessmentSummary,
 		"has_fix":            hasFix,
 		"first_seen":         getStr(source, "remote_created_at"),
-		"state":              getStr(source, "state"),
+		"state":              state,
 		"source_id":          getStr(source, "identifier"),
 		"scanner":            getStr(source, "source_name"),
+		// Fields already present in the /sca_findings payload, surfaced here for reporting.
+		"dismissed_at":     getStr(source, "dismissed_at"),
+		"dismissed_reason": getStr(source, "dismissed_reason"),
+		"last_assessed_at": getStr(assess, "last_assessed_at"),
+		"risk_tier":        getStr(risk, "tier"),
+		"autofix_status":   autofixStatus,
+		"autofix_pr_url":   getStr(autofix, "pr_url"),
+		// Heuristic fix attribution over fields already in the payload. Empty unless fixed.
+		"fix_source": deriveFixSource(state, autofixStatus),
 	}
+}
+
+// deriveFixSource labels how a fixed finding was remediated, using only fields
+// already in the response. A merged autofix PR is a reliable "fixed by patcheus"
+// signal. Without it we cannot distinguish an external fix from missing autofix
+// data client-side, so we report "unknown" rather than asserting "external".
+// Returns "" for findings that are not in the fixed state.
+func deriveFixSource(state, autofixStatus string) string {
+	if state != "fixed" {
+		return ""
+	}
+	if autofixStatus == "merged" {
+		return "patcheus"
+	}
+	return "unknown"
 }
 
 // countFindings returns the total number of /sca_findings matching filterParams.
@@ -140,9 +201,45 @@ func countFindings(client *api.Client, filterParams map[string]any) (int, error)
 	}
 }
 
-func computeAssessmentCounts(client *api.Client, baseParams map[string]any) map[string]int {
+// groupFetchCap bounds how many findings are pulled when an operation needs the
+// full result set (--group-by, --dismissed-since/-before). At 500/page this is at
+// most ~20 requests. Beyond it, results are flagged as truncated rather than
+// silently undercounted.
+const groupFetchCap = 10000
+
+// fetchAllFindings paginates /sca_findings, collecting up to groupFetchCap items so
+// client-side grouping and filtering see the whole result set instead of one page.
+// The bool return is true when the cap was hit (results truncated).
+func fetchAllFindings(client *api.Client, filterParams map[string]any, sortFlag, order string) ([]any, bool, error) {
+	const pageSize = 500
+	p := make(map[string]any, len(filterParams)+4)
+	for k, v := range filterParams {
+		p[k] = v
+	}
+	p["per_page"] = pageSize
+	p["sort"] = sortFlag
+	p["order"] = order
+	var all []any
+	for page := 1; ; page++ {
+		p["page"] = page
+		data, err := client.Get("/sca_findings", p)
+		if err != nil {
+			return nil, false, err
+		}
+		items := getSlice(data, "items")
+		all = append(all, items...)
+		if len(all) >= groupFetchCap {
+			return all[:groupFetchCap], true, nil
+		}
+		if len(items) < pageSize {
+			return all, false, nil
+		}
+	}
+}
+
+func computeAssessmentCounts(client *api.Client, baseParams map[string]any, statuses []mapping.AssessmentStatus) map[string]int {
 	counts := make(map[string]int)
-	for _, status := range mapping.AllStatuses {
+	for _, status := range statuses {
 		params := make(map[string]any, len(baseParams)+1)
 		for k, v := range baseParams {
 			params[k] = v
@@ -265,8 +362,12 @@ var findingListCmd = &cobra.Command{
 	Short: "List security findings",
 	Long: `List security findings with filtering and sorting.
 
+Note: --since / --until filter by FIRST-SEEN date (when the finding first appeared),
+not by when it changed state. To scope by when a finding was closed, use
+--dismissed-since / --dismissed-before (dismissed findings only).
+
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
-	Example: `  # This week's exploitable findings
+	Example: `  # This week's exploitable findings (by first-seen date)
   konvu finding list --since 7d --assessment exploitable
 
   # Critical findings sorted by recency
@@ -278,8 +379,14 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
   # Findings with available fixes
   konvu finding list --has-fix fixed --assessment exploitable
 
-  # Group exploitable findings by repo to prioritize
+  # Report: exploitable findings now fixed, with fix attribution (patcheus/unknown)
+  konvu finding list --assessment exploitable --state fixed --output csv > report.csv
+
+  # Group exploitable findings by repo to prioritize (counts cover the full result set)
   konvu finding list --assessment exploitable --group-by repository
+
+  # Findings dismissed since mid-July (closed-in-window)
+  konvu finding list --assessment exploitable --dismissed-since 2025-07-15
 
   # Filter by scanner source
   konvu finding list --source snyk
@@ -309,6 +416,8 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 		count, _ := cmd.Flags().GetBool("count")
 		groupBy, _ := cmd.Flags().GetString("group-by")
 		fields, _ := cmd.Flags().GetString("fields")
+		dismissedSince, _ := cmd.Flags().GetString("dismissed-since")
+		dismissedBefore, _ := cmd.Flags().GetString("dismissed-before")
 
 		// Validate group-by
 		if groupBy != "" && !validListGroupBy[groupBy] {
@@ -364,7 +473,14 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			filterParams["source"] = []string{source}
 		}
 
-		if count {
+		// Grouping and the client-side dismissed-date filter need the full result
+		// set, not just one page, or their counts would reflect only the first page.
+		dismissedFilter := dismissedSince != "" || dismissedBefore != ""
+		needAll := groupBy != "" || dismissedFilter
+
+		// --count without a client-side filter can use the cheap server count.
+		// With --dismissed-since/-before we must fetch and filter first (below).
+		if count && !dismissedFilter {
 			total, err := countFindings(client, filterParams)
 			if err != nil {
 				handleFindingError(err, format)
@@ -374,32 +490,47 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			return nil
 		}
 
-		perPage := limit
-		if perPage > 1000 {
-			perPage = 1000
-		}
-		params := make(map[string]any, len(filterParams)+4)
-		for k, v := range filterParams {
-			params[k] = v
-		}
-		params["per_page"] = perPage
-		params["page"] = (offset / maxInt(limit, 1)) + 1
-		params["sort"] = sortFlag
-		params["order"] = order
+		var items []any
+		var total int
+		truncated := false
 
-		data, err := client.Get("/sca_findings", params)
-		if err != nil {
-			handleFindingError(err, format)
-			return nil
-		}
+		if needAll {
+			all, tr, err := fetchAllFindings(client, filterParams, sortFlag, order)
+			if err != nil {
+				handleFindingError(err, format)
+				return nil
+			}
+			items = all
+			truncated = tr
+			total = len(items)
+		} else {
+			perPage := limit
+			if perPage > 1000 {
+				perPage = 1000
+			}
+			params := make(map[string]any, len(filterParams)+4)
+			for k, v := range filterParams {
+				params[k] = v
+			}
+			params["per_page"] = perPage
+			params["page"] = (offset / maxInt(limit, 1)) + 1
+			params["sort"] = sortFlag
+			params["order"] = order
 
-		items := getSlice(data, "items")
-		// The API doesn't return a total; derive it. If the page is full there
-		// may be more, so paginate to get an accurate count for the summary.
-		total := offset + len(items)
-		if len(items) == perPage {
-			if t, err := countFindings(client, filterParams); err == nil {
-				total = t
+			data, err := client.Get("/sca_findings", params)
+			if err != nil {
+				handleFindingError(err, format)
+				return nil
+			}
+
+			items = getSlice(data, "items")
+			// The API doesn't return a total; derive it. If the page is full there
+			// may be more, so paginate to get an accurate count for the summary.
+			total = offset + len(items)
+			if len(items) == perPage {
+				if t, err := countFindings(client, filterParams); err == nil {
+					total = t
+				}
 			}
 		}
 
@@ -422,6 +553,48 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 		for _, item := range items {
 			m, _ := item.(map[string]any)
 			transformed = append(transformed, transformFinding(m))
+		}
+
+		// Client-side dismissed-date filter ("closed in window"). dismissed_at is
+		// only populated for dismissed/muted findings, so this also restricts to them.
+		if dismissedFilter {
+			lo, hi, perr := parseDismissedWindow(dismissedSince, dismissedBefore)
+			if perr != nil {
+				fmt.Fprintf(os.Stderr, "Invalid dismissed date: %v\n", perr)
+				os.Exit(clierrors.ExitUsageError)
+			}
+			kept := transformed[:0]
+			for _, f := range transformed {
+				da, _ := f["dismissed_at"].(string)
+				t, err := time.Parse(time.RFC3339, da)
+				if err != nil {
+					continue // no/unparseable dismissed_at → not dismissed
+				}
+				if !lo.IsZero() && t.Before(lo) {
+					continue
+				}
+				if !hi.IsZero() && !t.Before(hi) {
+					continue
+				}
+				kept = append(kept, f)
+			}
+			transformed = kept
+		}
+
+		// When we fetched the full result set, the accurate total is what we hold.
+		if needAll {
+			total = len(transformed)
+		}
+
+		if truncated {
+			fmt.Fprintf(os.Stderr, "Warning: result capped at %d findings; counts may be incomplete. Narrow with filters.\n", groupFetchCap)
+		}
+
+		// --count combined with the client-side dismissed filter: print the
+		// post-filter total (the cheap server count above was skipped).
+		if count {
+			fmt.Println(total)
+			return nil
 		}
 
 		if quiet {
@@ -518,7 +691,11 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 					}
 				}
 				csvData := map[string]any{"findings": flat}
-				fmt.Print(output.FormatCSV(csvData, []string{groupBy, "id", "cve", "severity", "dependency", "assessment"}, "findings"))
+				cols := []string{groupBy, "id", "cve", "severity", "dependency", "assessment", "state", "fix_source"}
+				if fieldList != nil {
+					cols = append([]string{groupBy}, fieldList...)
+				}
+				fmt.Print(output.FormatCSV(csvData, cols, "findings"))
 			} else {
 				// Table output
 				fmt.Fprintf(os.Stderr, "\nShowing %d of %d findings\n", showing, total)
@@ -574,7 +751,11 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			if format == output.JSON {
 				fmt.Println(output.FormatJSON(result))
 			} else if format == output.CSV {
-				fmt.Print(output.FormatCSV(result, []string{"id", "cve", "severity", "dependency", "repository", "assessment", "assessment_summary"}, "findings"))
+				cols := defaultCSVColumns
+				if fieldList != nil {
+					cols = fieldList
+				}
+				fmt.Print(output.FormatCSV(result, cols, "findings"))
 			} else {
 				// Table output with summary line
 				fmt.Fprintf(os.Stderr, "\nShowing %d of %d findings  ", showing, total)
@@ -1029,6 +1210,8 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 		since, _ := cmd.Flags().GetString("since")
 		until, _ := cmd.Flags().GetString("until")
 		severity, _ := cmd.Flags().GetStringSlice("severity")
+		assessment, _ := cmd.Flags().GetStringSlice("assessment")
+		state, _ := cmd.Flags().GetStringSlice("state")
 		repo, _ := cmd.Flags().GetString("repo")
 		source, _ := cmd.Flags().GetString("source")
 		groupBy, _ := cmd.Flags().GetString("group-by")
@@ -1055,11 +1238,24 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			}
 			baseParams["severity"] = upper
 		}
+		if len(state) > 0 {
+			baseParams["source_state"] = state
+		}
 		if repo != "" {
 			baseParams["vcs_repository_url"] = []string{repo}
 		}
 		if source != "" {
 			baseParams["source"] = []string{source}
+		}
+
+		// Which assessment buckets to count. Default to all; --assessment narrows it
+		// (e.g. only the exploitable column), which also speeds up the query.
+		statuses := mapping.AllStatuses
+		if len(assessment) > 0 {
+			statuses = nil
+			for _, a := range assessment {
+				statuses = append(statuses, mapping.AssessmentStatus(strings.ToLower(strings.ReplaceAll(a, "_", "-"))))
+			}
 		}
 
 		if groupBy == "severity" {
@@ -1071,7 +1267,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 					sevParams[k] = v
 				}
 				sevParams["severity"] = []string{sev}
-				counts := computeAssessmentCounts(client, sevParams)
+				counts := computeAssessmentCounts(client, sevParams, statuses)
 				rowTotal := 0
 				for _, v := range counts {
 					rowTotal += v
@@ -1101,14 +1297,14 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 				fmt.Println("\nAssessment Counts by Severity")
 				fmt.Println(strings.Repeat("=", 60))
 				header := fmt.Sprintf("  %-12s", "severity")
-				for _, status := range mapping.AllStatuses {
+				for _, status := range statuses {
 					header += fmt.Sprintf(" %15s", string(status))
 				}
 				header += fmt.Sprintf(" %8s", "total")
 				fmt.Println(header)
 				for _, row := range rows {
 					line := fmt.Sprintf("  %-12s", row["severity"])
-					for _, status := range mapping.AllStatuses {
+					for _, status := range statuses {
 						val := 0
 						if v, ok := row[string(status)]; ok {
 							val = v.(int)
@@ -1129,7 +1325,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 				}
 				periodParams["first_seen_after"] = period["start"]
 				periodParams["first_seen_before"] = period["end"]
-				counts := computeAssessmentCounts(client, periodParams)
+				counts := computeAssessmentCounts(client, periodParams, statuses)
 				rowTotal := 0
 				for _, v := range counts {
 					rowTotal += v
@@ -1161,14 +1357,14 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 				fmt.Printf("\nAssessment Counts by %s\n", label)
 				fmt.Println(strings.Repeat("=", 70))
 				header := fmt.Sprintf("  %-20s", "period")
-				for _, status := range mapping.AllStatuses {
+				for _, status := range statuses {
 					header += fmt.Sprintf(" %15s", string(status))
 				}
 				header += fmt.Sprintf(" %8s", "total")
 				fmt.Println(header)
 				for _, row := range rows {
 					line := fmt.Sprintf("  %-20s", row["period"])
-					for _, status := range mapping.AllStatuses {
+					for _, status := range statuses {
 						val := 0
 						if v, ok := row[string(status)]; ok {
 							val = v.(int)
@@ -1181,7 +1377,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			}
 		} else {
 			// No grouping — simple counts
-			counts := computeAssessmentCounts(client, baseParams)
+			counts := computeAssessmentCounts(client, baseParams, statuses)
 			total := 0
 			for _, v := range counts {
 				total += v
@@ -1196,7 +1392,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			} else {
 				fmt.Println("\nAssessment Counts")
 				fmt.Println(strings.Repeat("=", 25))
-				for _, status := range mapping.AllStatuses {
+				for _, status := range statuses {
 					val := counts[string(status)]
 					fmt.Printf("  %-20s %6d\n", string(status), val)
 				}
@@ -1217,8 +1413,10 @@ func orDefault(s, fallback string) string {
 
 func init() {
 	// finding list — all 21 flags
-	findingListCmd.Flags().String("since", "", "Start date: '7d', '30d', or ISO date")
-	findingListCmd.Flags().String("until", "", "End date: 'now' or ISO date")
+	findingListCmd.Flags().String("since", "", "First-seen start date: '7d', '30d', or ISO date")
+	findingListCmd.Flags().String("until", "", "First-seen end date: 'now' or ISO date")
+	findingListCmd.Flags().String("dismissed-since", "", "Only findings dismissed on/after this date ('7d' or ISO); closed-in-window filter")
+	findingListCmd.Flags().String("dismissed-before", "", "Only findings dismissed before this date ('now' or ISO)")
 	findingListCmd.Flags().StringSliceP("severity", "s", nil, "Filter: critical,high,moderate,low")
 	findingListCmd.Flags().StringSliceP("assessment", "a", nil, "Filter: exploitable,false-positive,inconclusive,not-assessed")
 	findingListCmd.Flags().StringSlice("state", nil, "Filter: open,dismissed,fixed,muted")
@@ -1250,9 +1448,11 @@ func init() {
 	findingRateCmd.Flags().StringP("output", "o", "", "Output format: json, table")
 
 	// finding counts
-	findingCountsCmd.Flags().String("since", "", "Start date: '7d', '30d', or ISO date")
-	findingCountsCmd.Flags().String("until", "", "End date: 'now' or ISO date")
+	findingCountsCmd.Flags().String("since", "", "First-seen start date: '7d', '30d', or ISO date")
+	findingCountsCmd.Flags().String("until", "", "First-seen end date: 'now' or ISO date")
 	findingCountsCmd.Flags().StringSliceP("severity", "s", nil, "Filter: critical,high,moderate,low")
+	findingCountsCmd.Flags().StringSliceP("assessment", "a", nil, "Filter: exploitable,false-positive,inconclusive,not-assessed")
+	findingCountsCmd.Flags().StringSlice("state", nil, "Filter: open,dismissed,fixed,muted")
 	findingCountsCmd.Flags().StringP("repo", "r", "", "Filter by repository URL or name")
 	findingCountsCmd.Flags().String("source", "", "Filter by scanner source")
 	findingCountsCmd.Flags().StringP("group-by", "g", "", "Break down by: severity, week, month")
