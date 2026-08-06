@@ -105,6 +105,21 @@ func normalizeAssessmentResult(result string) string {
 	return strings.ReplaceAll(result, "_", "-")
 }
 
+// parseAssessments normalizes and validates --assessment values. It rejects
+// unknown statuses so they don't silently fall through AssessmentToRecommendation's
+// default branch and count the wrong bucket.
+func parseAssessments(values []string) ([]mapping.AssessmentStatus, error) {
+	var out []mapping.AssessmentStatus
+	for _, a := range values {
+		s := mapping.AssessmentStatus(strings.ToLower(strings.ReplaceAll(a, "_", "-")))
+		if !mapping.IsValidStatus(s) {
+			return nil, fmt.Errorf("invalid assessment %q (valid: exploitable, false-positive, needs-input, inconclusive, not-assessed)", a)
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
 func transformFinding(finding map[string]any) map[string]any {
 	vuln := getMap(finding, "vulnerability")
 	ml := getMap(finding, "manifest_location")
@@ -228,11 +243,18 @@ func fetchAllFindings(client *api.Client, filterParams map[string]any, sortFlag,
 		}
 		items := getSlice(data, "items")
 		all = append(all, items...)
-		if len(all) >= groupFetchCap {
-			return all[:groupFetchCap], true, nil
-		}
+		// A short page means we've reached the end: truncated only if we still
+		// overflowed the cap (never for an exactly-cap result set).
 		if len(items) < pageSize {
+			if len(all) > groupFetchCap {
+				return all[:groupFetchCap], true, nil
+			}
 			return all, false, nil
+		}
+		// Full page and strictly over the cap: more remain, so truncate. At exactly
+		// the cap we keep going to confirm exhaustion on the next (short) page.
+		if len(all) > groupFetchCap {
+			return all[:groupFetchCap], true, nil
 		}
 	}
 }
@@ -355,6 +377,24 @@ func maxInt(a, b int) int {
 	return b
 }
 
+// applyWindow returns the [offset, offset+limit) slice of list, clamped to bounds.
+// A non-positive limit means "no limit" (return everything from offset). Used to
+// apply --offset/--limit to findings we fetched in full (group-by / dismissed filter)
+// so the display honors the requested page while counts still reflect the full set.
+func applyWindow(list []map[string]any, offset, limit int) []map[string]any {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(list) {
+		return nil
+	}
+	end := len(list)
+	if limit > 0 && offset+limit < end {
+		end = offset + limit
+	}
+	return list[offset:end]
+}
+
 // --- finding list ---
 
 var findingListCmd = &cobra.Command{
@@ -444,11 +484,14 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			filterParams["severity"] = upper
 		}
 		if len(assessment) > 0 {
+			statuses, err := parseAssessments(assessment)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(clierrors.ExitUsageError)
+			}
 			var recs []string
-			for _, a := range assessment {
-				normalized := strings.ToLower(strings.ReplaceAll(a, "_", "-"))
-				r := mapping.AssessmentToRecommendation(mapping.AssessmentStatus(normalized))
-				recs = append(recs, r...)
+			for _, s := range statuses {
+				recs = append(recs, mapping.AssessmentToRecommendation(s)...)
 			}
 			filterParams["recommendation"] = recs
 		}
@@ -598,7 +641,11 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 		}
 
 		if quiet {
-			fmt.Println(output.FormatQuiet(transformed, "id"))
+			ids := transformed
+			if needAll {
+				ids = applyWindow(transformed, offset, limit)
+			}
+			fmt.Println(output.FormatQuiet(ids, "id"))
 			return nil
 		}
 
@@ -646,16 +693,39 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 				return sortedGroups[i].Key < sortedGroups[j].Key
 			})
 
-			// Build grouped result for JSON
+			// Emitted findings honor --offset/--limit; group counts stay full-set.
+			var flatAll []map[string]any
+			for _, g := range sortedGroups {
+				flatAll = append(flatAll, g.Findings...)
+			}
+			displayFindings := applyWindow(flatAll, offset, limit)
+			showing = len(displayFindings)
+
+			// Regroup the windowed findings, preserving sorted-group order.
+			displayByGroup := make(map[string][]map[string]any)
+			for _, f := range displayFindings {
+				k, _ := f[groupBy].(string)
+				if k == "" {
+					k = "unknown"
+				}
+				displayByGroup[k] = append(displayByGroup[k], f)
+			}
+
+			// Build grouped result for JSON: count is the full group size, findings
+			// is the windowed subset.
 			var groupedResult []map[string]any
 			for _, g := range sortedGroups {
-				groupFindings := g.Findings
+				groupFindings := displayByGroup[g.Key]
 				if fieldList != nil {
 					filtered := make([]map[string]any, len(groupFindings))
 					for i, f := range groupFindings {
 						filtered[i] = output.FilterFields(f, fieldList)
 					}
 					groupFindings = filtered
+				}
+				if groupFindings == nil {
+					// Group outside the display window: keep its count, emit [] not null.
+					groupFindings = []map[string]any{}
 				}
 				groupedResult = append(groupedResult, map[string]any{
 					"key":      g.Key,
@@ -717,25 +787,31 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 					fmt.Printf("  %s (%d)\n", g.Key, len(g.Findings))
 				}
 				fmt.Println()
-				// Also show the full table
+				// Findings table (windowed by --offset/--limit)
 				var flatForTable []any
-				for _, g := range sortedGroups {
-					for _, f := range g.Findings {
-						flatForTable = append(flatForTable, f)
-					}
+				for _, f := range displayFindings {
+					flatForTable = append(flatForTable, f)
 				}
 				tableData := map[string]any{"findings": flatForTable}
 				fmt.Print(output.FormatTable(tableData, defaultTableColumns, "findings", output.DefaultStyleCell))
 			}
 		} else {
+			// When the full set was fetched (dismissed filter), honor --offset/--limit
+			// for display; the server already paginated the normal path.
+			display := transformed
+			if needAll {
+				display = applyWindow(transformed, offset, limit)
+			}
+			showing = len(display)
+
 			if fieldList != nil {
-				for i, f := range transformed {
-					transformed[i] = output.FilterFields(f, fieldList)
+				for i, f := range display {
+					display[i] = output.FilterFields(f, fieldList)
 				}
 			}
 
-			items := make([]any, len(transformed))
-			for i, f := range transformed {
+			items := make([]any, len(display))
+			for i, f := range display {
 				items[i] = f
 			}
 			result := map[string]any{
@@ -1252,10 +1328,12 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 		// (e.g. only the exploitable column), which also speeds up the query.
 		statuses := mapping.AllStatuses
 		if len(assessment) > 0 {
-			statuses = nil
-			for _, a := range assessment {
-				statuses = append(statuses, mapping.AssessmentStatus(strings.ToLower(strings.ReplaceAll(a, "_", "-"))))
+			parsed, err := parseAssessments(assessment)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(clierrors.ExitUsageError)
 			}
+			statuses = parsed
 		}
 
 		if groupBy == "severity" {
