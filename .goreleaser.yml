@@ -5,6 +5,8 @@ builds:
     binary: konvu
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X github.com/KonvuInc/konvu-cli/cmd.Version={{ .Version }}
     goos:
       - linux
       - darwin
