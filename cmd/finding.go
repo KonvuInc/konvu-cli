@@ -74,10 +74,18 @@ func getFloat(m map[string]any, key string) (float64, bool) {
 	return v, ok
 }
 
-// scannerLabel reads the submitted scanner label, falling back to source_name
-// (the ingestion channel) for backends that don't send scanner yet.
+// scannerLabel names the scanners that reported the finding. A finding can be
+// reported by more than one (the same dependency and CVE found by two tools is
+// one finding), so `scanners` is a list and is joined for display. Falls back to
+// source_name, the ingestion channel, for backends that don't send it yet.
 func scannerLabel(source map[string]any) string {
-	return orDefault(getStr(source, "scanner"), getStr(source, "source_name"))
+	names := make([]string, 0, 2)
+	for _, s := range getSlice(source, "scanners") {
+		if name, ok := s.(string); ok && name != "" {
+			names = append(names, name)
+		}
+	}
+	return orDefault(strings.Join(names, ", "), getStr(source, "source_name"))
 }
 
 func normalizeAssessmentResult(result string) string {
