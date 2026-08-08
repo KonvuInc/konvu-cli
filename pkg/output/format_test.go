@@ -15,6 +15,11 @@ func TestDetectOutputFormat_Explicit(t *testing.T) {
 	if f := DetectOutputFormat("csv"); f != CSV {
 		t.Errorf("got %v, want CSV", f)
 	}
+	// "text" is an explicit alias for the human-readable (table) format and
+	// must not fall through to auto-detection.
+	if f := DetectOutputFormat("text"); f != Table {
+		t.Errorf("got %v, want Table for \"text\"", f)
+	}
 }
 
 func TestDetectOutputFormat_Empty(t *testing.T) {
