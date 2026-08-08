@@ -80,6 +80,29 @@ func TestVerifyChecksumMissing(t *testing.T) {
 	}
 }
 
+func TestIsNewerVersion(t *testing.T) {
+	cases := []struct {
+		latest, current string
+		want            bool
+	}{
+		{"1.2.3", "1.2.2", true},      // patch bump
+		{"1.10.0", "1.9.0", true},     // numeric, not lexical
+		{"2.0.0", "1.9.9", true},      // major bump
+		{"1.2.3", "1.2.3", false},     // equal
+		{"1.2.2", "1.2.3", false},     // older release — never downgrade
+		{"1.2.0", "1.2.3", false},     // installed ahead
+		{"1.2.3", "1.2.3-rc1", false}, // pre-release suffix ignored, treated equal
+		{"1.2.4", "1.2.3-rc1", true},  // newer base still wins over a pre-release
+		{"1.2.3", "bogus", false},     // unparseable current
+		{"", "1.2.3", false},          // empty release
+	}
+	for _, c := range cases {
+		if got := isNewerVersion(c.latest, c.current); got != c.want {
+			t.Errorf("isNewerVersion(%q, %q) = %v, want %v", c.latest, c.current, got, c.want)
+		}
+	}
+}
+
 func TestExtractBinary(t *testing.T) {
 	want := []byte("\x7fELF fake binary contents")
 	archive := makeTarGz(t, map[string][]byte{

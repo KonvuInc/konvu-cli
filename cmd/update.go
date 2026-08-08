@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,37 +53,43 @@ func runUpdate(cmd *cobra.Command, format output.OutputFormat) error {
 		return err
 	}
 
-	current := strings.TrimPrefix(Version, "v")
-	updateAvailable := current == "dev" || current != latest
+	// Dev/checkout builds have no comparable release version, so always offer
+	// the update. Otherwise only offer it when the release is strictly newer,
+	// never replacing a binary that is already ahead of the latest release.
+	current := resolveVersion()
+	updateAvailable := strings.HasPrefix(current, devVersion) ||
+		isNewerVersion(latest, strings.TrimPrefix(current, "v"))
+
+	// emitJSON prints the machine-readable result; the varying status key
+	// ("update_available" for --check, "updated" otherwise) is passed in.
+	emitJSON := func(statusKey string, status bool) {
+		fmt.Fprintln(out, output.FormatJSON(map[string]any{
+			"current_version": current,
+			"latest_version":  latest,
+			statusKey:         status,
+		}))
+	}
 
 	if updateCheckOnly {
 		if format == output.JSON {
-			fmt.Fprintln(out, output.FormatJSON(map[string]any{
-				"current_version":  Version,
-				"latest_version":   latest,
-				"update_available": updateAvailable,
-			}))
+			emitJSON("update_available", updateAvailable)
 			return nil
 		}
 		if updateAvailable {
-			fmt.Fprintf(out, "A new version is available: %s (current: %s)\n", latest, Version)
+			fmt.Fprintf(out, "A new version is available: %s (current: %s)\n", latest, current)
 			fmt.Fprintln(out, "Run 'konvu update' to install it.")
 		} else {
-			fmt.Fprintf(out, "konvu is up to date (%s)\n", Version)
+			fmt.Fprintf(out, "konvu is up to date (%s)\n", current)
 		}
 		return nil
 	}
 
 	if !updateAvailable && !updateForce {
 		if format == output.JSON {
-			fmt.Fprintln(out, output.FormatJSON(map[string]any{
-				"current_version": Version,
-				"latest_version":  latest,
-				"updated":         false,
-			}))
+			emitJSON("updated", false)
 			return nil
 		}
-		fmt.Fprintf(out, "konvu is already up to date (%s)\n", Version)
+		fmt.Fprintf(out, "konvu is already up to date (%s)\n", current)
 		return nil
 	}
 
@@ -107,7 +114,7 @@ func runUpdate(cmd *cobra.Command, format output.OutputFormat) error {
 	}
 
 	if format != output.JSON {
-		fmt.Fprintf(out, "Updating konvu %s -> %s...\n", Version, latest)
+		fmt.Fprintf(out, "Updating konvu %s -> %s...\n", current, latest)
 	}
 
 	binary, err := downloadRelease(latest)
@@ -120,15 +127,60 @@ func runUpdate(cmd *cobra.Command, format output.OutputFormat) error {
 	}
 
 	if format == output.JSON {
-		fmt.Fprintln(out, output.FormatJSON(map[string]any{
-			"current_version": Version,
-			"latest_version":  latest,
-			"updated":         true,
-		}))
+		emitJSON("updated", true)
 		return nil
 	}
 	fmt.Fprintf(out, "konvu updated to %s\n", latest)
 	return nil
+}
+
+// isNewerVersion reports whether release version `latest` is strictly newer
+// than the installed `current` (both without a leading "v"). Comparison is
+// numeric and component-wise (e.g. "1.10.0" > "1.9.0"). If either version is
+// unparseable it returns false, so a working binary is never downgraded or
+// replaced on the basis of a version we cannot reason about.
+func isNewerVersion(latest, current string) bool {
+	lp := versionParts(latest)
+	cp := versionParts(current)
+	if lp == nil || cp == nil {
+		return false
+	}
+	for i := 0; i < len(lp) || i < len(cp); i++ {
+		var lv, cv int
+		if i < len(lp) {
+			lv = lp[i]
+		}
+		if i < len(cp) {
+			cv = cp[i]
+		}
+		if lv != cv {
+			return lv > cv
+		}
+	}
+	return false
+}
+
+// versionParts splits a dotted version into numeric components, dropping any
+// leading "v" and any "-"/"+" suffix. It returns nil if any component is not a
+// number, signalling an incomparable version.
+func versionParts(v string) []int {
+	v = strings.TrimPrefix(v, "v")
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		v = v[:i]
+	}
+	if v == "" {
+		return nil
+	}
+	fields := strings.Split(v, ".")
+	parts := make([]int, len(fields))
+	for i, f := range fields {
+		n, err := strconv.Atoi(f)
+		if err != nil {
+			return nil
+		}
+		parts[i] = n
+	}
+	return parts
 }
 
 var updateHTTPClient = &http.Client{Timeout: 60 * time.Second}
@@ -136,39 +188,15 @@ var updateHTTPClient = &http.Client{Timeout: 60 * time.Second}
 // latestVersion queries the GitHub API for the latest release tag, returning
 // the version without a leading "v" (e.g. "1.2.3").
 func latestVersion() (string, error) {
-	req, err := http.NewRequest(http.MethodGet, updateLatestRelease, nil)
+	body, err := httpGet(updateLatestRelease)
 	if err != nil {
-		return "", clierrors.NewAPIError(err.Error())
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "konvu-cli")
-
-	resp, err := updateHTTPClient.Do(req)
-	if err != nil {
-		return "", &clierrors.CLIError{
-			Code:       "NETWORK_ERROR",
-			Message:    fmt.Sprintf("could not reach GitHub: %v", err),
-			Suggestion: "Check your network connection and try again.",
-			Retryable:  true,
-			ExitCode:   clierrors.ExitGeneralError,
-		}
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", &clierrors.CLIError{
-			Code:       "RELEASE_LOOKUP_FAILED",
-			Message:    fmt.Sprintf("GitHub returned status %d when looking up the latest release", resp.StatusCode),
-			Suggestion: "Try again later, or download manually from https://github.com/" + updateRepo + "/releases/latest",
-			Retryable:  true,
-			ExitCode:   clierrors.ExitGeneralError,
-		}
+		return "", err
 	}
 
 	var release struct {
 		TagName string `json:"tag_name"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+	if err := json.Unmarshal(body, &release); err != nil {
 		return "", clierrors.NewAPIError(fmt.Sprintf("could not parse release info: %v", err))
 	}
 	if release.TagName == "" {
@@ -290,12 +318,9 @@ func extractBinary(archive []byte) ([]byte, error) {
 // replaceRunningBinary atomically swaps the currently running executable with
 // the freshly downloaded one by writing a sibling temp file and renaming it.
 func replaceRunningBinary(binary []byte) error {
-	exe, err := os.Executable()
+	exe, err := resolvedExecutable()
 	if err != nil {
 		return clierrors.NewAPIError(fmt.Sprintf("could not locate current binary: %v", err))
-	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = resolved
 	}
 
 	dir := filepath.Dir(exe)
@@ -332,15 +357,25 @@ func replaceRunningBinary(binary []byte) error {
 	return nil
 }
 
-// managedByHomebrew reports whether the running binary lives inside a Homebrew
-// prefix, in which case brew should own updates.
-func managedByHomebrew() bool {
+// resolvedExecutable returns the path to the running binary with symlinks
+// resolved, falling back to the raw path if resolution fails.
+func resolvedExecutable() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
-		return false
+		return "", err
 	}
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
+	}
+	return exe, nil
+}
+
+// managedByHomebrew reports whether the running binary lives inside a Homebrew
+// prefix, in which case brew should own updates.
+func managedByHomebrew() bool {
+	exe, err := resolvedExecutable()
+	if err != nil {
+		return false
 	}
 	return strings.Contains(exe, "/Cellar/") || strings.Contains(exe, "/homebrew/")
 }
@@ -367,6 +402,6 @@ func reportUpdateError(err error, format output.OutputFormat) {
 func init() {
 	updateCmd.Flags().BoolVar(&updateCheckOnly, "check", false, "Check for a newer version without installing")
 	updateCmd.Flags().BoolVar(&updateForce, "force", false, "Reinstall even if already up to date or Homebrew-managed")
-	updateCmd.Flags().StringP("output", "o", "", "Output format: json, text")
+	updateCmd.Flags().StringP("output", "o", "", "Output format: json, table")
 	rootCmd.AddCommand(updateCmd)
 }
