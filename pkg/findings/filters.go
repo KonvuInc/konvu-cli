@@ -32,45 +32,33 @@ func RegisterCommonFlags(cmd *cobra.Command) {
 	f.BoolP("quiet", "q", false, "Print bare IDs, one per line")
 }
 
-// ReadCommonFilters reads the registered flags off cmd.
+// ReadCommonFilters reads the registered flags off cmd. Flags that were not
+// registered on cmd are treated as unset (returning the zero value), so a
+// subcommand can register just the subset of common flags its endpoint
+// actually supports and still call ReadCommonFilters.
 func ReadCommonFilters(cmd *cobra.Command) (CommonFilters, error) {
 	f := cmd.Flags()
-
-	since, err := f.GetString("since")
-	if err != nil {
-		return CommonFilters{}, err
+	out := CommonFilters{}
+	if f.Lookup("since") != nil {
+		out.Since, _ = f.GetString("since")
 	}
-	severity, err := f.GetStringSlice("severity")
-	if err != nil {
-		return CommonFilters{}, err
+	if f.Lookup("severity") != nil {
+		out.Severity, _ = f.GetStringSlice("severity")
 	}
-	repo, err := f.GetStringSlice("repo")
-	if err != nil {
-		return CommonFilters{}, err
+	if f.Lookup("repo") != nil {
+		out.Repository, _ = f.GetStringSlice("repo")
 	}
-	assessment, err := f.GetStringSlice("assessment")
-	if err != nil {
-		return CommonFilters{}, err
+	if f.Lookup("assessment") != nil {
+		out.Assessment, _ = f.GetStringSlice("assessment")
 	}
-	limit, err := f.GetInt("limit")
-	if err != nil {
-		return CommonFilters{}, err
+	if f.Lookup("limit") != nil {
+		out.Limit, _ = f.GetInt("limit")
 	}
-	format, err := f.GetString("output")
-	if err != nil {
-		return CommonFilters{}, err
+	if f.Lookup("output") != nil {
+		out.Format, _ = f.GetString("output")
 	}
-	quiet, err := f.GetBool("quiet")
-	if err != nil {
-		return CommonFilters{}, err
+	if f.Lookup("quiet") != nil {
+		out.QuietIDs, _ = f.GetBool("quiet")
 	}
-	return CommonFilters{
-		Since:      since,
-		Severity:   severity,
-		Repository: repo,
-		Assessment: assessment,
-		Limit:      limit,
-		Format:     format,
-		QuietIDs:   quiet,
-	}, nil
+	return out, nil
 }
