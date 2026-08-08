@@ -102,15 +102,8 @@ func runSecretsList(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 
-	f, err := findings.ReadCommonFilters(cmd)
-	if err != nil {
-		return err
-	}
-	limit := f.Limit
-	if limit <= 0 {
-		limit = 30
-	}
-	params := map[string]any{"per_page": limit, "page": 1}
+	f := findings.ReadCommonFilters(cmd)
+	params := map[string]any{"per_page": f.LimitOr(30), "page": 1}
 	if len(f.Assessment) > 0 {
 		for _, a := range f.Assessment {
 			if !validSecretsAssessments[a] {
@@ -148,15 +141,12 @@ func runSecretsGet(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 
+	if err := findings.RequireJSON(cmd, "secrets get"); err != nil {
+		return err
+	}
 	resp, err := client.Get(fmt.Sprintf("/secret_findings/%s", args[0]), nil)
 	if err != nil {
 		return mapSecretsError(err)
-	}
-	if format, _ := cmd.Flags().GetString("output"); format == "table" || format == "csv" {
-		return &clierrors.CLIError{
-			Message:    fmt.Sprintf("`%s` output is not supported for secrets get", format),
-			Suggestion: "Use -o json (default).",
-		}
 	}
 	return findings.Render(cmd, []findings.Row{resp}, nil)
 }

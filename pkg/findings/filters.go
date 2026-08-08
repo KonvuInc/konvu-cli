@@ -33,32 +33,28 @@ func RegisterCommonFlags(cmd *cobra.Command) {
 }
 
 // ReadCommonFilters reads the registered flags off cmd. Flags that were not
-// registered on cmd are treated as unset (returning the zero value), so a
-// subcommand can register just the subset of common flags its endpoint
-// actually supports and still call ReadCommonFilters.
-func ReadCommonFilters(cmd *cobra.Command) (CommonFilters, error) {
+// registered on cmd yield the zero value (pflag's GetX errors on missing
+// flags; we discard the error and the result is the zero value we want), so
+// subcommands can register just the subset of common flags their endpoint
+// supports and still use this reader.
+func ReadCommonFilters(cmd *cobra.Command) CommonFilters {
 	f := cmd.Flags()
 	out := CommonFilters{}
-	if f.Lookup("since") != nil {
-		out.Since, _ = f.GetString("since")
+	out.Since, _ = f.GetString("since")
+	out.Severity, _ = f.GetStringSlice("severity")
+	out.Repository, _ = f.GetStringSlice("repo")
+	out.Assessment, _ = f.GetStringSlice("assessment")
+	out.Limit, _ = f.GetInt("limit")
+	out.Format, _ = f.GetString("output")
+	out.QuietIDs, _ = f.GetBool("quiet")
+	return out
+}
+
+// LimitOr returns f.Limit if set, otherwise the fallback. Handy for building
+// pagination params where each subcommand has its own default page size.
+func (f CommonFilters) LimitOr(fallback int) int {
+	if f.Limit > 0 {
+		return f.Limit
 	}
-	if f.Lookup("severity") != nil {
-		out.Severity, _ = f.GetStringSlice("severity")
-	}
-	if f.Lookup("repo") != nil {
-		out.Repository, _ = f.GetStringSlice("repo")
-	}
-	if f.Lookup("assessment") != nil {
-		out.Assessment, _ = f.GetStringSlice("assessment")
-	}
-	if f.Lookup("limit") != nil {
-		out.Limit, _ = f.GetInt("limit")
-	}
-	if f.Lookup("output") != nil {
-		out.Format, _ = f.GetString("output")
-	}
-	if f.Lookup("quiet") != nil {
-		out.QuietIDs, _ = f.GetBool("quiet")
-	}
-	return out, nil
+	return fallback
 }

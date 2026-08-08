@@ -1,9 +1,9 @@
 package findings
 
 import (
-	"encoding/json"
 	"fmt"
 
+	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	"github.com/KonvuInc/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
 )
@@ -23,15 +23,28 @@ func Render(cmd *cobra.Command, rows []Row, columns []string) error {
 
 	switch format {
 	case "json", "":
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(rows)
+		_, err := fmt.Fprintln(w, output.FormatJSON(rows))
+		return err
 	case "table":
 		return renderTable(cmd, rows, columns)
 	case "csv":
 		return renderCSV(cmd, rows, columns)
 	default:
 		return fmt.Errorf("unknown output format: %q (use json, table, or csv)", format)
+	}
+}
+
+// RequireJSON returns nil when the current -o flag is empty or "json", and a
+// user-facing CLIError otherwise. Use in `get` / `rate` handlers whose
+// responses are nested enough that a flat table/csv would drop information.
+func RequireJSON(cmd *cobra.Command, op string) error {
+	format, _ := cmd.Flags().GetString("output")
+	if format == "" || format == "json" {
+		return nil
+	}
+	return &clierrors.CLIError{
+		Message:    fmt.Sprintf("`%s` output is not supported for %s", format, op),
+		Suggestion: "Use -o json (default). Detail responses are too nested for a flat table.",
 	}
 }
 

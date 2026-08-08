@@ -86,21 +86,14 @@ func runSastList(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 
-	f, err := findings.ReadCommonFilters(cmd)
-	if err != nil {
-		return err
-	}
-	limit := f.Limit
-	if limit <= 0 {
-		limit = 30
-	}
+	f := findings.ReadCommonFilters(cmd)
 	kind, _ := cmd.Flags().GetString("kind")
 	if kind == "" {
 		kind = "sast_app"
 	}
 	params := map[string]any{
 		"kind":     kind,
-		"per_page": limit,
+		"per_page": f.LimitOr(30),
 		"page":     1,
 	}
 	if len(f.Severity) > 0 {
@@ -157,18 +150,14 @@ func runSastGet(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 
+	if err := findings.RequireJSON(cmd, "sast get"); err != nil {
+		return err
+	}
 	resp, err := client.Get(fmt.Sprintf("/investigations/%s", args[0]), nil)
 	if err != nil {
 		return &clierrors.CLIError{
 			Message:    fmt.Sprintf("get SAST investigation: %v", err),
 			Suggestion: "Pass the investigation ID (the 'id' from 'konvu finding sast list'), not the raw detection ID.",
-		}
-	}
-	// Detail responses are richly nested; force JSON.
-	if format, _ := cmd.Flags().GetString("output"); format == "table" || format == "csv" {
-		return &clierrors.CLIError{
-			Message:    fmt.Sprintf("`%s` output is not supported for sast get", format),
-			Suggestion: "Use -o json (default). Investigation details are too nested for a flat table.",
 		}
 	}
 	return findings.Render(cmd, []findings.Row{resp}, nil)
@@ -194,25 +183,19 @@ func runSastRate(cmd *cobra.Command, args []string) error {
 	comment, _ := cmd.Flags().GetString("comment")
 	tags, _ := cmd.Flags().GetStringSlice("feedback-tag")
 
+	if err := findings.RequireJSON(cmd, "sast rate"); err != nil {
+		return err
+	}
 	payload := map[string]any{
 		"helpful":       helpful,
 		"feedback_tags": tags,
 		"comment":       comment,
-	}
-	if tags == nil {
-		payload["feedback_tags"] = []string{}
 	}
 	resp, err := client.Post(fmt.Sprintf("/investigations/%s/scoring", invID), payload)
 	if err != nil {
 		return &clierrors.CLIError{
 			Message:    fmt.Sprintf("rate SAST investigation: %v", err),
 			Suggestion: "Verify the investigation ID.",
-		}
-	}
-	if format, _ := cmd.Flags().GetString("output"); format == "table" || format == "csv" {
-		return &clierrors.CLIError{
-			Message:    fmt.Sprintf("`%s` output is not supported for sast rate", format),
-			Suggestion: "Use -o json (default).",
 		}
 	}
 	return findings.Render(cmd, []findings.Row{resp}, nil)
@@ -222,10 +205,7 @@ func runSastCounts(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 
-	f, err := findings.ReadCommonFilters(cmd)
-	if err != nil {
-		return err
-	}
+	f := findings.ReadCommonFilters(cmd)
 	params := map[string]any{"kind": "sast_app"}
 	if len(f.Severity) > 0 {
 		params["severity"] = f.Severity
