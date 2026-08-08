@@ -150,6 +150,14 @@ func runInventoryShow(cmd *cobra.Command, args []string) error {
 		handleInventoryError(usageError("Specify exactly one repository (URL or id)."), format)
 	}
 
+	// --fields selects raw JSON keys; it has no meaning for the fixed-layout
+	// table view (and silently dropping fields there would render blank headings
+	// and misleading "unscored" defaults), so require JSON explicitly. Checked
+	// before any network call so a bad invocation fails fast.
+	if fields != "" && format != output.JSON {
+		handleInventoryError(usageError("--fields only applies to JSON output; re-run with -o json."), format)
+	}
+
 	client := api.NewClient("", "")
 	defer client.Close()
 
@@ -161,11 +169,10 @@ func runInventoryShow(cmd *cobra.Command, args []string) error {
 		handleInventoryError(err, format)
 	}
 
-	if fields != "" {
-		data = output.FilterFields(data, splitFields(fields))
-	}
-
 	if format == output.JSON {
+		if fields != "" {
+			data = output.FilterFields(data, splitFields(fields))
+		}
 		fmt.Println(output.FormatJSON(data))
 		return nil
 	}
@@ -205,9 +212,6 @@ func renderInventoryShow(data map[string]any) {
 	}
 	if summary := getStr(data, "threat_profile_summary"); summary != "" {
 		fmt.Printf("\n%s\n", summary)
-	}
-	if needs, _ := getBool(data, "needs_grounding"); needs {
-		fmt.Println("\n! Low evidence — the tier rests on guesses rather than detected attributes.")
 	}
 
 	if surface := getStr(data, "surface"); surface != "" {

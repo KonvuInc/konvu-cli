@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"unicode/utf8"
+	"unicode"
 
 	"github.com/KonvuInc/konvu-cli/pkg/mapping"
 	"golang.org/x/term"
@@ -52,12 +52,62 @@ func stripAnsi(s string) string {
 	return result.String()
 }
 
-// visibleLen returns the visible length of a string (ignoring ANSI codes),
-// counted in runes so multibyte glyphs (e.g. "—") occupy one column, not one
-// column per UTF-8 byte — otherwise cells holding them under-pad and the
-// following columns drift left.
+// visibleLen returns the number of terminal cells a string occupies, ignoring
+// ANSI codes. Measuring in bytes (or even runes) misaligns columns: a 3-byte
+// glyph like "—" is one cell, a CJK ideograph or emoji is two, and a combining
+// mark is zero. This is a pragmatic subset of wcwidth — enough to keep
+// backend-provided repo names/summaries aligned — not a full East Asian Width
+// implementation (that would need a dependency).
 func visibleLen(s string) int {
-	return utf8.RuneCountInString(stripAnsi(s))
+	w := 0
+	for _, r := range stripAnsi(s) {
+		w += runeCells(r)
+	}
+	return w
+}
+
+// runeCells returns the terminal-cell width of a single rune: 0 for combining
+// marks and zero-width joiners, 2 for East Asian wide ranges and most emoji,
+// 1 otherwise.
+func runeCells(r rune) int {
+	switch {
+	case r == 0:
+		return 0
+	case unicode.Is(unicode.Mn, r), unicode.Is(unicode.Me, r),
+		r == '\u200b', r == '\u200c', r == '\u200d', r == '\ufeff':
+		return 0
+	case isWideRune(r):
+		return 2
+	default:
+		return 1
+	}
+}
+
+// isWideRune reports whether r renders in two terminal cells. The ranges cover
+// the common East Asian Wide / Fullwidth blocks and emoji; it is an
+// approximation, not the full Unicode EastAsianWidth table.
+func isWideRune(r rune) bool {
+	switch {
+	case r >= 0x1100 && r <= 0x115F, // Hangul Jamo
+		r >= 0x2329 && r <= 0x232A,   // angle brackets
+		r >= 0x2E80 && r <= 0x303E,   // CJK radicals, Kangxi, punctuation
+		r >= 0x3041 && r <= 0x33FF,   // Hiragana .. CJK compatibility
+		r >= 0x3400 && r <= 0x4DBF,   // CJK Extension A
+		r >= 0x4E00 && r <= 0x9FFF,   // CJK Unified Ideographs
+		r >= 0xA000 && r <= 0xA4CF,   // Yi
+		r >= 0xAC00 && r <= 0xD7A3,   // Hangul Syllables
+		r >= 0xF900 && r <= 0xFAFF,   // CJK Compatibility Ideographs
+		r >= 0xFE10 && r <= 0xFE19,   // Vertical forms
+		r >= 0xFE30 && r <= 0xFE6F,   // CJK Compatibility Forms
+		r >= 0xFF00 && r <= 0xFF60,   // Fullwidth Forms
+		r >= 0xFFE0 && r <= 0xFFE6,   // Fullwidth signs
+		r >= 0x1F000 && r <= 0x1F02F, // Mahjong
+		r >= 0x1F300 && r <= 0x1FAFF, // Emoji & pictographs
+		r >= 0x20000 && r <= 0x3FFFD: // CJK Extension B and beyond
+		return true
+	default:
+		return false
+	}
 }
 
 // truncate shortens s to maxLen visible characters, adding "…" if truncated.
