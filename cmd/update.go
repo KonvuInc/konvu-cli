@@ -135,52 +135,110 @@ func runUpdate(cmd *cobra.Command, format output.OutputFormat) error {
 }
 
 // isNewerVersion reports whether release version `latest` is strictly newer
-// than the installed `current` (both without a leading "v"). Comparison is
-// numeric and component-wise (e.g. "1.10.0" > "1.9.0"). If either version is
-// unparseable it returns false, so a working binary is never downgraded or
-// replaced on the basis of a version we cannot reason about.
+// than the installed `current` (both without a leading "v"), following semver
+// precedence: numeric components compare component-wise ("1.10.0" > "1.9.0"),
+// and for equal cores a stable release outranks any pre-release of that core
+// ("1.2.3" > "1.2.3-rc.1"). If either core is unparseable it returns false, so
+// a working binary is never downgraded on the basis of a version we cannot
+// reason about.
 func isNewerVersion(latest, current string) bool {
-	lp := versionParts(latest)
-	cp := versionParts(current)
-	if lp == nil || cp == nil {
+	lc, lpre := splitVersion(latest)
+	cc, cpre := splitVersion(current)
+	if lc == nil || cc == nil {
 		return false
 	}
-	for i := 0; i < len(lp) || i < len(cp); i++ {
+	for i := 0; i < len(lc) || i < len(cc); i++ {
 		var lv, cv int
-		if i < len(lp) {
-			lv = lp[i]
+		if i < len(lc) {
+			lv = lc[i]
 		}
-		if i < len(cp) {
-			cv = cp[i]
+		if i < len(cc) {
+			cv = cc[i]
 		}
 		if lv != cv {
 			return lv > cv
 		}
 	}
-	return false
+	// Equal cores: apply pre-release precedence.
+	return comparePreRelease(lpre, cpre) > 0
 }
 
-// versionParts splits a dotted version into numeric components, dropping any
-// leading "v" and any "-"/"+" suffix. It returns nil if any component is not a
-// number, signalling an incomparable version.
-func versionParts(v string) []int {
+// splitVersion separates a version into its numeric core and pre-release label,
+// dropping any leading "v" and ignoring build metadata (the "+..." suffix, which
+// does not affect precedence). The core is nil if any component is not a number.
+func splitVersion(v string) (core []int, pre string) {
 	v = strings.TrimPrefix(v, "v")
-	if i := strings.IndexAny(v, "-+"); i >= 0 {
+	if i := strings.IndexByte(v, '+'); i >= 0 {
+		v = v[:i]
+	}
+	if i := strings.IndexByte(v, '-'); i >= 0 {
+		pre = v[i+1:]
 		v = v[:i]
 	}
 	if v == "" {
-		return nil
+		return nil, pre
 	}
 	fields := strings.Split(v, ".")
-	parts := make([]int, len(fields))
+	core = make([]int, len(fields))
 	for i, f := range fields {
 		n, err := strconv.Atoi(f)
 		if err != nil {
-			return nil
+			return nil, pre
 		}
-		parts[i] = n
+		core[i] = n
 	}
-	return parts
+	return core, pre
+}
+
+// comparePreRelease returns 1 if pre-release label a has higher precedence than
+// b, -1 if lower, 0 if equal, per semver §11: an empty label (a stable release)
+// outranks any pre-release; otherwise dot-separated identifiers compare
+// numerically when both numeric, else lexically, with numeric ranking below
+// alphanumeric and a longer list of identifiers winning all-else-equal.
+func comparePreRelease(a, b string) int {
+	if a == b {
+		return 0
+	}
+	if a == "" {
+		return 1
+	}
+	if b == "" {
+		return -1
+	}
+	as := strings.Split(a, ".")
+	bs := strings.Split(b, ".")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		if as[i] == bs[i] {
+			continue
+		}
+		an, aerr := strconv.Atoi(as[i])
+		bn, berr := strconv.Atoi(bs[i])
+		switch {
+		case aerr == nil && berr == nil:
+			if an != bn {
+				if an > bn {
+					return 1
+				}
+				return -1
+			}
+		case aerr == nil: // numeric identifiers rank below alphanumeric
+			return -1
+		case berr == nil:
+			return 1
+		default:
+			if as[i] > bs[i] {
+				return 1
+			}
+			return -1
+		}
+	}
+	if len(as) != len(bs) {
+		if len(as) > len(bs) {
+			return 1
+		}
+		return -1
+	}
+	return 0
 }
 
 var updateHTTPClient = &http.Client{Timeout: 60 * time.Second}

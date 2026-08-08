@@ -85,16 +85,19 @@ func TestIsNewerVersion(t *testing.T) {
 		latest, current string
 		want            bool
 	}{
-		{"1.2.3", "1.2.2", true},      // patch bump
-		{"1.10.0", "1.9.0", true},     // numeric, not lexical
-		{"2.0.0", "1.9.9", true},      // major bump
-		{"1.2.3", "1.2.3", false},     // equal
-		{"1.2.2", "1.2.3", false},     // older release — never downgrade
-		{"1.2.0", "1.2.3", false},     // installed ahead
-		{"1.2.3", "1.2.3-rc1", false}, // pre-release suffix ignored, treated equal
-		{"1.2.4", "1.2.3-rc1", true},  // newer base still wins over a pre-release
-		{"1.2.3", "bogus", false},     // unparseable current
-		{"", "1.2.3", false},          // empty release
+		{"1.2.3", "1.2.2", true},           // patch bump
+		{"1.10.0", "1.9.0", true},          // numeric, not lexical
+		{"2.0.0", "1.9.9", true},           // major bump
+		{"1.2.3", "1.2.3", false},          // equal
+		{"1.2.2", "1.2.3", false},          // older release — never downgrade
+		{"1.2.0", "1.2.3", false},          // installed ahead
+		{"1.2.3", "1.2.3-rc.1", true},      // stable supersedes its own pre-release
+		{"1.2.3-rc.1", "1.2.3", false},     // pre-release never supersedes stable
+		{"1.2.3-rc.2", "1.2.3-rc.1", true}, // later pre-release, numeric compare
+		{"1.2.4", "1.2.3-rc1", true},       // newer core wins over a pre-release
+		{"1.2.3+build5", "1.2.3", false},   // build metadata ignored for precedence
+		{"1.2.3", "bogus", false},          // unparseable current
+		{"", "1.2.3", false},               // empty release
 	}
 	for _, c := range cases {
 		if got := isNewerVersion(c.latest, c.current); got != c.want {
