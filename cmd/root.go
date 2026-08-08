@@ -23,6 +23,18 @@ func RootCmd() *cobra.Command {
 }
 
 func Execute() {
+	// Handle --help-all before cobra parses (prefix matching would treat it as
+	// --help). Done here, not in init(), so every command's init() has already
+	// registered it on the root — otherwise commands whose files sort after
+	// root.go (inventory, submit, vuln, version, skills) are silently
+	// omitted from the reference.
+	for _, arg := range os.Args[1:] {
+		if arg == "--help-all" {
+			printHelpAll()
+			os.Exit(0)
+		}
+	}
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -74,6 +86,9 @@ const helpAllFooter = `EXAMPLES
   konvu dismiss --assessment false-positive --repo org/repo --dry-run
   konvu remediate abc-123 --wait --timeout 15m
   konvu remediate status abc-123
+  konvu inventory
+  konvu inventory show github:org/repo -o json
+  konvu inventory -q | cut -f1 | xargs -n1 konvu inventory show
 
 OUTPUT FORMATS
   Most commands support: -o json (structured), -o table (human), -o csv (finding list only)
@@ -126,13 +141,4 @@ func init() {
 	}
 
 	rootCmd.AddCommand(helpAllCmd)
-
-	// Check for --help-all in os.Args since cobra's flag parsing
-	// treats --help-all as --help due to prefix matching.
-	for _, arg := range os.Args[1:] {
-		if arg == "--help-all" {
-			printHelpAll()
-			os.Exit(0)
-		}
-	}
 }

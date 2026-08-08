@@ -346,6 +346,33 @@ konvu coverage default --all
 
 Severities are `CRITICAL`, `HIGH`, `MEDIUM` (alias for `MODERATE`), `LOW`. `--all` clears the restriction (assess every severity); an empty set is rejected. Use `--dry-run` on `enable`/`disable`/`severities` to preview.
 
+### `konvu inventory` — Explore repositories and their threat profiles
+
+Explore your repositories through Konvu's threat profiles: the production-vs-noise classification, a composite 0–100 threat score and named tier (crown jewel / key asset / standard / peripheral), a one-line summary, and an evidence-bearing attribute map (internet exposure, customer data, cloud credentials, and more). Read-only. Aliased as `konvu inv`. Repositories are identified by URL, id, or a unique URL substring.
+
+```bash
+# Org-wide overview: repos profiled, headline attribute counts, tier distribution,
+# and the highest-scoring repositories
+konvu inventory
+
+# Full threat profile for a single repository — score, tier, classification, and
+# every stored attribute with its provenance, confidence, and evidence
+konvu inventory show github:org/repo
+
+# Machine-readable output for scripting
+konvu inventory -o json
+konvu inventory show org/repo -o json
+
+# Bare `repo_id<TAB>tier` for the ranked repos, for piping
+konvu inventory -q                       # 0190a1b2-...  crown_jewel
+konvu inventory -q | cut -f1 | xargs -n1 konvu inventory show
+
+# Select only the fields you need (top-level keys)
+konvu inventory show org/repo --fields threat_profile_score,threat_profile_tier,internet_exposed -o json
+```
+
+`show` exits 3 (not found) when a repository has no threat profile yet — Konvu builds them as it analyzes your repositories. The `threat_profile_tier` field is a stable slug (`crown_jewel`, `key_asset`, `standard`, `peripheral`); `threat_profile_tier_label` carries the human-readable version.
+
 ### `konvu skills path` — Locate bundled skills
 
 Returns the path to the bundled Claude Code skills directory. Useful for configuring your AI assistant.
