@@ -460,6 +460,6 @@ func reportUpdateError(err error, format output.OutputFormat) {
 func init() {
 	updateCmd.Flags().BoolVar(&updateCheckOnly, "check", false, "Check for a newer version without installing")
 	updateCmd.Flags().BoolVar(&updateForce, "force", false, "Reinstall even if already up to date or Homebrew-managed")
-	updateCmd.Flags().StringP("output", "o", "", "Output format: json, table")
+	updateCmd.Flags().StringP("output", "o", "", "Output format: json, text")
 	rootCmd.AddCommand(updateCmd)
 }

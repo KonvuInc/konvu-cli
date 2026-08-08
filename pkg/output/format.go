@@ -22,7 +22,10 @@ func DetectOutputFormat(explicit string) OutputFormat {
 	switch strings.ToLower(explicit) {
 	case "json":
 		return JSON
-	case "table":
+	case "table", "text":
+		// "text" is an accepted alias for the human-readable format so an
+		// explicit request never silently falls through to auto-detection
+		// (which would emit JSON when stdout is piped).
 		return Table
 	case "csv":
 		return CSV
