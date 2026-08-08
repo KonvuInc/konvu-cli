@@ -1,0 +1,107 @@
+package cmd
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
+	"testing"
+
+	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
+)
+
+func makeTarGz(t *testing.T, entries map[string][]byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for name, content := range entries {
+		hdr := &tar.Header{
+			Name:     name,
+			Mode:     0o755,
+			Size:     int64(len(content)),
+			Typeflag: tar.TypeReg,
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatalf("WriteHeader: %v", err)
+		}
+		if _, err := tw.Write(content); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar Close: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("gzip Close: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestVerifyChecksum(t *testing.T) {
+	data := []byte("hello konvu")
+	sum := sha256.Sum256(data)
+	hash := hex.EncodeToString(sum[:])
+	filename := "konvu-darwin-arm64.tar.gz"
+	checksums := []byte(hash + "  " + filename + "\n" + "deadbeef  konvu-linux-amd64.tar.gz\n")
+
+	if err := verifyChecksum(data, checksums, filename); err != nil {
+		t.Errorf("expected checksum to match, got %v", err)
+	}
+}
+
+func TestVerifyChecksumMismatch(t *testing.T) {
+	data := []byte("hello konvu")
+	filename := "konvu-darwin-arm64.tar.gz"
+	checksums := []byte("0000000000000000000000000000000000000000000000000000000000000000  " + filename + "\n")
+
+	err := verifyChecksum(data, checksums, filename)
+	if err == nil {
+		t.Fatal("expected checksum mismatch error, got nil")
+	}
+	cliErr, ok := err.(*clierrors.CLIError)
+	if !ok || cliErr.Code != "CHECKSUM_MISMATCH" {
+		t.Errorf("expected CHECKSUM_MISMATCH, got %v", err)
+	}
+}
+
+func TestVerifyChecksumMissing(t *testing.T) {
+	data := []byte("hello konvu")
+	checksums := []byte("deadbeef  some-other-file.tar.gz\n")
+
+	err := verifyChecksum(data, checksums, "konvu-darwin-arm64.tar.gz")
+	if err == nil {
+		t.Fatal("expected missing checksum error, got nil")
+	}
+	cliErr, ok := err.(*clierrors.CLIError)
+	if !ok || cliErr.Code != "CHECKSUM_MISSING" {
+		t.Errorf("expected CHECKSUM_MISSING, got %v", err)
+	}
+}
+
+func TestExtractBinary(t *testing.T) {
+	want := []byte("\x7fELF fake binary contents")
+	archive := makeTarGz(t, map[string][]byte{
+		"README.md": []byte("docs"),
+		"konvu":     want,
+	})
+
+	got, err := extractBinary(archive)
+	if err != nil {
+		t.Fatalf("extractBinary: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("extracted binary = %q, want %q", got, want)
+	}
+}
+
+func TestExtractBinaryMissing(t *testing.T) {
+	archive := makeTarGz(t, map[string][]byte{
+		"README.md": []byte("docs"),
+	})
+
+	if _, err := extractBinary(archive); err == nil {
+		t.Fatal("expected error when konvu binary is absent, got nil")
+	}
+}

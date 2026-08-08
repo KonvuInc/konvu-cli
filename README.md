@@ -387,6 +387,25 @@ konvu skills path
 konvu version
 ```
 
+### `konvu update` — Update to the latest release
+
+Downloads the latest release for your platform, verifies its checksum, and replaces
+the running binary in place.
+
+```bash
+# Check whether a newer version is available (no install)
+konvu update --check
+
+# Install the latest release
+konvu update
+
+# Reinstall even if already up to date (or Homebrew-managed)
+konvu update --force
+```
+
+If konvu was installed via Homebrew, `update` defers to `brew upgrade konvu` unless
+you pass `--force`.
+
 ### `konvu --help-all` — Full CLI reference
 
 Prints a complete reference of all commands, flags, and examples in a single view.
@@ -397,10 +416,25 @@ konvu --help-all
 
 ## Updating
 
-After pulling new changes, rebuild and reinstall skills:
+The quickest way to update a released binary is:
 
 ```bash
+konvu update
+```
+
+If you installed via `go install` or Homebrew, use the matching flow instead:
+
+```bash
+# go install
 go install github.com/KonvuInc/konvu-cli/cmd/konvu@latest
+
+# Homebrew
+brew upgrade konvu
+```
+
+After updating, refresh the bundled skills:
+
+```bash
 konvu skills install
 ```
 
