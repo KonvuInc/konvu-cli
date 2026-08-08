@@ -12,6 +12,7 @@ import (
 	"github.com/KonvuInc/konvu-cli/pkg/mapping"
 	"github.com/KonvuInc/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var findingCmd = &cobra.Command{
@@ -418,5 +419,56 @@ func orDefault(s, fallback string) string {
 		return fallback
 	}
 	return s
+}
+
+// copyFlagsFrom copies every non-inherited flag from src to dst.
+// Used so BC aliases (konvu finding list) expose the same flag surface as
+// their canonical form (konvu finding sca list) without duplicated code.
+//
+// AddFlag reuses the SAME *pflag.Flag pointer that src holds, so writes
+// through the alias command flow to the canonical RunE without divergence.
+// If a flag with the same name is already on dst, we leave the existing
+// one alone.
+func copyFlagsFrom(dst, src *cobra.Command) {
+	src.Flags().VisitAll(func(f *pflag.Flag) {
+		if dst.Flags().Lookup(f.Name) != nil {
+			return
+		}
+		dst.Flags().AddFlag(f)
+	})
+}
+
+// --- BC aliases: bare `konvu finding <op>` delegates to `konvu finding sca <op>` ---
+// See cmd/finding_sca.go init() for flag registration + AddCommand wiring.
+
+var findingListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List SCA findings (alias for `finding sca list`)",
+	Long:  "Backward-compatible alias for `konvu finding sca list`. See that command for full documentation.",
+	RunE:  func(cmd *cobra.Command, args []string) error { return scaListCmd.RunE(cmd, args) },
+}
+
+var findingGetCmd = &cobra.Command{
+	Use:   "get [finding-id]",
+	Short: "Get an SCA finding (alias for `finding sca get`)",
+	Args:  cobra.ExactArgs(1),
+	RunE:  func(cmd *cobra.Command, args []string) error { return scaGetCmd.RunE(cmd, args) },
+}
+
+var findingRateCmd = &cobra.Command{
+	Use:   "rate [finding-id] [rating]",
+	Short: "Rate an SCA finding (alias for `finding sca rate`)",
+	Args:  cobra.ExactArgs(2),
+	RunE:  func(cmd *cobra.Command, args []string) error { return scaRateCmd.RunE(cmd, args) },
+}
+
+var findingCountsCmd = &cobra.Command{
+	Use:   "counts",
+	Short: "Count SCA findings (alias for `finding sca counts`)",
+	RunE:  func(cmd *cobra.Command, args []string) error { return scaCountsCmd.RunE(cmd, args) },
+}
+
+func init() {
+	rootCmd.AddCommand(findingCmd)
 }
 

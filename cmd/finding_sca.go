@@ -14,7 +14,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var findingListCmd = &cobra.Command{
+var scaCmd = &cobra.Command{
+	Use:   "sca",
+	Short: "Software Composition Analysis findings (dependency vulnerabilities)",
+	Long:  "Search, inspect, and triage SCA findings from the Konvu backend.",
+}
+
+var scaListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List security findings",
 	Long: `List security findings with filtering and sorting.
@@ -691,7 +697,7 @@ func writeIndentedLines(b *strings.Builder, indent, text string) {
 	}
 }
 
-var findingGetCmd = &cobra.Command{
+var scaGetCmd = &cobra.Command{
 	Use:   "get [finding-id]",
 	Short: "Get detailed information about a finding",
 	Long: `Get detailed information about a finding.
@@ -877,7 +883,7 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 
 // --- finding rate ---
 
-var findingRateCmd = &cobra.Command{
+var scaRateCmd = &cobra.Command{
 	Use:   "rate [finding-id] [rating]",
 	Short: "Rate Konvu's assessment of a finding",
 	Long: `Rate Konvu's assessment of a finding.
@@ -970,7 +976,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth
 
 // --- finding counts ---
 
-var findingCountsCmd = &cobra.Command{
+var scaCountsCmd = &cobra.Command{
 	Use:   "counts",
 	Short: "Show assessment counts",
 	Long: `Show assessment counts (exploitable, false-positive, etc.).
@@ -1186,54 +1192,69 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 
 func init() {
 	// finding list — all 21 flags
-	findingListCmd.Flags().String("since", "", "First-seen start date: '7d', '30d', or ISO date")
-	findingListCmd.Flags().String("until", "", "First-seen end date: 'now' or ISO date")
-	findingListCmd.Flags().String("dismissed-since", "", "Only findings dismissed on/after this date ('7d' or ISO); closed-in-window filter")
-	findingListCmd.Flags().String("dismissed-before", "", "Only findings dismissed before this date ('now' or ISO)")
-	findingListCmd.Flags().StringSliceP("severity", "s", nil, "Filter: critical,high,moderate,low")
-	findingListCmd.Flags().StringSliceP("assessment", "a", nil, "Filter: exploitable,false-positive,inconclusive,not-assessed")
-	findingListCmd.Flags().StringSlice("state", nil, "Filter: open,dismissed,fixed,muted")
-	findingListCmd.Flags().String("has-fix", "", "Filter: fixed, no_fix")
-	findingListCmd.Flags().StringP("repo", "r", "", "Filter by repository URL or name")
-	findingListCmd.Flags().String("cve", "", "Filter by CVE ID")
-	findingListCmd.Flags().StringP("dependency", "d", "", "Filter by dependency name")
-	findingListCmd.Flags().String("source", "", "Filter by scanner source: snyk, dependabot, or a label submitted via 'finding submit'")
-	findingListCmd.Flags().String("source-id", "", "Filter by external source identifier")
-	findingListCmd.Flags().String("sort", "recommendation", "Sort: severity,recommendation,first_seen_at,updated_at,dependency_name,cve")
-	findingListCmd.Flags().String("order", "desc", "Order: asc,desc")
-	findingListCmd.Flags().IntP("limit", "n", 50, "Maximum findings to return")
-	findingListCmd.Flags().Int("offset", 0, "Skip N results")
-	findingListCmd.Flags().StringP("output", "o", "", "Output format: json, table, csv")
-	findingListCmd.Flags().BoolP("quiet", "q", false, "Output bare finding IDs only")
-	findingListCmd.Flags().Bool("count", false, "Output only the total count")
-	findingListCmd.Flags().StringP("group-by", "g", "", "Group by: repository, dependency, severity, assessment")
-	findingListCmd.Flags().String("fields", "", "Comma-separated fields to include in JSON output")
+	scaListCmd.Flags().String("since", "", "First-seen start date: '7d', '30d', or ISO date")
+	scaListCmd.Flags().String("until", "", "First-seen end date: 'now' or ISO date")
+	scaListCmd.Flags().String("dismissed-since", "", "Only findings dismissed on/after this date ('7d' or ISO); closed-in-window filter")
+	scaListCmd.Flags().String("dismissed-before", "", "Only findings dismissed before this date ('now' or ISO)")
+	scaListCmd.Flags().StringSliceP("severity", "s", nil, "Filter: critical,high,moderate,low")
+	scaListCmd.Flags().StringSliceP("assessment", "a", nil, "Filter: exploitable,false-positive,inconclusive,not-assessed")
+	scaListCmd.Flags().StringSlice("state", nil, "Filter: open,dismissed,fixed,muted")
+	scaListCmd.Flags().String("has-fix", "", "Filter: fixed, no_fix")
+	scaListCmd.Flags().StringP("repo", "r", "", "Filter by repository URL or name")
+	scaListCmd.Flags().String("cve", "", "Filter by CVE ID")
+	scaListCmd.Flags().StringP("dependency", "d", "", "Filter by dependency name")
+	scaListCmd.Flags().String("source", "", "Filter by scanner source: snyk, dependabot, or a label submitted via 'finding submit'")
+	scaListCmd.Flags().String("source-id", "", "Filter by external source identifier")
+	scaListCmd.Flags().String("sort", "recommendation", "Sort: severity,recommendation,first_seen_at,updated_at,dependency_name,cve")
+	scaListCmd.Flags().String("order", "desc", "Order: asc,desc")
+	scaListCmd.Flags().IntP("limit", "n", 50, "Maximum findings to return")
+	scaListCmd.Flags().Int("offset", 0, "Skip N results")
+	scaListCmd.Flags().StringP("output", "o", "", "Output format: json, table, csv")
+	scaListCmd.Flags().BoolP("quiet", "q", false, "Output bare finding IDs only")
+	scaListCmd.Flags().Bool("count", false, "Output only the total count")
+	scaListCmd.Flags().StringP("group-by", "g", "", "Group by: repository, dependency, severity, assessment")
+	scaListCmd.Flags().String("fields", "", "Comma-separated fields to include in JSON output")
 
 	// finding get
-	findingGetCmd.Flags().StringSliceP("include", "i", nil, "Include: evidence, logs")
-	findingGetCmd.Flags().BoolP("verbose", "v", false, "Show all details for each check")
-	findingGetCmd.Flags().StringP("output", "o", "", "Output format: json, table")
-	findingGetCmd.Flags().String("fields", "", "Comma-separated fields to include")
+	scaGetCmd.Flags().StringSliceP("include", "i", nil, "Include: evidence, logs")
+	scaGetCmd.Flags().BoolP("verbose", "v", false, "Show all details for each check")
+	scaGetCmd.Flags().StringP("output", "o", "", "Output format: json, table")
+	scaGetCmd.Flags().String("fields", "", "Comma-separated fields to include")
 
 	// finding rate
-	findingRateCmd.Flags().StringP("comment", "c", "", "Optional feedback comment")
-	findingRateCmd.Flags().String("recommendation-id", "", "Recommendation ID (skips extra API call)")
-	findingRateCmd.Flags().StringP("output", "o", "", "Output format: json, table")
+	scaRateCmd.Flags().StringP("comment", "c", "", "Optional feedback comment")
+	scaRateCmd.Flags().String("recommendation-id", "", "Recommendation ID (skips extra API call)")
+	scaRateCmd.Flags().StringP("output", "o", "", "Output format: json, table")
 
 	// finding counts
-	findingCountsCmd.Flags().String("since", "", "First-seen start date: '7d', '30d', or ISO date")
-	findingCountsCmd.Flags().String("until", "", "First-seen end date: 'now' or ISO date")
-	findingCountsCmd.Flags().StringSliceP("severity", "s", nil, "Filter: critical,high,moderate,low")
-	findingCountsCmd.Flags().StringSliceP("assessment", "a", nil, "Filter: exploitable,false-positive,inconclusive,not-assessed")
-	findingCountsCmd.Flags().StringSlice("state", nil, "Filter: open,dismissed,fixed,muted")
-	findingCountsCmd.Flags().StringP("repo", "r", "", "Filter by repository URL or name")
-	findingCountsCmd.Flags().String("source", "", "Filter by scanner source, incl. a label submitted via 'finding submit'")
-	findingCountsCmd.Flags().StringP("group-by", "g", "", "Break down by: severity, week, month")
-	findingCountsCmd.Flags().StringP("output", "o", "", "Output format: json, table")
+	scaCountsCmd.Flags().String("since", "", "First-seen start date: '7d', '30d', or ISO date")
+	scaCountsCmd.Flags().String("until", "", "First-seen end date: 'now' or ISO date")
+	scaCountsCmd.Flags().StringSliceP("severity", "s", nil, "Filter: critical,high,moderate,low")
+	scaCountsCmd.Flags().StringSliceP("assessment", "a", nil, "Filter: exploitable,false-positive,inconclusive,not-assessed")
+	scaCountsCmd.Flags().StringSlice("state", nil, "Filter: open,dismissed,fixed,muted")
+	scaCountsCmd.Flags().StringP("repo", "r", "", "Filter by repository URL or name")
+	scaCountsCmd.Flags().String("source", "", "Filter by scanner source, incl. a label submitted via 'finding submit'")
+	scaCountsCmd.Flags().StringP("group-by", "g", "", "Break down by: severity, week, month")
+	scaCountsCmd.Flags().StringP("output", "o", "", "Output format: json, table")
+
+	scaCmd.AddCommand(scaListCmd)
+	scaCmd.AddCommand(scaGetCmd)
+	scaCmd.AddCommand(scaRateCmd)
+	scaCmd.AddCommand(scaCountsCmd)
+	findingCmd.AddCommand(scaCmd)
+
+	// BC aliases: expose bare `konvu finding <op>` as an alias for the
+	// canonical `konvu finding sca <op>`. copyFlagsFrom shares the
+	// underlying *pflag.Flag pointers so any flag set on the alias reaches
+	// the SCA command's RunE, which reads flags off cmd.Flags() directly.
+	// Must run AFTER SCA flag registration above.
+	copyFlagsFrom(findingListCmd, scaListCmd)
+	copyFlagsFrom(findingGetCmd, scaGetCmd)
+	copyFlagsFrom(findingRateCmd, scaRateCmd)
+	copyFlagsFrom(findingCountsCmd, scaCountsCmd)
 
 	findingCmd.AddCommand(findingListCmd)
 	findingCmd.AddCommand(findingGetCmd)
 	findingCmd.AddCommand(findingRateCmd)
 	findingCmd.AddCommand(findingCountsCmd)
-	rootCmd.AddCommand(findingCmd)
 }
