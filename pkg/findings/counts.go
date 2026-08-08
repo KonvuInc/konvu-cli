@@ -38,12 +38,13 @@ func CountByPagination(client apiClient, endpoint string, params map[string]any)
 	case int:
 		return t, nil
 	}
-	// Fallback: page-walk, since the endpoint didn't tell us the total.
+	// Fallback: page-walk from page=1 with a bigger page size. The probe
+	// response is thrown away — its per_page=1 shape means we can't reuse
+	// its items to seed the count without under-counting the actual page 1.
 	const pageSize = 500
 	call["per_page"] = pageSize
-	items, _ := resp["items"].([]any)
-	total := len(items)
-	for page := 2; ; page++ {
+	total := 0
+	for page := 1; ; page++ {
 		call["page"] = page
 		resp, err := client.Get(endpoint, call)
 		if err != nil {
