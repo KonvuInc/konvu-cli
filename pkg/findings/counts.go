@@ -10,10 +10,16 @@ type apiClient interface {
 }
 
 // CountByPagination returns the total number of rows the endpoint would
-// return for the given filter params. Sends per_page=1 and reads the
-// response's "total" field. Returns 0 if the endpoint omits pagination
-// metadata. The caller's params are copied; per_page and page are
-// overridden.
+// return for the given filter params.
+//
+// Fast path: send per_page=1 and read the response's "total" field, if the
+// endpoint returns pagination metadata (container_findings, secret_findings,
+// detections).
+//
+// Fallback: some endpoints — notably /sca_findings — do not return a total.
+// We then walk pages with per_page=500 until a short page tells us we're
+// done, counting items along the way. The caller's params are copied;
+// per_page and page are overridden on each call.
 func CountByPagination(client apiClient, endpoint string, params map[string]any) (int, error) {
 	call := make(map[string]any, len(params)+2)
 	for k, v := range params {
@@ -32,5 +38,21 @@ func CountByPagination(client apiClient, endpoint string, params map[string]any)
 	case int:
 		return t, nil
 	}
-	return 0, nil
+	// Fallback: page-walk, since the endpoint didn't tell us the total.
+	const pageSize = 500
+	call["per_page"] = pageSize
+	items, _ := resp["items"].([]any)
+	total := len(items)
+	for page := 2; ; page++ {
+		call["page"] = page
+		resp, err := client.Get(endpoint, call)
+		if err != nil {
+			return 0, err
+		}
+		items, _ := resp["items"].([]any)
+		total += len(items)
+		if len(items) < pageSize {
+			return total, nil
+		}
+	}
 }

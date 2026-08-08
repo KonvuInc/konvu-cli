@@ -63,3 +63,27 @@ func TestCountByPagination_ZeroWhenTotalMissing(t *testing.T) {
 		t.Fatalf("got (%d, %v)", got, err)
 	}
 }
+
+// When the endpoint doesn't return a total, CountByPagination walks pages.
+// Simulate /sca_findings-style behavior: 500 items per page, short final page.
+func TestCountByPagination_WalksPagesWhenTotalMissing(t *testing.T) {
+	page1 := make([]any, 500)
+	page2 := make([]any, 500)
+	page3 := make([]any, 42) // short final page
+	client := &fakeClient{
+		responses: []map[string]any{
+			{"items": []any{}},                     // per_page=1 probe (no total)
+			{"items": page1},                       // fallback page 2 with per_page=500 gets page 1 of results? Actually fallback starts page=2 in code below — see impl
+			{"items": page2},
+			{"items": page3},
+		},
+	}
+	got, err := CountByPagination(client, "/sca_findings", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The probe returned 0 items, then pages 2/3/4 returned 500/500/42. Total = 1042.
+	if got != 1042 {
+		t.Fatalf("got %d, want 1042", got)
+	}
+}

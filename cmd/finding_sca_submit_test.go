@@ -16,7 +16,7 @@ func TestFindingSubmitRegistered(t *testing.T) {
 
 func TestFindingSubmitFlags(t *testing.T) {
 	for _, flag := range []string{"repo", "ref", "file", "dry-run", "output"} {
-		if findingSubmitCmd.Flags().Lookup(flag) == nil {
+		if scaSubmitCmd.Flags().Lookup(flag) == nil {
 			t.Errorf("finding submit missing flag: --%s", flag)
 		}
 	}

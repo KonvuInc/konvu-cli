@@ -9,6 +9,7 @@ import (
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
+	"github.com/KonvuInc/konvu-cli/pkg/findings"
 	"github.com/KonvuInc/konvu-cli/pkg/mapping"
 	"github.com/KonvuInc/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
@@ -205,32 +206,6 @@ func deriveFixSource(state, autofixStatus string) string {
 	return "unknown"
 }
 
-// countFindings returns the total number of /sca_findings matching filterParams.
-// The backend does not return a total field, so we paginate until a short page
-// tells us we've hit the end. filterParams must not contain page / per_page.
-// TODO: drop the pagination loop once dashboard_backend returns a total.
-func countFindings(client *api.Client, filterParams map[string]any) (int, error) {
-	const pageSize = 500
-	p := make(map[string]any, len(filterParams)+2)
-	for k, v := range filterParams {
-		p[k] = v
-	}
-	p["per_page"] = pageSize
-	total := 0
-	for page := 1; ; page++ {
-		p["page"] = page
-		data, err := client.Get("/sca_findings", p)
-		if err != nil {
-			return 0, err
-		}
-		items := getSlice(data, "items")
-		total += len(items)
-		if len(items) < pageSize {
-			return total, nil
-		}
-	}
-}
-
 // groupFetchCap bounds how many findings are pulled when an operation needs the
 // full result set (--group-by, --dismissed-since/-before). At 500/page this is at
 // most ~20 requests. Beyond it, results are flagged as truncated rather than
@@ -282,7 +257,7 @@ func computeAssessmentCounts(client *api.Client, baseParams map[string]any, stat
 			params[k] = v
 		}
 		params["recommendation"] = mapping.AssessmentToRecommendation(status)
-		n, err := countFindings(client, params)
+		n, err := findings.CountByPagination(client, "/sca_findings", params)
 		if err != nil {
 			continue
 		}
@@ -466,6 +441,12 @@ var findingCountsCmd = &cobra.Command{
 	Use:   "counts",
 	Short: "Count SCA findings (alias for `finding sca counts`)",
 	RunE:  func(cmd *cobra.Command, args []string) error { return scaCountsCmd.RunE(cmd, args) },
+}
+
+var findingSubmitCmd = &cobra.Command{
+	Use:   "submit",
+	Short: "Submit SCA findings (alias for `finding sca submit`)",
+	RunE:  func(cmd *cobra.Command, args []string) error { return scaSubmitCmd.RunE(cmd, args) },
 }
 
 func init() {

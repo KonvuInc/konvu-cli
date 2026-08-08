@@ -9,6 +9,7 @@ import (
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
+	"github.com/KonvuInc/konvu-cli/pkg/findings"
 	"github.com/KonvuInc/konvu-cli/pkg/mapping"
 	"github.com/KonvuInc/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
@@ -147,7 +148,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 		// --count without a client-side filter can use the cheap server count.
 		// With --dismissed-since/-before we must fetch and filter first (below).
 		if count && !dismissedFilter {
-			total, err := countFindings(client, filterParams)
+			total, err := findings.CountByPagination(client, "/sca_findings", filterParams)
 			if err != nil {
 				handleFindingError(err, format)
 				return nil
@@ -194,7 +195,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			// may be more, so paginate to get an accurate count for the summary.
 			total = offset + len(items)
 			if len(items) == perPage {
-				if t, err := countFindings(client, filterParams); err == nil {
+				if t, err := findings.CountByPagination(client, "/sca_findings", filterParams); err == nil {
 					total = t
 				}
 			}

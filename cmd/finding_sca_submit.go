@@ -16,7 +16,7 @@ import (
 // rejects a POST /sca_findings body with more findings, so chunk client-side.
 const ingestMaxBatch = 1000
 
-var findingSubmitCmd = &cobra.Command{
+var scaSubmitCmd = &cobra.Command{
 	Use:   "submit",
 	Short: "Submit SCA findings from another scanner for triage",
 	Long: `Submit SCA findings (e.g. exported from Snyk or Dependabot) for triage.
@@ -45,10 +45,10 @@ Exit codes: 0 success, 1 general error (incl. all findings rejected), 2 invalid 
 
   # Pipe findings in for a specific branch, preview only
   cat findings.json | konvu finding submit --repo github:acme/web --ref release-2.3 --file - --dry-run`,
-	RunE: runFindingSubmit,
+	RunE: runScaSubmit,
 }
 
-func runFindingSubmit(cmd *cobra.Command, args []string) error {
+func runScaSubmit(cmd *cobra.Command, args []string) error {
 	repo, _ := cmd.Flags().GetString("repo")
 	ref, _ := cmd.Flags().GetString("ref")
 	file, _ := cmd.Flags().GetString("file")
@@ -227,10 +227,15 @@ func parseFindings(data []byte) ([]any, error) {
 }
 
 func init() {
-	findingSubmitCmd.Flags().StringP("repo", "r", "", "Repository URL, e.g. github:acme/web (required)")
-	findingSubmitCmd.Flags().String("ref", "", "Git branch or tag ref (default: repo's default branch)")
-	findingSubmitCmd.Flags().StringP("file", "f", "", "JSON file of findings, or '-' for stdin (required)")
-	findingSubmitCmd.Flags().Bool("dry-run", false, "Preview what would be submitted without executing")
-	findingSubmitCmd.Flags().StringP("output", "o", "", "Output format: json, table")
+	scaSubmitCmd.Flags().StringP("repo", "r", "", "Repository URL, e.g. github:acme/web (required)")
+	scaSubmitCmd.Flags().String("ref", "", "Git branch or tag ref (default: repo's default branch)")
+	scaSubmitCmd.Flags().StringP("file", "f", "", "JSON file of findings, or '-' for stdin (required)")
+	scaSubmitCmd.Flags().Bool("dry-run", false, "Preview what would be submitted without executing")
+	scaSubmitCmd.Flags().StringP("output", "o", "", "Output format: json, table")
+
+	scaCmd.AddCommand(scaSubmitCmd)
+
+	// BC alias: bare `konvu finding submit` → `konvu finding sca submit`.
+	copyFlagsFrom(findingSubmitCmd, scaSubmitCmd)
 	findingCmd.AddCommand(findingSubmitCmd)
 }
