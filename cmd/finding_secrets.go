@@ -104,17 +104,21 @@ func runSecretsList(cmd *cobra.Command, args []string) error {
 
 	f := findings.ReadCommonFilters(cmd)
 	params := map[string]any{"per_page": f.LimitOr(30), "page": 1}
-	if len(f.Assessment) > 0 {
-		for _, a := range f.Assessment {
-			if !validSecretsAssessments[a] {
-				return &clierrors.CLIError{
-					Message:    fmt.Sprintf("invalid --assessment value %q for secrets", a),
-					Suggestion: "Valid: applicable, unknown, not_applicable.",
-				}
+	if len(f.Assessment) > 1 {
+		return &clierrors.CLIError{
+			Message:    "secrets --assessment accepts only one value",
+			Suggestion: "The /secret_findings endpoint filter is a single value: applicable, unknown, or not_applicable.",
+		}
+	}
+	if len(f.Assessment) == 1 {
+		a := f.Assessment[0]
+		if !validSecretsAssessments[a] {
+			return &clierrors.CLIError{
+				Message:    fmt.Sprintf("invalid --assessment value %q for secrets", a),
+				Suggestion: "Valid: applicable, unknown, not_applicable.",
 			}
 		}
-		// Backend takes a single assessment; use the first if repeated.
-		params["assessment"] = f.Assessment[0]
+		params["assessment"] = a
 	}
 
 	resp, err := client.Get("/secret_findings", params)

@@ -48,16 +48,21 @@ func RequireJSON(cmd *cobra.Command, op string) error {
 	}
 }
 
-// RenderBareIDs writes one ID per line for -q. idKey names the row key
-// holding the identifier; today all finding types use "id" (SAST's "id"
-// is the investigation ID after transformDetection promotes it).
+// RenderBareIDs writes one ID per line for -q. Empty ID strings are skipped
+// so downstream `xargs`-style pipelines don't blow up on rows that expose no
+// usable identifier (SAST detections without a Konvu investigation, for
+// example, have an empty investigation id but are still surfaced in list
+// output). idKey names the row key holding the identifier; today all finding
+// types use "id".
 func RenderBareIDs(cmd *cobra.Command, rows []Row, idKey string) error {
 	w := cmd.OutOrStdout()
 	for _, r := range rows {
-		if v, ok := r[idKey].(string); ok {
-			if _, err := fmt.Fprintln(w, v); err != nil {
-				return err
-			}
+		v, _ := r[idKey].(string)
+		if v == "" {
+			continue
+		}
+		if _, err := fmt.Fprintln(w, v); err != nil {
+			return err
 		}
 	}
 	return nil

@@ -18,8 +18,10 @@ The row 'id' returned by 'list' is the INVESTIGATION ID (Konvu's triage
 record), not the raw scanner detection ID. 'get' and 'rate' both take
 investigation IDs — the raw detection ID is available as 'detection_id'.
 
-Detections without a Konvu investigation are hidden by default; pass
---include-untriaged to see them (their 'id' will be empty).`,
+Untriaged detections are included in 'list' and 'counts' — their 'id' is
+empty and 'triage_status' is "pending". 'sast list -q' pipes only rows
+with a non-empty id, so 'sast list -q | xargs -I{} sast get {}' works
+without the caller filtering explicitly.`,
 }
 
 var sastListCmd = &cobra.Command{
@@ -126,19 +128,19 @@ func runSastList(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Every detection is emitted, triaged or not. Untriaged rows carry
+	// triage_status="pending" and an empty investigation id, so downstream
+	// consumers can filter them explicitly (e.g. `jq '.[] | select(.id!="")'`)
+	// instead of relying on a client-side default that would silently drop
+	// rows returned within the page window.
 	items := getSlice(resp, "items")
-	includeUntriaged, _ := cmd.Flags().GetBool("include-untriaged")
 	rows := make([]findings.Row, 0, len(items))
 	for _, it := range items {
 		m, ok := it.(map[string]any)
 		if !ok {
 			continue
 		}
-		row := transformDetection(m)
-		if !includeUntriaged && row["id"] == "" {
-			continue
-		}
-		rows = append(rows, row)
+		rows = append(rows, transformDetection(m))
 	}
 	if f.QuietIDs {
 		return findings.RenderBareIDs(cmd, rows, "id")
@@ -233,7 +235,6 @@ func init() {
 	sastListCmd.Flags().StringSlice("confidence", nil, "Filter by confidence: high, medium, low")
 	sastListCmd.Flags().String("kind", "sast_app", "Detection kind (default sast_app)")
 	sastListCmd.Flags().String("title", "", "Filter by detection title (exact match)")
-	sastListCmd.Flags().Bool("include-untriaged", false, "Include detections without a Konvu investigation (row 'id' will be empty)")
 
 	sastGetCmd.Flags().StringP("output", "o", "", "Output format: json (default)")
 
