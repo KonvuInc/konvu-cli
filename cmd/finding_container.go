@@ -57,10 +57,11 @@ func transformContainerFinding(raw map[string]any) findings.Row {
 		"observed_at": getStr(raw, "observed_at"),
 		"updated_at":  getStr(raw, "updated_at"),
 		"assessment":  getStr(assessment, "result"),
+		"triage_url":  getStr(raw, "triage_url"),
 	}
 }
 
-var containerDefaultColumns = []string{"id", "cve", "severity", "package", "image", "state", "assessment"}
+var containerDefaultColumns = []string{"id", "cve", "severity", "package", "image", "state", "assessment", "triage_url"}
 
 func runContainerList(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")

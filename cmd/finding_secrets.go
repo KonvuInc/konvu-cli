@@ -75,10 +75,11 @@ func transformSecretGroup(raw map[string]any) findings.Row {
 		"assessment":          getStr(raw, "assessment"),
 		"first_seen":          getStr(raw, "first_seen"),
 		"last_seen":           getStr(raw, "last_seen"),
+		"triage_url":          getStr(raw, "triage_url"),
 	}
 }
 
-var secretsDefaultColumns = []string{"id", "provider", "verification_status", "assessment", "first_seen", "last_seen"}
+var secretsDefaultColumns = []string{"id", "provider", "verification_status", "assessment", "first_seen", "last_seen", "triage_url"}
 
 // mapSecretsError converts a 403 (entitlement off) into a friendly CLIError.
 // Other errors are wrapped with a generic suggestion.

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
-	"github.com/KonvuInc/konvu-cli/pkg/config"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	"github.com/KonvuInc/konvu-cli/pkg/findings"
 	"github.com/KonvuInc/konvu-cli/pkg/mapping"
@@ -562,8 +561,6 @@ func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]
 	}
 
 	source := getMap(detail, "source")
-	manifestID := orDefault(getStr(detail, "manifest_location_id"), getStr(ml, "id"))
-	vulnerabilityID := orDefault(getStr(detail, "vulnerability_id"), getStr(vuln, "id"))
 	findingSection := map[string]any{
 		"id":         getStr(detail, "id"),
 		"dependency": getStr(dep, "name"),
@@ -573,7 +570,7 @@ func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]
 		"source_id":  getStr(source, "identifier"),
 		"state":      getStr(source, "state"),
 		"first_seen": getStr(source, "remote_created_at"),
-		"triage_url": buildTriageURL(config.GetDashboardURL(), manifestID, vulnerabilityID, getStr(detail, "id")),
+		"triage_url": getStr(detail, "triage_url"),
 	}
 
 	vulnSection := map[string]any{

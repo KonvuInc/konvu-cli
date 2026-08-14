@@ -79,10 +79,11 @@ func transformDetection(raw map[string]any) findings.Row {
 		"state":         getStr(raw, "state"),
 		"assessment":    assessment,
 		"triage_status": triageStatus,
+		"triage_url":    getStr(raw, "triage_url"),
 	}
 }
 
-var sastDefaultColumns = []string{"id", "title", "severity", "location", "repo", "state", "assessment", "triage_status"}
+var sastDefaultColumns = []string{"id", "title", "severity", "location", "repo", "state", "assessment", "triage_status", "triage_url"}
 
 func runSastList(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
