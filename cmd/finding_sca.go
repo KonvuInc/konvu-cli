@@ -561,16 +561,21 @@ func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]
 	}
 
 	source := getMap(detail, "source")
+	dismissibleFromKonvu, _ := getBool(source, "dismissible_from_konvu")
 	findingSection := map[string]any{
-		"id":         getStr(detail, "id"),
-		"dependency": getStr(dep, "name"),
-		"repository": getStr(ml, "vcs_repository_url"),
-		"manifest":   getStr(ml, "location"),
-		"scanner":    scannerLabel(source),
-		"source_id":  getStr(source, "identifier"),
-		"state":      getStr(source, "state"),
-		"first_seen": getStr(source, "remote_created_at"),
-		"triage_url": getStr(detail, "triage_url"),
+		"id":                     getStr(detail, "id"),
+		"dependency":             getStr(dep, "name"),
+		"repository":             getStr(ml, "vcs_repository_url"),
+		"manifest":               getStr(ml, "location"),
+		"scanner":                scannerLabel(source),
+		"source_id":              getStr(source, "identifier"),
+		"state":                  getStr(source, "state"),
+		"first_seen":             getStr(source, "remote_created_at"),
+		"triage_url":             getStr(detail, "triage_url"),
+		"dismissed_at":           getStr(source, "dismissed_at"),
+		"dismissed_reason":       getStr(source, "dismissed_reason"),
+		"dismissed_comment":      getStr(source, "dismissed_comment"),
+		"dismissible_from_konvu": dismissibleFromKonvu,
 	}
 
 	vulnSection := map[string]any{
@@ -846,6 +851,12 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 			}
 			if sourceIDVal := getStr(f, "source_id"); sourceIDVal != "" {
 				fmt.Printf("Source ID:  %s\n", sourceIDVal)
+			}
+			if dismissedAt := getStr(f, "dismissed_at"); dismissedAt != "" {
+				fmt.Printf("Dismissed:  %s (%s)\n", dismissedAt, orDefault(getStr(f, "dismissed_reason"), "no reason"))
+				if comment := getStr(f, "dismissed_comment"); comment != "" {
+					fmt.Printf("Comment:    %s\n", comment)
+				}
 			}
 
 			// --- Vulnerability ---
