@@ -49,6 +49,9 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 				os.Exit(1)
 			}
 			briefs = append(briefs, brief)
+			if note := briefTierNote(brief); note != "" {
+				fmt.Fprintln(os.Stderr, note)
+			}
 		}
 
 		// The prompt is the deliverable, so it stays the default even when
@@ -60,6 +63,20 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 		fmt.Println(strings.Join(agentPrompts(briefs), "\n\n---\n\n"))
 		return nil
 	},
+}
+
+// briefTierNote is a one-line stderr hint about how enriched a plan is, so a
+// human sees the tier without polluting the piped prompt on stdout. Empty for
+// plans with no usable enrichment.
+func briefTierNote(brief map[string]any) string {
+	switch s, _ := brief["enrichment_status"].(string); s {
+	case "succeeded":
+		return "  full plan — includes a Konvu-verified patch."
+	case "partial":
+		return "  partial plan — Konvu computed the fix but could not build a verified patch; the prompt carries the plan to apply manually."
+	default:
+		return ""
+	}
 }
 
 // agentPrompts extracts the server-built agent prompt from each plan brief.

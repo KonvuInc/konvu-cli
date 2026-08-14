@@ -1,8 +1,23 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 )
+
+func TestBriefTierNote(t *testing.T) {
+	if n := briefTierNote(map[string]any{"enrichment_status": "succeeded"}); !strings.Contains(n, "full plan") {
+		t.Errorf("succeeded: got %q", n)
+	}
+	if n := briefTierNote(map[string]any{"enrichment_status": "partial"}); !strings.Contains(n, "partial plan") {
+		t.Errorf("partial: got %q", n)
+	}
+	for _, s := range []string{"failed", "ongoing", ""} {
+		if n := briefTierNote(map[string]any{"enrichment_status": s}); n != "" {
+			t.Errorf("status %q: want empty note, got %q", s, n)
+		}
+	}
+}
 
 func TestRemediateHasBriefSubcommand(t *testing.T) {
 	found := false
