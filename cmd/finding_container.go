@@ -61,7 +61,10 @@ func transformContainerFinding(raw map[string]any) findings.Row {
 	}
 }
 
-var containerDefaultColumns = []string{"id", "cve", "severity", "package", "image", "state", "assessment", "triage_url"}
+// containerDefaultColumns is the compact table set (URL-free so terminal tables
+// don't wrap); containerCSVColumns adds triage_url for CSV export.
+var containerDefaultColumns = []string{"id", "cve", "severity", "package", "image", "state", "assessment"}
+var containerCSVColumns = append(append([]string{}, containerDefaultColumns...), "triage_url")
 
 func runContainerList(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
@@ -117,7 +120,7 @@ func runContainerList(cmd *cobra.Command, args []string) error {
 	if f.QuietIDs {
 		return findings.RenderBareIDs(cmd, rows, "id")
 	}
-	return findings.Render(cmd, rows, containerDefaultColumns)
+	return findings.RenderColumns(cmd, rows, containerDefaultColumns, containerCSVColumns)
 }
 
 func runContainerGet(cmd *cobra.Command, args []string) error {

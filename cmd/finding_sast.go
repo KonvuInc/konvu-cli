@@ -83,7 +83,10 @@ func transformDetection(raw map[string]any) findings.Row {
 	}
 }
 
-var sastDefaultColumns = []string{"id", "title", "severity", "location", "repo", "state", "assessment", "triage_status", "triage_url"}
+// sastDefaultColumns is the compact table set (URL-free so terminal tables
+// don't wrap); sastCSVColumns adds triage_url for CSV export.
+var sastDefaultColumns = []string{"id", "title", "severity", "location", "repo", "state", "assessment", "triage_status"}
+var sastCSVColumns = append(append([]string{}, sastDefaultColumns...), "triage_url")
 
 func runSastList(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
@@ -146,7 +149,7 @@ func runSastList(cmd *cobra.Command, args []string) error {
 	if f.QuietIDs {
 		return findings.RenderBareIDs(cmd, rows, "id")
 	}
-	return findings.Render(cmd, rows, sastDefaultColumns)
+	return findings.RenderColumns(cmd, rows, sastDefaultColumns, sastCSVColumns)
 }
 
 func runSastGet(cmd *cobra.Command, args []string) error {

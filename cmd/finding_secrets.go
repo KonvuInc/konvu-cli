@@ -79,7 +79,10 @@ func transformSecretGroup(raw map[string]any) findings.Row {
 	}
 }
 
-var secretsDefaultColumns = []string{"id", "provider", "verification_status", "assessment", "first_seen", "last_seen", "triage_url"}
+// secretsDefaultColumns is the compact table set (URL-free so terminal tables
+// don't wrap); secretsCSVColumns adds triage_url for CSV export.
+var secretsDefaultColumns = []string{"id", "provider", "verification_status", "assessment", "first_seen", "last_seen"}
+var secretsCSVColumns = append(append([]string{}, secretsDefaultColumns...), "triage_url")
 
 // mapSecretsError converts a 403 (entitlement off) into a friendly CLIError.
 // Other errors are wrapped with a generic suggestion.
@@ -139,7 +142,7 @@ func runSecretsList(cmd *cobra.Command, args []string) error {
 	if f.QuietIDs {
 		return findings.RenderBareIDs(cmd, rows, "id")
 	}
-	return findings.Render(cmd, rows, secretsDefaultColumns)
+	return findings.RenderColumns(cmd, rows, secretsDefaultColumns, secretsCSVColumns)
 }
 
 func runSecretsGet(cmd *cobra.Command, args []string) error {
