@@ -18,7 +18,7 @@ func TestRemediateHasListSubcommand(t *testing.T) {
 }
 
 func TestRemediateListFlags(t *testing.T) {
-	for _, name := range []string{"kind", "status", "grouping", "repo-scope", "limit", "output", "quiet"} {
+	for _, name := range []string{"kind", "status", "grouping", "repo-scope", "repo", "limit", "output", "quiet"} {
 		if remediateListCmd.Flags().Lookup(name) == nil {
 			t.Errorf("remediate list missing flag: --%s", name)
 		}

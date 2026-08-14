@@ -29,9 +29,10 @@ ids into 'konvu remediate brief' to get the agent prompt for each:
 
   konvu remediate list --kind sca -q | while read id; do konvu remediate brief "$id"; done
 
-Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
+Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth failed`,
 	Example: `  konvu remediate list
   konvu remediate list --kind sca
+  konvu remediate list --repo github:org/repo
   konvu remediate list --kind sast --status ready
   konvu remediate list -o json
   konvu remediate list -q`,
@@ -44,25 +45,30 @@ func runRemediateList(cmd *cobra.Command, args []string) error {
 	status, _ := cmd.Flags().GetString("status")
 	grouping, _ := cmd.Flags().GetString("grouping")
 	repoScope, _ := cmd.Flags().GetString("repo-scope")
+	repo, _ := cmd.Flags().GetString("repo")
 	limit, _ := cmd.Flags().GetInt("limit")
 	outputFlag, _ := cmd.Flags().GetString("output")
 	quiet, _ := cmd.Flags().GetBool("quiet")
 	format := output.DetectOutputFormat(outputFlag)
 
 	kind = strings.ToLower(strings.TrimSpace(kind))
+	repo = strings.TrimSpace(repo)
 	if !validPlanKinds[kind] {
-		handleRemediateListError(usageError(fmt.Sprintf("Invalid --kind %q. Use sca, sast, or all.", kind)), format)
+		handleRemediateListError(usageError(fmt.Sprintf("Invalid --kind %q. Use sca, sast, or all.", kind)), format, repo != "")
 	}
 
-	// grouping and repo-scope are passthrough; the server validates them.
+	// grouping, repo-scope and repo are passthrough; the server resolves/validates them.
 	params := map[string]any{"grouping": grouping, "repo_scope": repoScope, "limit": limit}
+	if repo != "" {
+		params["repo"] = repo
+	}
 
 	client := api.NewClient("", "")
 	defer client.Close()
 
 	data, err := client.Get(remediationPlansPath, params)
 	if err != nil {
-		handleRemediateListError(err, format)
+		handleRemediateListError(err, format, repo != "")
 	}
 
 	items := filterPlans(getSlice(data, "items"), kind, strings.ToLower(strings.TrimSpace(status)))
@@ -173,7 +179,10 @@ func asMaps(items []any) []map[string]any {
 	return out
 }
 
-func handleRemediateListError(err error, format output.OutputFormat) {
+// handleRemediateListError renders the error and exits. repoFiltered gates the
+// 404 → REPOSITORY_NOT_FOUND mapping: only a --repo request treats a 404 as an
+// unknown repository; without it a 404 is just a generic (route/proxy) API error.
+func handleRemediateListError(err error, format output.OutputFormat, repoFiltered bool) {
 	var cliErr *clierrors.CLIError
 	switch e := err.(type) {
 	case *clierrors.CLIError:
@@ -181,14 +190,26 @@ func handleRemediateListError(err error, format output.OutputFormat) {
 	case *api.AuthenticationError:
 		cliErr = clierrors.NewAuthError(e.Error())
 	case *api.APIError:
-		if e.StatusCode == 422 {
+		switch e.StatusCode {
+		case 422:
 			cliErr = &clierrors.CLIError{
 				Code:       "INVALID_ARGUMENTS",
 				Message:    e.Error(),
 				Suggestion: "Check --grouping (recommended|by_dependency|most_cve_cleared|most_at_risk), --repo-scope (tier_1_2|all), and --limit (1-50).",
 				ExitCode:   clierrors.ExitUsageError,
 			}
-		} else {
+		case 404:
+			if repoFiltered {
+				cliErr = &clierrors.CLIError{
+					Code:       "REPOSITORY_NOT_FOUND",
+					Message:    e.Error(),
+					Suggestion: "Pass --repo as a Konvu slug (github:org/repo), a full repo URL, or a repository id.",
+					ExitCode:   clierrors.ExitNotFound,
+				}
+			} else {
+				cliErr = clierrors.NewAPIError(e.Error())
+			}
+		default:
 			cliErr = clierrors.NewAPIError(e.Error())
 		}
 	default:
@@ -211,6 +232,7 @@ func init() {
 	remediateListCmd.Flags().String("status", "", "Filter by status (e.g. ready); default shows the whole backlog")
 	remediateListCmd.Flags().String("grouping", "most_cve_cleared", "Plan ranking: recommended, by_dependency, most_cve_cleared, most_at_risk")
 	remediateListCmd.Flags().String("repo-scope", "all", "Repository scope: tier_1_2 or all")
+	remediateListCmd.Flags().String("repo", "", "Filter to one repository (github:org/repo, full URL, or repo id)")
 	remediateListCmd.Flags().Int("limit", 15, "Max plans per kind (1-50)")
 	remediateListCmd.Flags().StringP("output", "o", "", "Output format: json, table, csv")
 	remediateListCmd.Flags().BoolP("quiet", "q", false, "Print only plan ids")
