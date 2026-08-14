@@ -332,6 +332,9 @@ konvu remediate list
 konvu remediate list --kind sca
 konvu remediate list --kind sast
 
+# Just one repository (slug, full URL, or repo id) — filtered server-side
+konvu remediate list --repo github:org/repo
+
 # Only the actionable ones
 konvu remediate list --status ready
 
@@ -340,6 +343,7 @@ konvu remediate list --kind sca -q | xargs -n1 konvu remediate brief
 ```
 
 Flags: `--kind sca|sast|all` (default `all`), `--status` (e.g. `ready`),
+`--repo` (one repository: `github:org/repo`, full URL, or repo id),
 `--grouping` (`recommended|by_dependency|most_cve_cleared|most_at_risk`),
 `--repo-scope` (`tier_1_2|all`), `--limit` (1–50, per kind), `--output/-o`,
 `--quiet/-q`.

@@ -32,6 +32,7 @@ ids into 'konvu remediate brief' to get the agent prompt for each:
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 	Example: `  konvu remediate list
   konvu remediate list --kind sca
+  konvu remediate list --repo github:org/repo
   konvu remediate list --kind sast --status ready
   konvu remediate list -o json
   konvu remediate list -q`,
@@ -44,6 +45,7 @@ func runRemediateList(cmd *cobra.Command, args []string) error {
 	status, _ := cmd.Flags().GetString("status")
 	grouping, _ := cmd.Flags().GetString("grouping")
 	repoScope, _ := cmd.Flags().GetString("repo-scope")
+	repo, _ := cmd.Flags().GetString("repo")
 	limit, _ := cmd.Flags().GetInt("limit")
 	outputFlag, _ := cmd.Flags().GetString("output")
 	quiet, _ := cmd.Flags().GetBool("quiet")
@@ -54,8 +56,11 @@ func runRemediateList(cmd *cobra.Command, args []string) error {
 		handleRemediateListError(usageError(fmt.Sprintf("Invalid --kind %q. Use sca, sast, or all.", kind)), format)
 	}
 
-	// grouping and repo-scope are passthrough; the server validates them.
+	// grouping, repo-scope and repo are passthrough; the server resolves/validates them.
 	params := map[string]any{"grouping": grouping, "repo_scope": repoScope, "limit": limit}
+	if repo = strings.TrimSpace(repo); repo != "" {
+		params["repo"] = repo
+	}
 
 	client := api.NewClient("", "")
 	defer client.Close()
@@ -181,14 +186,22 @@ func handleRemediateListError(err error, format output.OutputFormat) {
 	case *api.AuthenticationError:
 		cliErr = clierrors.NewAuthError(e.Error())
 	case *api.APIError:
-		if e.StatusCode == 422 {
+		switch e.StatusCode {
+		case 422:
 			cliErr = &clierrors.CLIError{
 				Code:       "INVALID_ARGUMENTS",
 				Message:    e.Error(),
 				Suggestion: "Check --grouping (recommended|by_dependency|most_cve_cleared|most_at_risk), --repo-scope (tier_1_2|all), and --limit (1-50).",
 				ExitCode:   clierrors.ExitUsageError,
 			}
-		} else {
+		case 404:
+			cliErr = &clierrors.CLIError{
+				Code:       "REPOSITORY_NOT_FOUND",
+				Message:    e.Error(),
+				Suggestion: "Pass --repo as a Konvu slug (github:org/repo), a full repo URL, or a repository id.",
+				ExitCode:   clierrors.ExitNotFound,
+			}
+		default:
 			cliErr = clierrors.NewAPIError(e.Error())
 		}
 	default:
@@ -211,6 +224,7 @@ func init() {
 	remediateListCmd.Flags().String("status", "", "Filter by status (e.g. ready); default shows the whole backlog")
 	remediateListCmd.Flags().String("grouping", "most_cve_cleared", "Plan ranking: recommended, by_dependency, most_cve_cleared, most_at_risk")
 	remediateListCmd.Flags().String("repo-scope", "all", "Repository scope: tier_1_2 or all")
+	remediateListCmd.Flags().String("repo", "", "Filter to one repository (github:org/repo, full URL, or repo id)")
 	remediateListCmd.Flags().Int("limit", 15, "Max plans per kind (1-50)")
 	remediateListCmd.Flags().StringP("output", "o", "", "Output format: json, table, csv")
 	remediateListCmd.Flags().BoolP("quiet", "q", false, "Print only plan ids")
