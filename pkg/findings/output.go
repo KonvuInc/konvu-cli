@@ -18,6 +18,13 @@ type Row = map[string]any
 // columns is used for table and csv; ignored for json.
 // Output goes to cmd.OutOrStdout(), so tests can capture via SetOut.
 func Render(cmd *cobra.Command, rows []Row, columns []string) error {
+	return RenderColumns(cmd, rows, columns, columns)
+}
+
+// RenderColumns is like Render but uses distinct column sets for table
+// (compact) and csv (report-oriented, may carry wide fields like URLs).
+// Both are ignored for json, which dumps every row key.
+func RenderColumns(cmd *cobra.Command, rows []Row, tableColumns, csvColumns []string) error {
 	format, _ := cmd.Flags().GetString("output")
 	w := cmd.OutOrStdout()
 
@@ -26,9 +33,9 @@ func Render(cmd *cobra.Command, rows []Row, columns []string) error {
 		_, err := fmt.Fprintln(w, output.FormatJSON(rows))
 		return err
 	case "table":
-		return renderTable(cmd, rows, columns)
+		return renderTable(cmd, rows, tableColumns)
 	case "csv":
-		return renderCSV(cmd, rows, columns)
+		return renderCSV(cmd, rows, csvColumns)
 	default:
 		return fmt.Errorf("unknown output format: %q (use json, table, or csv)", format)
 	}
