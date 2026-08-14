@@ -29,7 +29,7 @@ ids into 'konvu remediate brief' to get the agent prompt for each:
 
   konvu remediate list --kind sca -q | while read id; do konvu remediate brief "$id"; done
 
-Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
+Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth failed`,
 	Example: `  konvu remediate list
   konvu remediate list --kind sca
   konvu remediate list --repo github:org/repo
@@ -52,13 +52,14 @@ func runRemediateList(cmd *cobra.Command, args []string) error {
 	format := output.DetectOutputFormat(outputFlag)
 
 	kind = strings.ToLower(strings.TrimSpace(kind))
+	repo = strings.TrimSpace(repo)
 	if !validPlanKinds[kind] {
-		handleRemediateListError(usageError(fmt.Sprintf("Invalid --kind %q. Use sca, sast, or all.", kind)), format)
+		handleRemediateListError(usageError(fmt.Sprintf("Invalid --kind %q. Use sca, sast, or all.", kind)), format, repo != "")
 	}
 
 	// grouping, repo-scope and repo are passthrough; the server resolves/validates them.
 	params := map[string]any{"grouping": grouping, "repo_scope": repoScope, "limit": limit}
-	if repo = strings.TrimSpace(repo); repo != "" {
+	if repo != "" {
 		params["repo"] = repo
 	}
 
@@ -67,7 +68,7 @@ func runRemediateList(cmd *cobra.Command, args []string) error {
 
 	data, err := client.Get(remediationPlansPath, params)
 	if err != nil {
-		handleRemediateListError(err, format)
+		handleRemediateListError(err, format, repo != "")
 	}
 
 	items := filterPlans(getSlice(data, "items"), kind, strings.ToLower(strings.TrimSpace(status)))
@@ -178,7 +179,10 @@ func asMaps(items []any) []map[string]any {
 	return out
 }
 
-func handleRemediateListError(err error, format output.OutputFormat) {
+// handleRemediateListError renders the error and exits. repoFiltered gates the
+// 404 → REPOSITORY_NOT_FOUND mapping: only a --repo request treats a 404 as an
+// unknown repository; without it a 404 is just a generic (route/proxy) API error.
+func handleRemediateListError(err error, format output.OutputFormat, repoFiltered bool) {
 	var cliErr *clierrors.CLIError
 	switch e := err.(type) {
 	case *clierrors.CLIError:
@@ -195,11 +199,15 @@ func handleRemediateListError(err error, format output.OutputFormat) {
 				ExitCode:   clierrors.ExitUsageError,
 			}
 		case 404:
-			cliErr = &clierrors.CLIError{
-				Code:       "REPOSITORY_NOT_FOUND",
-				Message:    e.Error(),
-				Suggestion: "Pass --repo as a Konvu slug (github:org/repo), a full repo URL, or a repository id.",
-				ExitCode:   clierrors.ExitNotFound,
+			if repoFiltered {
+				cliErr = &clierrors.CLIError{
+					Code:       "REPOSITORY_NOT_FOUND",
+					Message:    e.Error(),
+					Suggestion: "Pass --repo as a Konvu slug (github:org/repo), a full repo URL, or a repository id.",
+					ExitCode:   clierrors.ExitNotFound,
+				}
+			} else {
+				cliErr = clierrors.NewAPIError(e.Error())
 			}
 		default:
 			cliErr = clierrors.NewAPIError(e.Error())
