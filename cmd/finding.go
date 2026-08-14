@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
+	"github.com/KonvuInc/konvu-cli/pkg/config"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	"github.com/KonvuInc/konvu-cli/pkg/findings"
 	"github.com/KonvuInc/konvu-cli/pkg/mapping"
@@ -25,7 +27,7 @@ var defaultTableColumns = []string{"cve", "dependency", "repository", "assessmen
 
 // defaultCSVColumns is a report-oriented column set: it includes state and dates so
 // a CSV export is usable on its own (the table view stays compact).
-var defaultCSVColumns = []string{"id", "cve", "severity", "dependency", "repository", "state", "first_seen", "has_fix", "assessment", "dismissed_at", "autofix_status", "fix_source"}
+var defaultCSVColumns = []string{"id", "cve", "severity", "dependency", "repository", "state", "first_seen", "has_fix", "assessment", "dismissed_at", "autofix_status", "fix_source", "triage_url"}
 var validCountsGroupBy = map[string]bool{"severity": true, "week": true, "month": true}
 var validListGroupBy = map[string]bool{"repository": true, "dependency": true, "severity": true, "assessment": true}
 
@@ -136,6 +138,25 @@ func parseAssessments(values []string) ([]mapping.AssessmentStatus, error) {
 	return out, nil
 }
 
+// buildTriageURL assembles the web deep-link to a finding's triage page from
+// the dashboard base URL and the finding's identifiers. UUID identifiers are
+// emitted without dashes to match the links the web app generates. Returns ""
+// when any identifier is missing, so callers can omit an incomplete link.
+func buildTriageURL(dashboardURL, manifestID, vulnerabilityID, findingID string) string {
+	if manifestID == "" || vulnerabilityID == "" || findingID == "" {
+		return ""
+	}
+	manifest := strings.ToLower(strings.ReplaceAll(manifestID, "-", ""))
+	finding := strings.ToLower(strings.ReplaceAll(findingID, "-", ""))
+	return fmt.Sprintf(
+		"%s/sca_triage/manifest/%s/%s/%s",
+		strings.TrimRight(dashboardURL, "/"),
+		manifest,
+		url.PathEscape(vulnerabilityID),
+		finding,
+	)
+}
+
 func transformFinding(finding map[string]any) map[string]any {
 	vuln := getMap(finding, "vulnerability")
 	ml := getMap(finding, "manifest_location")
@@ -165,6 +186,9 @@ func transformFinding(finding map[string]any) map[string]any {
 	state := getStr(source, "state")
 	autofixStatus := getStr(autofix, "status")
 
+	manifestID := orDefault(getStr(finding, "manifest_location_id"), getStr(ml, "id"))
+	vulnerabilityID := orDefault(getStr(finding, "vulnerability_id"), getStr(vuln, "id"))
+
 	return map[string]any{
 		"id":                 getStr(finding, "id"),
 		"cve":                cve,
@@ -179,6 +203,7 @@ func transformFinding(finding map[string]any) map[string]any {
 		"state":              state,
 		"source_id":          getStr(source, "identifier"),
 		"scanner":            scannerLabel(source),
+		"triage_url":         buildTriageURL(config.GetDashboardURL(), manifestID, vulnerabilityID, getStr(finding, "id")),
 		// Fields already present in the /sca_findings payload, surfaced here for reporting.
 		"dismissed_at":     getStr(source, "dismissed_at"),
 		"dismissed_reason": getStr(source, "dismissed_reason"),
@@ -387,7 +412,6 @@ func applyWindow(list []map[string]any, offset, limit int) []map[string]any {
 
 // --- finding list ---
 
-
 // orDefault returns s if non-empty, else fallback.
 func orDefault(s, fallback string) string {
 	if s == "" {
@@ -452,4 +476,3 @@ var findingSubmitCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(findingCmd)
 }
-

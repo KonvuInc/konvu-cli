@@ -92,6 +92,32 @@ func TestRuntimeReachabilityText(t *testing.T) {
 	}
 }
 
+func TestBuildTriageURL(t *testing.T) {
+	got := buildTriageURL(
+		"https://app.konvu.com/",
+		"0194dfb0-8fa3-7453-a84f-35b7769a4607",
+		"GHSA-aaaa-bbbb-cccc",
+		"0194dfb0-8fa3-7453-a84f-35b7769a4608",
+	)
+	want := "https://app.konvu.com/sca_triage/manifest/0194dfb08fa37453a84f35b7769a4607/GHSA-aaaa-bbbb-cccc/0194dfb08fa37453a84f35b7769a4608"
+	if got != want {
+		t.Errorf("buildTriageURL()\n got: %s\nwant: %s", got, want)
+	}
+
+	for _, tc := range []struct {
+		name                    string
+		manifest, vuln, finding string
+	}{
+		{"missing manifest", "", "GHSA-x", "fid"},
+		{"missing vuln", "mid", "", "fid"},
+		{"missing finding", "mid", "GHSA-x", ""},
+	} {
+		if u := buildTriageURL("https://app.konvu.com", tc.manifest, tc.vuln, tc.finding); u != "" {
+			t.Errorf("%s: expected empty URL, got %q", tc.name, u)
+		}
+	}
+}
+
 func sampleFindingDetail() map[string]any {
 	return map[string]any{
 		"id":            "fid-1",
