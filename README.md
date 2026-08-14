@@ -318,6 +318,32 @@ konvu autofix <finding-id>
 Terminal job statuses: `succeeded`, `failed`, `merged`, `closed`. Non-terminal:
 `pending`, `running`.
 
+### `konvu remediate list` — See the plans waiting for you
+
+Lists the remediation plans in your backlog — the same plans the dashboard's
+remediation board shows — without needing a plan id. SCA and SAST plans come
+back together; use `--kind` to see just one.
+
+```bash
+# All plans waiting (SCA + SAST), table when interactive / json when piped
+konvu remediate list
+
+# Just SCA (or SAST) plans
+konvu remediate list --kind sca
+konvu remediate list --kind sast
+
+# Only the actionable ones
+konvu remediate list --status ready
+
+# Bare plan ids, ready to pipe into `brief`
+konvu remediate list --kind sca -q | xargs -n1 konvu remediate brief
+```
+
+Flags: `--kind sca|sast|all` (default `all`), `--status` (e.g. `ready`),
+`--grouping` (`recommended|by_dependency|most_cve_cleared|most_at_risk`),
+`--repo-scope` (`tier_1_2|all`), `--limit` (1–50, per kind), `--output/-o`,
+`--quiet/-q`.
+
 ### `konvu remediate brief` — Brief your own coding agent
 
 Fetches one or more remediation plans and prints a ready-to-use agent prompt:
