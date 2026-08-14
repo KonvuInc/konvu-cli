@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
+	"github.com/KonvuInc/konvu-cli/pkg/config"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	"github.com/KonvuInc/konvu-cli/pkg/findings"
 	"github.com/KonvuInc/konvu-cli/pkg/mapping"
@@ -385,7 +386,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 					}
 				}
 				csvData := map[string]any{"findings": flat}
-				cols := []string{groupBy, "id", "cve", "severity", "dependency", "assessment", "state", "fix_source"}
+				cols := []string{groupBy, "id", "cve", "severity", "dependency", "assessment", "state", "fix_source", "triage_url"}
 				if fieldList != nil {
 					cols = append([]string{groupBy}, fieldList...)
 				}
@@ -561,6 +562,8 @@ func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]
 	}
 
 	source := getMap(detail, "source")
+	manifestID := orDefault(getStr(detail, "manifest_location_id"), getStr(ml, "id"))
+	vulnerabilityID := orDefault(getStr(detail, "vulnerability_id"), getStr(vuln, "id"))
 	findingSection := map[string]any{
 		"id":         getStr(detail, "id"),
 		"dependency": getStr(dep, "name"),
@@ -570,6 +573,7 @@ func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]
 		"source_id":  getStr(source, "identifier"),
 		"state":      getStr(source, "state"),
 		"first_seen": getStr(source, "remote_created_at"),
+		"triage_url": buildTriageURL(config.GetDashboardURL(), manifestID, vulnerabilityID, getStr(detail, "id")),
 	}
 
 	vulnSection := map[string]any{
@@ -837,6 +841,9 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 			fmt.Printf("Dependency: %s\n", getStr(f, "dependency"))
 			fmt.Printf("Repository: %s\n", getStr(f, "repository"))
 			fmt.Printf("Manifest:   %s\n", getStr(f, "manifest"))
+			if triageURL := getStr(f, "triage_url"); triageURL != "" {
+				fmt.Printf("Triage URL: %s\n", triageURL)
+			}
 			if scanner := getStr(f, "scanner"); scanner != "" {
 				fmt.Printf("Scanner:    %s\n", scanner)
 			}
