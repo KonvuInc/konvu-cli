@@ -84,6 +84,8 @@ const helpAllFooter = `EXAMPLES
   konvu vuln CVE-2024-1234 --include technical
   konvu metrics --since 90d --include trends --compare previous_period
   konvu dismiss --assessment false-positive --repo org/repo --dry-run
+  konvu remediate list --kind sca
+  konvu remediate list -q | xargs -n1 konvu remediate brief
   konvu remediate abc-123 --wait --timeout 15m
   konvu remediate status abc-123
   konvu inventory
