@@ -250,70 +250,53 @@ func fetchAllFindings(client *api.Client, filterParams map[string]any, sortFlag,
 	}
 }
 
-// dependabotAlertURLRe matches a GitHub Dependabot alert URL, capturing the
-// repository URL and the per-repo alert number, e.g.
-// https://github.com/octo-org/octo-repo/security/dependabot/42
-var dependabotAlertURLRe = regexp.MustCompile(`(?i)^(https?://[^/]+/[^/]+/[^/]+)/security/dependabot/(\d+)/?$`)
+// uuidRe matches a canonical UUID, used only to decide whether a `finding get`
+// argument is already a Konvu finding ID or an external reference to resolve.
+var uuidRe = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
-// dependabotAlertShortRe matches the OWNER/REPO#NUMBER shorthand, e.g.
-// octo-org/octo-repo#42
-var dependabotAlertShortRe = regexp.MustCompile(`^([^\s/]+/[^\s/#]+)#(\d+)$`)
-
-// parseDependabotRef recognizes a GitHub Dependabot alert reference and returns a
-// server-side repo filter (param name + value) that scopes it to a single repo,
-// plus the alert number. It accepts the full alert URL
-// (https://github.com/OWNER/REPO/security/dependabot/N) or the OWNER/REPO#N
-// shorthand. ok is false for anything else, e.g. a Konvu finding UUID.
-func parseDependabotRef(arg string) (repoParam, repoValue, alertNumber string, ok bool) {
-	if m := dependabotAlertURLRe.FindStringSubmatch(arg); m != nil {
-		return "vcs_repository_url", m[1], m[2], true
-	}
-	if m := dependabotAlertShortRe.FindStringSubmatch(arg); m != nil {
-		return "repo_glob", m[1], m[2], true
-	}
-	return "", "", "", false
+// isFindingID reports whether arg is a Konvu finding UUID (vs an external
+// reference like a Dependabot alert URL that the backend must resolve).
+func isFindingID(arg string) bool {
+	return uuidRe.MatchString(arg)
 }
 
-// resolveDependabotFinding maps a Dependabot alert reference to its Konvu finding
-// UUID by querying /sca_findings scoped to the alert number and repo. Alert numbers
-// are per-repo, so the repo filter is what makes the match unique. It returns a
-// clear CLIError when nothing matches or the reference is ambiguous.
-func resolveDependabotFinding(client *api.Client, repoParam, repoValue, alertNumber string) (string, error) {
-	data, err := client.Get("/sca_findings", map[string]any{
-		"dependabot_id": []string{alertNumber},
-		repoParam:       []string{repoValue},
-		"per_page":      2,
-	})
+// resolveFindingReference asks the backend to resolve an external finding
+// reference (e.g. a GitHub Dependabot alert URL or OWNER/REPO#N shorthand) to a
+// Konvu finding ID. All parsing and matching live server-side; the CLI just
+// forwards the raw reference and maps HTTP errors to friendly CLI errors.
+func resolveFindingReference(client *api.Client, reference string) (string, error) {
+	data, err := client.Get("/sca_findings/resolve", map[string]any{"reference": reference})
 	if err != nil {
+		if apiErr, ok := err.(*api.APIError); ok {
+			switch apiErr.StatusCode {
+			case 404:
+				return "", &clierrors.CLIError{
+					Code:       "FINDING_NOT_FOUND",
+					Message:    fmt.Sprintf("No Konvu finding matches %q", reference),
+					Suggestion: "Confirm the repository is onboarded to Konvu and the alert number is correct.",
+					ExitCode:   clierrors.ExitNotFound,
+				}
+			case 409:
+				return "", &clierrors.CLIError{
+					Code:       "FINDING_AMBIGUOUS",
+					Message:    fmt.Sprintf("%q matches multiple findings", reference),
+					Suggestion: "Pass the Konvu finding ID directly.",
+					ExitCode:   clierrors.ExitUsageError,
+				}
+			case 422:
+				return "", &clierrors.CLIError{
+					Code:       "INVALID_REFERENCE",
+					Message:    fmt.Sprintf("%q is not a recognized finding reference", reference),
+					Suggestion: "Pass a Konvu finding ID, a Dependabot alert URL (…/security/dependabot/N), or OWNER/REPO#N.",
+					ExitCode:   clierrors.ExitUsageError,
+				}
+			}
+		}
 		return "", err
 	}
-	items := getSlice(data, "items")
-	switch {
-	case len(items) == 0:
-		return "", &clierrors.CLIError{
-			Code:       "FINDING_NOT_FOUND",
-			Message:    fmt.Sprintf("No Konvu finding matches Dependabot alert %s in %s", alertNumber, repoValue),
-			Suggestion: "Confirm the repository is onboarded to Konvu and the alert number is correct.",
-			ExitCode:   clierrors.ExitNotFound,
-		}
-	case len(items) > 1:
-		// A full URL already pins one repo, so re-passing it can't disambiguate;
-		// only the OWNER/REPO#N shorthand (a glob) is narrowed by giving the URL.
-		suggestion := "Pass the full alert URL (…/security/dependabot/N) to disambiguate."
-		if repoParam == "vcs_repository_url" {
-			suggestion = fmt.Sprintf("Run `konvu finding list --repo %s` and pass the Konvu finding ID directly.", repoValue)
-		}
-		return "", &clierrors.CLIError{
-			Code:       "FINDING_AMBIGUOUS",
-			Message:    fmt.Sprintf("Dependabot alert %s matches %d findings in %s", alertNumber, len(items), repoValue),
-			Suggestion: suggestion,
-			ExitCode:   clierrors.ExitUsageError,
-		}
-	}
-	m, _ := items[0].(map[string]any)
-	id := getStr(m, "id")
+	id := getStr(data, "finding_id")
 	if id == "" {
-		return "", clierrors.NewAPIError("matched finding is missing an id")
+		return "", clierrors.NewAPIError("resolve returned no finding id")
 	}
 	return id, nil
 }

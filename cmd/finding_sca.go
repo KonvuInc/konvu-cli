@@ -69,6 +69,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 		hasFix, _ := cmd.Flags().GetString("has-fix")
 		repo, _ := cmd.Flags().GetString("repo")
 		cve, _ := cmd.Flags().GetString("cve")
+		ghsa, _ := cmd.Flags().GetString("ghsa")
 		dependency, _ := cmd.Flags().GetString("dependency")
 		source, _ := cmd.Flags().GetString("source")
 		sourceID, _ := cmd.Flags().GetString("source-id")
@@ -133,11 +134,19 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 		if cve != "" {
 			filterParams["cve"] = []string{cve}
 		}
+		if ghsa != "" {
+			// Server-side filter accepting GHSA/CVE/OSV advisory identifiers.
+			filterParams["vulnerability_id"] = []string{ghsa}
+		}
 		if dependency != "" {
 			filterParams["dependency_name"] = []string{dependency}
 		}
 		if source != "" {
 			filterParams["source"] = []string{source}
+		}
+		if sourceID != "" {
+			// GitHub Dependabot alert number; resolved server-side.
+			filterParams["dependabot_id"] = []string{sourceID}
 		}
 
 		// Grouping and the client-side dismissed-date filter need the full result
@@ -199,20 +208,6 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 					total = t
 				}
 			}
-		}
-
-		// Client-side source_id filter
-		if sourceID != "" {
-			var filtered []any
-			for _, item := range items {
-				m, _ := item.(map[string]any)
-				src := getMap(m, "source")
-				if getStr(src, "identifier") == sourceID {
-					filtered = append(filtered, item)
-				}
-			}
-			items = filtered
-			total = len(items)
 		}
 
 		// Transform findings
@@ -762,11 +757,12 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 		client := api.NewClient("", "")
 		defer client.Close()
 
-		// A Dependabot alert reference (full alert URL or OWNER/REPO#N) resolves to
-		// its Konvu finding UUID first; a plain finding ID falls through unchanged.
-		if repoParam, repoValue, alertNumber, ok := parseDependabotRef(findingID); ok {
-			fmt.Fprintf(os.Stderr, "Resolving Dependabot alert %s in %s...\n", alertNumber, repoValue)
-			resolved, rerr := resolveDependabotFinding(client, repoParam, repoValue, alertNumber)
+		// A non-UUID argument (e.g. a Dependabot alert URL or OWNER/REPO#N) is an
+		// external reference the backend resolves to a Konvu finding ID; a plain
+		// finding ID falls through unchanged.
+		if !isFindingID(findingID) {
+			fmt.Fprintf(os.Stderr, "Resolving %s...\n", findingID)
+			resolved, rerr := resolveFindingReference(client, findingID)
 			if rerr != nil {
 				handleFindingError(rerr, format)
 				return nil
@@ -1241,9 +1237,10 @@ func init() {
 	scaListCmd.Flags().String("has-fix", "", "Filter: fixed, no_fix")
 	scaListCmd.Flags().StringP("repo", "r", "", "Filter by repository URL or name")
 	scaListCmd.Flags().String("cve", "", "Filter by CVE ID")
+	scaListCmd.Flags().String("ghsa", "", "Filter by advisory ID (GHSA, CVE, or OSV)")
 	scaListCmd.Flags().StringP("dependency", "d", "", "Filter by dependency name")
 	scaListCmd.Flags().String("source", "", "Filter by scanner source: snyk, dependabot, or a label submitted via 'finding submit'")
-	scaListCmd.Flags().String("source-id", "", "Filter by external source identifier")
+	scaListCmd.Flags().String("source-id", "", "Filter by GitHub Dependabot alert number")
 	scaListCmd.Flags().String("sort", "recommendation", "Sort: severity,recommendation,first_seen_at,updated_at,dependency_name,cve")
 	scaListCmd.Flags().String("order", "desc", "Order: asc,desc")
 	scaListCmd.Flags().IntP("limit", "n", 50, "Maximum findings to return")

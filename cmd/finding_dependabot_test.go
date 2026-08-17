@@ -2,57 +2,27 @@ package cmd
 
 import "testing"
 
-func TestParseDependabotRef(t *testing.T) {
+// isFindingID decides whether `finding get` treats its argument as a Konvu
+// finding ID (fetched directly) or an external reference (resolved server-side).
+func TestIsFindingID(t *testing.T) {
 	tests := []struct {
-		name      string
-		arg       string
-		wantParam string
-		wantValue string
-		wantNum   string
-		wantOK    bool
+		name string
+		arg  string
+		want bool
 	}{
-		{
-			name:      "full alert url",
-			arg:       "https://github.com/octo-org/octo-repo/security/dependabot/42",
-			wantParam: "vcs_repository_url",
-			wantValue: "https://github.com/octo-org/octo-repo",
-			wantNum:   "42",
-			wantOK:    true,
-		},
-		{
-			name:      "url with trailing slash",
-			arg:       "https://github.com/octo-org/octo-repo/security/dependabot/312/",
-			wantParam: "vcs_repository_url",
-			wantValue: "https://github.com/octo-org/octo-repo",
-			wantNum:   "312",
-			wantOK:    true,
-		},
-		{
-			name:      "owner/repo#n shorthand",
-			arg:       "octo-org/octo-repo#42",
-			wantParam: "repo_glob",
-			wantValue: "octo-org/octo-repo",
-			wantNum:   "42",
-			wantOK:    true,
-		},
-		{name: "konvu uuid is not a dependabot ref", arg: "3f2a1c9e-1b2d-4c5e-8a9b-0d1e2f3a4b5c", wantOK: false},
-		{name: "bare number is ambiguous, not a ref", arg: "312", wantOK: false},
-		{name: "ghsa id is not a dependabot ref", arg: "GHSA-abcd-1234-wxyz", wantOK: false},
-		{name: "code-scanning url is not dependabot", arg: "https://github.com/octo-org/octo-repo/security/code-scanning/42", wantOK: false},
-		{name: "empty string", arg: "", wantOK: false},
+		{"canonical uuid", "3f2a1c9e-1b2d-4c5e-8a9b-0d1e2f3a4b5c", true},
+		{"uppercase uuid", "3F2A1C9E-1B2D-4C5E-8A9B-0D1E2F3A4B5C", true},
+		{"dependabot alert url", "https://github.com/octo-org/octo-repo/security/dependabot/42", false},
+		{"owner/repo#n shorthand", "octo-org/octo-repo#42", false},
+		{"bare number", "312", false},
+		{"ghsa id", "GHSA-abcd-1234-wxyz", false},
+		{"empty", "", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			param, value, num, ok := parseDependabotRef(tt.arg)
-			if ok != tt.wantOK {
-				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
-			}
-			if !tt.wantOK {
-				return
-			}
-			if param != tt.wantParam || value != tt.wantValue || num != tt.wantNum {
-				t.Errorf("got (%q, %q, %q), want (%q, %q, %q)", param, value, num, tt.wantParam, tt.wantValue, tt.wantNum)
+			if got := isFindingID(tt.arg); got != tt.want {
+				t.Errorf("isFindingID(%q) = %v, want %v", tt.arg, got, tt.want)
 			}
 		})
 	}
