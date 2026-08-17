@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -164,6 +165,7 @@ func transformFinding(finding map[string]any) map[string]any {
 
 	state := getStr(source, "state")
 	autofixStatus := getStr(autofix, "status")
+	dismissibleFromKonvu, _ := getBool(source, "dismissible_from_konvu")
 
 	return map[string]any{
 		"id":                 getStr(finding, "id"),
@@ -181,15 +183,40 @@ func transformFinding(finding map[string]any) map[string]any {
 		"scanner":            scannerLabel(source),
 		"triage_url":         getStr(finding, "triage_url"),
 		// Fields already present in the /sca_findings payload, surfaced here for reporting.
-		"dismissed_at":     getStr(source, "dismissed_at"),
-		"dismissed_reason": getStr(source, "dismissed_reason"),
-		"last_assessed_at": getStr(assess, "last_assessed_at"),
-		"risk_tier":        getStr(risk, "tier"),
-		"autofix_status":   autofixStatus,
-		"autofix_pr_url":   getStr(autofix, "pr_url"),
+		"dismissed_at":           getStr(source, "dismissed_at"),
+		"dismissed_reason":       getStr(source, "dismissed_reason"),
+		"dismissed_comment":      getStr(source, "dismissed_comment"),
+		"dismissible_from_konvu": dismissibleFromKonvu,
+		"last_assessed_at":       getStr(assess, "last_assessed_at"),
+		"risk_tier":              getStr(risk, "tier"),
+		"autofix_status":         autofixStatus,
+		"autofix_pr_url":         getStr(autofix, "pr_url"),
 		// Heuristic fix attribution over fields already in the payload. Empty unless fixed.
 		"fix_source": deriveFixSource(state, autofixStatus),
 	}
+}
+
+func parseFindingListFields(fields string) ([]string, error) {
+	if strings.TrimSpace(fields) == "" {
+		return nil, nil
+	}
+
+	valid := transformFinding(map[string]any{})
+	validNames := make([]string, 0, len(valid))
+	for name := range valid {
+		validNames = append(validNames, name)
+	}
+	sort.Strings(validNames)
+
+	fieldList := make([]string, 0)
+	for _, field := range strings.Split(fields, ",") {
+		field = strings.TrimSpace(field)
+		if _, ok := valid[field]; !ok {
+			return nil, fmt.Errorf("invalid field %q (valid: %s)", field, strings.Join(validNames, ", "))
+		}
+		fieldList = append(fieldList, field)
+	}
+	return fieldList, nil
 }
 
 // deriveFixSource labels how a fixed finding was remediated, using only fields

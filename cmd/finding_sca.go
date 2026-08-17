@@ -83,6 +83,11 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 		fields, _ := cmd.Flags().GetString("fields")
 		dismissedSince, _ := cmd.Flags().GetString("dismissed-since")
 		dismissedBefore, _ := cmd.Flags().GetString("dismissed-before")
+		fieldList, fieldsErr := parseFindingListFields(fields)
+		if fieldsErr != nil {
+			fmt.Fprintln(os.Stderr, fieldsErr)
+			os.Exit(clierrors.ExitUsageError)
+		}
 
 		// Validate group-by
 		if groupBy != "" && !validListGroupBy[groupBy] {
@@ -276,14 +281,6 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 		}
 
 		showing := len(transformed)
-
-		// Field filtering
-		var fieldList []string
-		if fields != "" {
-			for _, f := range strings.Split(fields, ",") {
-				fieldList = append(fieldList, strings.TrimSpace(f))
-			}
-		}
 
 		if groupBy != "" {
 			// Group findings by field
