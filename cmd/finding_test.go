@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -289,5 +291,29 @@ func TestParseFindingListFields(t *testing.T) {
 
 	if _, err := parseFindingListFields("cve,does_not_exist"); err == nil {
 		t.Fatal("unknown field should return an error")
+	}
+}
+
+func TestSCAListRejectsUnknownFieldsBeforeEarlyReturns(t *testing.T) {
+	if mode := os.Getenv("KONVU_TEST_INVALID_LIST_FIELDS_MODE"); mode != "" {
+		_ = scaListCmd.Flags().Set("fields", "does_not_exist")
+		_ = scaListCmd.Flags().Set(mode, "true")
+		_ = scaListCmd.RunE(scaListCmd, nil)
+		os.Exit(0)
+	}
+
+	for _, mode := range []string{"count", "quiet"} {
+		t.Run(mode, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestSCAListRejectsUnknownFieldsBeforeEarlyReturns$")
+			cmd.Env = append(os.Environ(), "KONVU_TEST_INVALID_LIST_FIELDS_MODE="+mode)
+			out, err := cmd.CombinedOutput()
+			exitErr, ok := err.(*exec.ExitError)
+			if !ok || exitErr.ExitCode() != 2 {
+				t.Fatalf("exit = %v, output = %s", err, out)
+			}
+			if !strings.Contains(string(out), `invalid field "does_not_exist"`) {
+				t.Fatalf("output = %s", out)
+			}
+		})
 	}
 }
