@@ -277,9 +277,11 @@ func fetchAllFindings(client *api.Client, filterParams map[string]any, sortFlag,
 	}
 }
 
-// uuidRe matches a canonical UUID, used only to decide whether a `finding get`
-// argument is already a Konvu finding ID or an external reference to resolve.
-var uuidRe = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+// uuidRe matches a UUID with or without dashes, used only to decide whether a
+// `finding get` argument is already a Konvu finding ID or an external reference
+// to resolve. The API returns finding ids as bare 32-hex (no dashes), so both
+// forms must pass or ids copied from other commands' output stop resolving.
+var uuidRe = regexp.MustCompile(`(?i)^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})$`)
 
 // isFindingID reports whether arg is a Konvu finding UUID (vs an external
 // reference like a Dependabot alert URL that the backend must resolve).
