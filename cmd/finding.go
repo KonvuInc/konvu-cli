@@ -260,43 +260,48 @@ func isFindingID(arg string) bool {
 	return uuidRe.MatchString(arg)
 }
 
-// resolveFindingReference asks the backend to resolve an external finding
-// reference (e.g. a GitHub Dependabot alert URL or OWNER/REPO#N shorthand) to a
-// Konvu finding ID. All parsing and matching live server-side; the CLI just
-// forwards the raw reference and maps HTTP errors to friendly CLI errors.
+// resolveFindingReference resolves an external finding reference (e.g. a GitHub
+// Dependabot alert URL or OWNER/REPO#N shorthand) to a Konvu finding ID by
+// forwarding it to the backend's `dependabot_alert` filter. All parsing and
+// matching live server-side; the CLI just forwards the raw reference, expects a
+// single match, and maps errors to friendly CLI errors.
 func resolveFindingReference(client *api.Client, reference string) (string, error) {
-	data, err := client.Get("/sca_findings/resolve", map[string]any{"reference": reference})
+	data, err := client.Get("/sca_findings", map[string]any{
+		"dependabot_alert": reference,
+		"per_page":         2,
+	})
 	if err != nil {
-		if apiErr, ok := err.(*api.APIError); ok {
-			switch apiErr.StatusCode {
-			case 404:
-				return "", &clierrors.CLIError{
-					Code:       "FINDING_NOT_FOUND",
-					Message:    fmt.Sprintf("No Konvu finding matches %q", reference),
-					Suggestion: "Confirm the repository is onboarded to Konvu and the alert number is correct.",
-					ExitCode:   clierrors.ExitNotFound,
-				}
-			case 409:
-				return "", &clierrors.CLIError{
-					Code:       "FINDING_AMBIGUOUS",
-					Message:    fmt.Sprintf("%q matches multiple findings", reference),
-					Suggestion: "Pass the Konvu finding ID directly.",
-					ExitCode:   clierrors.ExitUsageError,
-				}
-			case 422:
-				return "", &clierrors.CLIError{
-					Code:       "INVALID_REFERENCE",
-					Message:    fmt.Sprintf("%q is not a recognized finding reference", reference),
-					Suggestion: "Pass a Konvu finding ID, a Dependabot alert URL (…/security/dependabot/N), or OWNER/REPO#N.",
-					ExitCode:   clierrors.ExitUsageError,
-				}
+		if apiErr, ok := err.(*api.APIError); ok && apiErr.StatusCode == 422 {
+			return "", &clierrors.CLIError{
+				Code:       "INVALID_REFERENCE",
+				Message:    fmt.Sprintf("%q is not a recognized finding reference", reference),
+				Suggestion: "Pass a Konvu finding ID, a Dependabot alert URL (…/security/dependabot/N), or OWNER/REPO#N.",
+				ExitCode:   clierrors.ExitUsageError,
 			}
 		}
 		return "", err
 	}
-	id := getStr(data, "finding_id")
+	items := getSlice(data, "items")
+	switch {
+	case len(items) == 0:
+		return "", &clierrors.CLIError{
+			Code:       "FINDING_NOT_FOUND",
+			Message:    fmt.Sprintf("No Konvu finding matches %q", reference),
+			Suggestion: "Confirm the repository is onboarded to Konvu and the alert number is correct.",
+			ExitCode:   clierrors.ExitNotFound,
+		}
+	case len(items) > 1:
+		return "", &clierrors.CLIError{
+			Code:       "FINDING_AMBIGUOUS",
+			Message:    fmt.Sprintf("%q matches multiple findings", reference),
+			Suggestion: "Pass the Konvu finding ID directly.",
+			ExitCode:   clierrors.ExitUsageError,
+		}
+	}
+	m, _ := items[0].(map[string]any)
+	id := getStr(m, "id")
 	if id == "" {
-		return "", clierrors.NewAPIError("resolve returned no finding id")
+		return "", clierrors.NewAPIError("resolved finding has no id")
 	}
 	return id, nil
 }
