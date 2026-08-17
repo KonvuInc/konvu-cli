@@ -297,10 +297,16 @@ func resolveDependabotFinding(client *api.Client, repoParam, repoValue, alertNum
 			ExitCode:   clierrors.ExitNotFound,
 		}
 	case len(items) > 1:
+		// A full URL already pins one repo, so re-passing it can't disambiguate;
+		// only the OWNER/REPO#N shorthand (a glob) is narrowed by giving the URL.
+		suggestion := "Pass the full alert URL (…/security/dependabot/N) to disambiguate."
+		if repoParam == "vcs_repository_url" {
+			suggestion = fmt.Sprintf("Run `konvu finding list --repo %s` and pass the Konvu finding ID directly.", repoValue)
+		}
 		return "", &clierrors.CLIError{
 			Code:       "FINDING_AMBIGUOUS",
 			Message:    fmt.Sprintf("Dependabot alert %s matches %d findings in %s", alertNumber, len(items), repoValue),
-			Suggestion: "Pass the full alert URL (…/security/dependabot/N) to disambiguate.",
+			Suggestion: suggestion,
 			ExitCode:   clierrors.ExitUsageError,
 		}
 	}
