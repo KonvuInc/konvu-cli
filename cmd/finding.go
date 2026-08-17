@@ -250,6 +250,62 @@ func fetchAllFindings(client *api.Client, filterParams map[string]any, sortFlag,
 	}
 }
 
+// uuidRe matches a canonical UUID, used only to decide whether a `finding get`
+// argument is already a Konvu finding ID or an external reference to resolve.
+var uuidRe = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// isFindingID reports whether arg is a Konvu finding UUID (vs an external
+// reference like a Dependabot alert URL that the backend must resolve).
+func isFindingID(arg string) bool {
+	return uuidRe.MatchString(arg)
+}
+
+// resolveFindingReference resolves an external finding reference (e.g. a GitHub
+// Dependabot alert URL or OWNER/REPO#N shorthand) to a Konvu finding ID by
+// forwarding it to the backend's `dependabot_alert` filter. All parsing and
+// matching live server-side; the CLI just forwards the raw reference, expects a
+// single match, and maps errors to friendly CLI errors.
+func resolveFindingReference(client *api.Client, reference string) (string, error) {
+	data, err := client.Get("/sca_findings", map[string]any{
+		"dependabot_alert": reference,
+		"per_page":         2,
+	})
+	if err != nil {
+		if apiErr, ok := err.(*api.APIError); ok && apiErr.StatusCode == 422 {
+			return "", &clierrors.CLIError{
+				Code:       "INVALID_REFERENCE",
+				Message:    fmt.Sprintf("%q is not a recognized finding reference", reference),
+				Suggestion: "Pass a Konvu finding ID, a Dependabot alert URL (…/security/dependabot/N), or OWNER/REPO#N.",
+				ExitCode:   clierrors.ExitUsageError,
+			}
+		}
+		return "", err
+	}
+	items := getSlice(data, "items")
+	switch {
+	case len(items) == 0:
+		return "", &clierrors.CLIError{
+			Code:       "FINDING_NOT_FOUND",
+			Message:    fmt.Sprintf("No Konvu finding matches %q", reference),
+			Suggestion: "Confirm the repository is onboarded to Konvu and the alert number is correct.",
+			ExitCode:   clierrors.ExitNotFound,
+		}
+	case len(items) > 1:
+		return "", &clierrors.CLIError{
+			Code:       "FINDING_AMBIGUOUS",
+			Message:    fmt.Sprintf("%q matches multiple findings", reference),
+			Suggestion: "Pass the Konvu finding ID directly.",
+			ExitCode:   clierrors.ExitUsageError,
+		}
+	}
+	m, _ := items[0].(map[string]any)
+	id := getStr(m, "id")
+	if id == "" {
+		return "", clierrors.NewAPIError("resolved finding has no id")
+	}
+	return id, nil
+}
+
 func computeAssessmentCounts(client *api.Client, baseParams map[string]any, statuses []mapping.AssessmentStatus) map[string]int {
 	counts := make(map[string]int)
 	for _, status := range statuses {
@@ -424,8 +480,9 @@ var findingListCmd = &cobra.Command{
 }
 
 var findingGetCmd = &cobra.Command{
-	Use:   "get [finding-id]",
-	Short: "Get an SCA finding (alias for `finding sca get`)",
+	Use:   "get [finding-id | dependabot-alert-url]",
+	Short: "Get an SCA finding by Konvu ID or Dependabot alert (alias for `finding sca get`)",
+	Long:  "Backward-compatible alias for `konvu finding sca get`. See that command for full documentation.",
 	Args:  cobra.ExactArgs(1),
 	RunE:  func(cmd *cobra.Command, args []string) error { return scaGetCmd.RunE(cmd, args) },
 }
