@@ -250,6 +250,68 @@ func fetchAllFindings(client *api.Client, filterParams map[string]any, sortFlag,
 	}
 }
 
+// dependabotAlertURLRe matches a GitHub Dependabot alert URL, capturing the
+// repository URL and the per-repo alert number, e.g.
+// https://github.com/octo-org/octo-repo/security/dependabot/42
+var dependabotAlertURLRe = regexp.MustCompile(`(?i)^(https?://[^/]+/[^/]+/[^/]+)/security/dependabot/(\d+)/?$`)
+
+// dependabotAlertShortRe matches the OWNER/REPO#NUMBER shorthand, e.g.
+// octo-org/octo-repo#42
+var dependabotAlertShortRe = regexp.MustCompile(`^([^\s/]+/[^\s/#]+)#(\d+)$`)
+
+// parseDependabotRef recognizes a GitHub Dependabot alert reference and returns a
+// server-side repo filter (param name + value) that scopes it to a single repo,
+// plus the alert number. It accepts the full alert URL
+// (https://github.com/OWNER/REPO/security/dependabot/N) or the OWNER/REPO#N
+// shorthand. ok is false for anything else, e.g. a Konvu finding UUID.
+func parseDependabotRef(arg string) (repoParam, repoValue, alertNumber string, ok bool) {
+	if m := dependabotAlertURLRe.FindStringSubmatch(arg); m != nil {
+		return "vcs_repository_url", m[1], m[2], true
+	}
+	if m := dependabotAlertShortRe.FindStringSubmatch(arg); m != nil {
+		return "repo_glob", m[1], m[2], true
+	}
+	return "", "", "", false
+}
+
+// resolveDependabotFinding maps a Dependabot alert reference to its Konvu finding
+// UUID by querying /sca_findings scoped to the alert number and repo. Alert numbers
+// are per-repo, so the repo filter is what makes the match unique. It returns a
+// clear CLIError when nothing matches or the reference is ambiguous.
+func resolveDependabotFinding(client *api.Client, repoParam, repoValue, alertNumber string) (string, error) {
+	data, err := client.Get("/sca_findings", map[string]any{
+		"dependabot_id": []string{alertNumber},
+		repoParam:       []string{repoValue},
+		"per_page":      2,
+	})
+	if err != nil {
+		return "", err
+	}
+	items := getSlice(data, "items")
+	switch {
+	case len(items) == 0:
+		return "", &clierrors.CLIError{
+			Code:       "FINDING_NOT_FOUND",
+			Message:    fmt.Sprintf("No Konvu finding matches Dependabot alert %s in %s", alertNumber, repoValue),
+			Suggestion: "Confirm the repository is onboarded to Konvu and the alert number is correct.",
+			ExitCode:   clierrors.ExitNotFound,
+		}
+	case len(items) > 1:
+		return "", &clierrors.CLIError{
+			Code:       "FINDING_AMBIGUOUS",
+			Message:    fmt.Sprintf("Dependabot alert %s matches %d findings in %s", alertNumber, len(items), repoValue),
+			Suggestion: "Pass the full alert URL (…/security/dependabot/N) to disambiguate.",
+			ExitCode:   clierrors.ExitUsageError,
+		}
+	}
+	m, _ := items[0].(map[string]any)
+	id := getStr(m, "id")
+	if id == "" {
+		return "", clierrors.NewAPIError("matched finding is missing an id")
+	}
+	return id, nil
+}
+
 func computeAssessmentCounts(client *api.Client, baseParams map[string]any, statuses []mapping.AssessmentStatus) map[string]int {
 	counts := make(map[string]int)
 	for _, status := range statuses {
@@ -424,8 +486,9 @@ var findingListCmd = &cobra.Command{
 }
 
 var findingGetCmd = &cobra.Command{
-	Use:   "get [finding-id]",
-	Short: "Get an SCA finding (alias for `finding sca get`)",
+	Use:   "get [finding-id | dependabot-alert-url]",
+	Short: "Get an SCA finding by Konvu ID or Dependabot alert (alias for `finding sca get`)",
+	Long:  "Backward-compatible alias for `konvu finding sca get`. See that command for full documentation.",
 	Args:  cobra.ExactArgs(1),
 	RunE:  func(cmd *cobra.Command, args []string) error { return scaGetCmd.RunE(cmd, args) },
 }

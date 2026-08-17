@@ -705,13 +705,24 @@ func writeIndentedLines(b *strings.Builder, indent, text string) {
 }
 
 var scaGetCmd = &cobra.Command{
-	Use:   "get [finding-id]",
+	Use:   "get [finding-id | dependabot-alert-url]",
 	Short: "Get detailed information about a finding",
 	Long: `Get detailed information about a finding.
+
+The argument is a Konvu finding ID, or a GitHub Dependabot alert reference —
+either the full alert URL (.../security/dependabot/N) or the OWNER/REPO#N
+shorthand — which is resolved to the matching Konvu finding. This lets you look
+Konvu up by an identifier carried over from another tool.
 
 Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 	Example: `  # Basic finding detail
   konvu finding get abc-123
+
+  # By GitHub Dependabot alert URL (match an alert across tools)
+  konvu finding get https://github.com/octo-org/octo-repo/security/dependabot/42
+
+  # Or the OWNER/REPO#N shorthand
+  konvu finding get octo-org/octo-repo#42
 
   # Include evidence (exploitability checklist, reachability)
   konvu finding get abc-123 --include evidence
@@ -750,6 +761,18 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 
 		client := api.NewClient("", "")
 		defer client.Close()
+
+		// A Dependabot alert reference (full alert URL or OWNER/REPO#N) resolves to
+		// its Konvu finding UUID first; a plain finding ID falls through unchanged.
+		if repoParam, repoValue, alertNumber, ok := parseDependabotRef(findingID); ok {
+			fmt.Fprintf(os.Stderr, "Resolving Dependabot alert %s in %s...\n", alertNumber, repoValue)
+			resolved, rerr := resolveDependabotFinding(client, repoParam, repoValue, alertNumber)
+			if rerr != nil {
+				handleFindingError(rerr, format)
+				return nil
+			}
+			findingID = resolved
+		}
 
 		fmt.Fprintf(os.Stderr, "Fetching finding %s...\n", findingID)
 
