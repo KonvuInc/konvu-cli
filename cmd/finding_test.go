@@ -261,3 +261,33 @@ func TestTransformFindingScanner(t *testing.T) {
 		}
 	}
 }
+
+func TestTransformFindingDismissalFields(t *testing.T) {
+	got := transformFinding(map[string]any{
+		"source": map[string]any{
+			"dismissed_comment":      "Tracked in SEC-1234",
+			"dismissible_from_konvu": true,
+		},
+	})
+
+	if getStr(got, "dismissed_comment") != "Tracked in SEC-1234" {
+		t.Errorf("dismissed_comment = %q", getStr(got, "dismissed_comment"))
+	}
+	if dismissible, _ := getBool(got, "dismissible_from_konvu"); !dismissible {
+		t.Error("dismissible_from_konvu = false, want true")
+	}
+}
+
+func TestParseFindingListFields(t *testing.T) {
+	fields, err := parseFindingListFields("cve, dismissed_comment, dismissible_from_konvu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fields) != 3 || fields[1] != "dismissed_comment" || fields[2] != "dismissible_from_konvu" {
+		t.Fatalf("fields = %#v", fields)
+	}
+
+	if _, err := parseFindingListFields("cve,does_not_exist"); err == nil {
+		t.Fatal("unknown field should return an error")
+	}
+}
