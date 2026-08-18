@@ -55,6 +55,9 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
   # Filter by scanner source
   konvu finding list --source snyk
 
+  # By GitHub Dependabot alert (URL or node id)
+  konvu finding list --dependabot-alert RVA_kwDOAGqid88AAAABngIBDw
+
   # Pipe finding IDs to detail
   konvu finding list --assessment exploitable -q | xargs -I {} konvu finding get {}`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -72,7 +75,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 		ghsa, _ := cmd.Flags().GetString("ghsa")
 		dependency, _ := cmd.Flags().GetString("dependency")
 		source, _ := cmd.Flags().GetString("source")
-		sourceID, _ := cmd.Flags().GetString("source-id")
+		dependabotAlert, _ := cmd.Flags().GetString("dependabot-alert")
 		sortFlag, _ := cmd.Flags().GetString("sort")
 		order, _ := cmd.Flags().GetString("order")
 		limit, _ := cmd.Flags().GetInt("limit")
@@ -149,9 +152,9 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 		if source != "" {
 			filterParams["source"] = []string{source}
 		}
-		if sourceID != "" {
-			// GitHub Dependabot alert number; resolved server-side.
-			filterParams["dependabot_id"] = []string{sourceID}
+		if dependabotAlert != "" {
+			// A Dependabot alert URL or node id (RVA_...); parsed server-side.
+			filterParams["dependabot_alert"] = dependabotAlert
 		}
 
 		// Grouping and the client-side dismissed-date filter need the full result
@@ -1237,7 +1240,7 @@ func init() {
 	scaListCmd.Flags().String("ghsa", "", "Filter by advisory ID (GHSA, CVE, or OSV)")
 	scaListCmd.Flags().StringP("dependency", "d", "", "Filter by dependency name")
 	scaListCmd.Flags().String("source", "", "Filter by scanner source: snyk, dependabot, or a label submitted via 'finding submit'")
-	scaListCmd.Flags().String("source-id", "", "Filter by GitHub Dependabot alert number")
+	scaListCmd.Flags().String("dependabot-alert", "", "Filter by a GitHub Dependabot alert URL or node id (RVA_...)")
 	scaListCmd.Flags().String("sort", "recommendation", "Sort: severity,recommendation,first_seen_at,updated_at,dependency_name,cve")
 	scaListCmd.Flags().String("order", "desc", "Order: asc,desc")
 	scaListCmd.Flags().IntP("limit", "n", 50, "Maximum findings to return")
