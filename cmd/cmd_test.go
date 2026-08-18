@@ -23,7 +23,7 @@ func TestRootCommandHasSubcommands(t *testing.T) {
 
 func TestFindingListFlags(t *testing.T) {
 	flags := []string{"since", "until", "severity", "assessment", "state", "has-fix",
-		"repo", "cve", "dependency", "source", "source-id", "sort", "order",
+		"repo", "cve", "dependency", "source", "dependabot-alert", "sort", "order",
 		"limit", "offset", "output", "quiet", "count", "group-by", "fields",
 		"dismissed-since", "dismissed-before"}
 	for _, flag := range flags {
