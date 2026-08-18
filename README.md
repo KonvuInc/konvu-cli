@@ -166,7 +166,7 @@ konvu finding list --source snyk --assessment exploitable
 konvu finding list --assessment exploitable -q | xargs -I {} konvu finding get {}
 ```
 
-**Filters:** `--severity`, `--assessment`, `--state`, `--has-fix`, `--repo`, `--cve`, `--dependency`, `--source`, `--source-id`, `--since`, `--until`
+**Filters:** `--severity`, `--assessment`, `--state`, `--has-fix`, `--repo`, `--cve`, `--dependency`, `--source`, `--dependabot-alert`, `--since`, `--until`
 
 **Grouping:** `--group-by repository|dependency|severity|assessment`
 
