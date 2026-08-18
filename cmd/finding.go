@@ -289,8 +289,8 @@ func isFindingID(arg string) bool {
 	return uuidRe.MatchString(arg)
 }
 
-// resolveFindingReference resolves an external finding reference (e.g. a GitHub
-// Dependabot alert URL or OWNER/REPO#N shorthand) to a Konvu finding ID by
+// resolveFindingReference resolves an external finding reference (a GitHub
+// Dependabot alert URL or its GraphQL node id) to a Konvu finding ID by
 // forwarding it to the backend's `dependabot_alert` filter. All parsing and
 // matching live server-side; the CLI just forwards the raw reference, expects a
 // single match, and maps errors to friendly CLI errors.
@@ -304,7 +304,7 @@ func resolveFindingReference(client *api.Client, reference string) (string, erro
 			return "", &clierrors.CLIError{
 				Code:       "INVALID_REFERENCE",
 				Message:    fmt.Sprintf("%q is not a recognized finding reference", reference),
-				Suggestion: "Pass a Konvu finding ID, a Dependabot alert URL (…/security/dependabot/N), or OWNER/REPO#N.",
+				Suggestion: "Pass a Konvu finding ID, a Dependabot alert URL (…/security/dependabot/N), or its GraphQL node id (RVA_…).",
 				ExitCode:   clierrors.ExitUsageError,
 			}
 		}

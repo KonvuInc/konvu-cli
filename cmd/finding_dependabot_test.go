@@ -17,7 +17,7 @@ func TestIsFindingID(t *testing.T) {
 		{"31 hex chars", "01a011cc09717b42b2431f9eb99d98f", false},
 		{"33 hex chars", "01a011cc09717b42b2431f9eb99d98fc0", false},
 		{"dependabot alert url", "https://github.com/octo-org/octo-repo/security/dependabot/42", false},
-		{"owner/repo#n shorthand", "octo-org/octo-repo#42", false},
+		{"graphql node id", "RVA_kwDOAGqid88AAAABngIBDw", false},
 		{"bare number", "312", false},
 		{"ghsa id", "GHSA-abcd-1234-wxyz", false},
 		{"empty", "", false},

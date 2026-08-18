@@ -702,8 +702,8 @@ var scaGetCmd = &cobra.Command{
 	Long: `Get detailed information about a finding.
 
 The argument is a Konvu finding ID, or a GitHub Dependabot alert reference —
-either the full alert URL (.../security/dependabot/N) or the OWNER/REPO#N
-shorthand — which is resolved to the matching Konvu finding. This lets you look
+the full alert URL (.../security/dependabot/N) or its GraphQL node id
+(RVA_...) — which is resolved to the matching Konvu finding. This lets you look
 Konvu up by an identifier carried over from another tool.
 
 Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
@@ -713,8 +713,8 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
   # By GitHub Dependabot alert URL (match an alert across tools)
   konvu finding get https://github.com/octo-org/octo-repo/security/dependabot/42
 
-  # Or the OWNER/REPO#N shorthand
-  konvu finding get octo-org/octo-repo#42
+  # Or by the alert's GraphQL node id
+  konvu finding get RVA_kwDOAGqid88AAAABngIBDw
 
   # Include evidence (exploitability checklist, reachability)
   konvu finding get abc-123 --include evidence
@@ -754,9 +754,9 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 		client := api.NewClient("", "")
 		defer client.Close()
 
-		// A non-UUID argument (e.g. a Dependabot alert URL or OWNER/REPO#N) is an
-		// external reference the backend resolves to a Konvu finding ID; a plain
-		// finding ID falls through unchanged.
+		// A non-UUID argument (a Dependabot alert URL or node id) is an external
+		// reference the backend resolves to a Konvu finding ID; a plain finding
+		// ID falls through unchanged.
 		if !isFindingID(findingID) {
 			fmt.Fprintf(os.Stderr, "Resolving %s...\n", findingID)
 			resolved, rerr := resolveFindingReference(client, findingID)
