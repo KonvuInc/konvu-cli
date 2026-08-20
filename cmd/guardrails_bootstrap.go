@@ -336,6 +336,13 @@ func backupGuardrailsCredentials() (restore func(), err error) {
 		return nil, err
 	}
 	previous, readErr := os.ReadFile(path)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		// Existed but couldn't be read for some other reason (permissions, a
+		// transient I/O error) -- we can't tell whether there's something
+		// real to preserve, so refuse rather than risk treating it as absent
+		// and having restore() delete it.
+		return nil, clierrors.NewAPIError(fmt.Sprintf("could not back up %s: %v", path, readErr))
+	}
 	return func() {
 		var restoreErr error
 		if readErr == nil {
