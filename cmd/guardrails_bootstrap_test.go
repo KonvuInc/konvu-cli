@@ -45,8 +45,6 @@ func TestGuardrailsTargetTripleFor(t *testing.T) {
 }
 
 func TestGuardrailsArchiveName(t *testing.T) {
-	// Confirms archives are named from the Cargo *package* name
-	// ("guardrails-cli"), not the [[bin]] name ("guardrails").
 	got := guardrailsArchiveName("aarch64-apple-darwin")
 	want := "guardrails-cli-aarch64-apple-darwin.tar.xz"
 	if got != want {
@@ -63,10 +61,9 @@ func TestWriteGuardrailsCredentials(t *testing.T) {
 		t.Fatalf("guardrailsCredentialsPath: %v", err)
 	}
 
-	// Pre-seed a stale Azure-shaped file. The provider on the Rust side is
-	// picked by presence of an "endpoint" line, so a leftover one here would
-	// silently force Azure mode -- writeGuardrailsCredentials must fully
-	// overwrite, not merge/upsert, to guard against that.
+	// Pre-seed a stale Azure-shaped file: guardrails picks Azure vs. plain
+	// OpenAI by presence of an "endpoint" line, so a leftover one here would
+	// silently force Azure mode unless writeGuardrailsCredentials overwrites.
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}

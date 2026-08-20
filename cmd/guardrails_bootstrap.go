@@ -21,18 +21,12 @@ import (
 const guardrailsCloudFrontBase = "https://dneaqnz3vqe4a.cloudfront.net"
 
 // guardrailsPinnedVersion is the guardrails-cli release this build of konvu
-// fetches. This tracks the guardrails-cli release cadence (S3/CloudFront),
-// which is entirely separate from konvu-cli's own GitHub-releases version
-// (see cmd/version.go) -- the two must never share a mechanism.
-//
-// ponytail: no release has been tagged yet, so whether the tag (and thus this
-// S3 path segment) carries a "v" prefix is unconfirmed. Update this constant
-// once the first real guardrails-cli tag is cut.
+// fetches. It tracks the guardrails-cli release cadence, which is separate
+// from konvu-cli's own version -- the two must never share a mechanism.
 const guardrailsPinnedVersion = "v0.1.0"
 
-// guardrailsConfigDir returns ~/.config/guardrails -- the literal,
-// un-XDG'd, un-Windows-branched path the Rust binary itself reads credentials
-// from (client/crates/guardrails-cli/src/agent/creds.rs joins raw $HOME).
+// guardrailsConfigDir returns ~/.config/guardrails, the fixed path the
+// guardrails binary itself reads its credentials from.
 // pkg/config.GetConfigDir() is the wrong helper here: it's hardcoded to
 // AppName "konvu" and branches to Application Support on macOS.
 func guardrailsConfigDir() (string, error) {
@@ -60,8 +54,7 @@ func guardrailsBinaryPath(version string) (string, error) {
 }
 
 // guardrailsTargetTriple maps the running platform to guardrails-cli's
-// cargo-dist target triple, confirmed against dist-workspace.toml's six
-// targets. Windows is excluded (not in the target matrix).
+// release target triple. Windows is not supported.
 func guardrailsTargetTriple() (string, error) {
 	return guardrailsTargetTripleFor(runtime.GOOS, runtime.GOARCH)
 }
@@ -77,9 +70,7 @@ func guardrailsTargetTripleFor(goos, goarch string) (string, error) {
 	case "darwin/amd64":
 		return "x86_64-apple-darwin", nil
 	case "linux/arm64":
-		// ponytail: runtime.GOARCH can't distinguish glibc from musl, but the
-		// target matrix ships both. Defaulting to gnu (the common case); add
-		// real musl detection (e.g. probing ldd/os-release) if that's ever needed.
+		// runtime.GOARCH can't distinguish glibc from musl; assumes glibc.
 		return "aarch64-unknown-linux-gnu", nil
 	case "linux/amd64":
 		return "x86_64-unknown-linux-gnu", nil
@@ -93,18 +84,16 @@ func guardrailsTargetTripleFor(goos, goarch string) (string, error) {
 	}
 }
 
-// guardrailsArchiveName follows cargo-dist's naming, confirmed from
-// client/crates/guardrails-cli/Cargo.toml: archives are named from the Cargo
-// *package* name ("guardrails-cli"), not the [[bin]] name ("guardrails").
+// guardrailsArchiveName follows the release naming convention: the archive
+// is named after the package ("guardrails-cli"), not the binary it contains
+// ("guardrails").
 func guardrailsArchiveName(triple string) string {
 	return fmt.Sprintf("guardrails-cli-%s.tar.xz", triple)
 }
 
-// guardrailsFetch is a minimal GET-into-memory helper, deliberately separate
-// from update.go's httpGet: that helper's error Suggestion points at
-// konvu-cli's own GitHub releases, which would be a misleading suggestion for
-// a guardrails-cli/CloudFront failure. verifyChecksum (update.go) has no such
-// coupling and is reused as-is below.
+// guardrailsFetch is a minimal GET-into-memory helper, kept separate from
+// update.go's httpGet so a download failure here doesn't surface a
+// suggestion about konvu-cli's own GitHub releases.
 func guardrailsFetch(url string) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -138,9 +127,8 @@ func guardrailsFetch(url string) ([]byte, error) {
 
 // ensureGuardrailsBinary returns the path to the cached guardrails binary for
 // version, fetching and caching it from baseURL first if it isn't already
-// there. Presence of the versioned path is the entire cache-hit signal: the
-// version is pinned per-directory, so unlike skills/embed.go there is nothing
-// to hash -- an existing file at that path can only be that exact build.
+// there. Each version is cached in its own directory, so a file already
+// present at that path can only be that exact build.
 func ensureGuardrailsBinary(baseURL, version string) (string, error) {
 	binPath, err := guardrailsBinaryPath(version)
 	if err != nil {
@@ -183,10 +171,8 @@ func ensureGuardrailsBinary(baseURL, version string) (string, error) {
 }
 
 // extractGuardrailsBinary pulls the "guardrails" file out of a tar.xz
-// archive. Go's stdlib has no xz/lzma decoder (compress/* covers
-// gzip/zlib/flate/bzip2-read-only only), so this shells out to the system
-// tar -- both GNU tar and macOS's bsdtar auto-detect xz from the archive's
-// magic bytes, which avoids adding a new dependency for one decoder.
+// archive. Go's stdlib has no xz decoder, so this shells out to the system
+// tar, which auto-detects xz on both Linux and macOS.
 func extractGuardrailsBinary(archive []byte) ([]byte, error) {
 	if _, err := exec.LookPath("tar"); err != nil {
 		return nil, &clierrors.CLIError{
@@ -217,9 +203,8 @@ func extractGuardrailsBinary(archive []byte) ([]byte, error) {
 		return nil, clierrors.NewAPIError(fmt.Sprintf("could not extract archive: %v: %s", err, strings.TrimSpace(string(out))))
 	}
 
-	// Basename match, not path match: matches update.go's extractBinary
-	// precedent, so this is agnostic to whether the archive nests the
-	// binary in a subdirectory.
+	// Basename match, not path match, so this is agnostic to whether the
+	// archive nests the binary in a subdirectory.
 	var found string
 	walkErr := filepath.WalkDir(destDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -241,7 +226,7 @@ func extractGuardrailsBinary(archive []byte) ([]byte, error) {
 }
 
 // installGuardrailsBinary atomically writes data to destPath via a sibling
-// temp-file-write + rename, mirroring update.go's replaceRunningBinary.
+// temp-file-write + rename.
 func installGuardrailsBinary(destPath string, data []byte) error {
 	dir := filepath.Dir(destPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -286,11 +271,10 @@ func installGuardrailsBinary(destPath string, data []byte) error {
 }
 
 // writeGuardrailsCredentials fully overwrites ~/.config/guardrails/credentials
-// with the plain-OpenAI shape the Rust binary expects (creds.rs: "key = value",
-// "#" comments, blank line = absent field). This must overwrite rather than
-// merge/upsert: the Rust side picks Azure vs plain OpenAI by the mere presence
-// of an "endpoint" line, so a stale leftover from an earlier config would
-// silently force Azure mode and ignore these flags entirely.
+// with the plain-OpenAI shape guardrails expects ("key = value" lines). This
+// must overwrite rather than merge: guardrails picks Azure vs. plain OpenAI by
+// the mere presence of an "endpoint" line, so a stale leftover from an
+// earlier config would silently force Azure mode and ignore these flags.
 func writeGuardrailsCredentials(apiKey, model string) error {
 	path, err := guardrailsCredentialsPath()
 	if err != nil {
@@ -312,10 +296,8 @@ func writeGuardrailsCredentials(apiKey, model string) error {
 }
 
 // runGuardrailsExec is the shared os/exec shim behind all four guardrails
-// verbs: ensure the binary is cached, write credentials if the flags were
-// given, then run the child with stdio wired straight through so Rust's
-// rendering reaches the terminal live and unmodified, and propagate its real
-// exit code.
+// verbs: ensure the binary is cached, write credentials if given, run the
+// child with stdio wired straight through, and propagate its exit code.
 func runGuardrailsExec(args []string, apiKey, model string) {
 	if apiKey != "" {
 		if err := writeGuardrailsCredentials(apiKey, model); err != nil {

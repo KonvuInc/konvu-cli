@@ -11,8 +11,8 @@ var (
 
 var guardrailsScanCmd = &cobra.Command{
 	Use:   "scan [repo]",
-	Short: "Scan a repo and write an access-rules profile to .konvu/guardrails/",
-	Long: `Scan a repo and write an access-rules profile to .konvu/guardrails/.
+	Short: "Scan a repo and write a profile to .konvu/guardrails/",
+	Long: `Scan a repo and write a profile to .konvu/guardrails/.
 
 This is a thin wrapper: konvu fetches and caches the guardrails-cli binary on
 first use, then runs it directly. All scanning, profile generation, and
