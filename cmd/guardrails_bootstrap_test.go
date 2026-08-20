@@ -85,6 +85,65 @@ func TestWriteGuardrailsCredentials(t *testing.T) {
 	}
 }
 
+func TestBackupGuardrailsCredentialsRestoresPriorContent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	path, err := guardrailsCredentialsPath()
+	if err != nil {
+		t.Fatalf("guardrailsCredentialsPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	want := "key = old\nmodel = gpt-4o\n"
+	if err := os.WriteFile(path, []byte(want), 0o600); err != nil {
+		t.Fatalf("seed WriteFile: %v", err)
+	}
+
+	restore, err := backupGuardrailsCredentials()
+	if err != nil {
+		t.Fatalf("backupGuardrailsCredentials: %v", err)
+	}
+	if err := writeGuardrailsCredentials("new", "gpt-4o"); err != nil {
+		t.Fatalf("writeGuardrailsCredentials: %v", err)
+	}
+
+	restore()
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != want {
+		t.Errorf("credentials after restore = %q, want %q", got, want)
+	}
+}
+
+func TestBackupGuardrailsCredentialsRemovesFileThatDidNotExistBefore(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	path, err := guardrailsCredentialsPath()
+	if err != nil {
+		t.Fatalf("guardrailsCredentialsPath: %v", err)
+	}
+
+	restore, err := backupGuardrailsCredentials()
+	if err != nil {
+		t.Fatalf("backupGuardrailsCredentials: %v", err)
+	}
+	if err := writeGuardrailsCredentials("new", "gpt-4o"); err != nil {
+		t.Fatalf("writeGuardrailsCredentials: %v", err)
+	}
+
+	restore()
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("expected no credentials file after restore, stat err = %v", err)
+	}
+}
+
 // buildFixtureArchive shells out to the system tar to produce a real
 // tar.xz containing a single "guardrails" file, since Go's stdlib has no xz
 // encoder either. Skips (not fails) if the local tar lacks xz support.

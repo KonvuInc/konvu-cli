@@ -272,57 +272,81 @@ func installGuardrailsBinary(destPath string, data []byte) error {
 	return nil
 }
 
+// atomicWriteFile writes data to path via a sibling temp-file-write + rename
+// in the same directory, so a failure partway through (e.g. disk full) never
+// leaves path itself truncated -- only ever the old content or the new
+// content, in full.
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".guardrails-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op after a successful rename
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, perm); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
+}
+
 // writeGuardrailsCredentials fully overwrites ~/.config/guardrails/credentials
 // with the plain-OpenAI shape guardrails expects ("key = value" lines). This
 // must overwrite rather than merge: guardrails picks Azure vs. plain OpenAI by
 // the mere presence of an "endpoint" line, so a stale leftover from an
 // earlier config would silently force Azure mode and ignore these flags.
-// Written via a sibling temp-file-write + rename, like installGuardrailsBinary:
-// a plain os.WriteFile truncates the destination before writing, so a failure
-// partway through (e.g. disk full) would leave the existing credentials gone
-// rather than just not-yet-updated.
 func writeGuardrailsCredentials(apiKey, model string) error {
 	path, err := guardrailsCredentialsPath()
 	if err != nil {
 		return err
 	}
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return &clierrors.CLIError{
 			Code:       "PERMISSION_DENIED",
-			Message:    fmt.Sprintf("cannot create %s: %v", dir, err),
+			Message:    fmt.Sprintf("cannot create %s: %v", filepath.Dir(path), err),
 			Suggestion: "Check permissions on ~/.config/guardrails.",
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	}
-
-	tmp, err := os.CreateTemp(dir, ".credentials-*")
-	if err != nil {
-		return &clierrors.CLIError{
-			Code:       "PERMISSION_DENIED",
-			Message:    fmt.Sprintf("cannot write to %s: %v", dir, err),
-			Suggestion: "Check permissions on ~/.config/guardrails.",
-			ExitCode:   clierrors.ExitGeneralError,
-		}
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // no-op after a successful rename
-
 	content := fmt.Sprintf("key = %s\nmodel = %s\n", apiKey, model)
-	if _, err := tmp.WriteString(content); err != nil {
-		tmp.Close()
-		return clierrors.NewAPIError(fmt.Sprintf("could not write %s: %v", path, err))
-	}
-	if err := tmp.Close(); err != nil {
-		return clierrors.NewAPIError(fmt.Sprintf("could not write %s: %v", path, err))
-	}
-	if err := os.Chmod(tmpName, 0o600); err != nil {
-		return clierrors.NewAPIError(fmt.Sprintf("could not set permissions on %s: %v", path, err))
-	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := atomicWriteFile(path, []byte(content), 0o600); err != nil {
 		return clierrors.NewAPIError(fmt.Sprintf("could not write %s: %v", path, err))
 	}
 	return nil
+}
+
+// backupGuardrailsCredentials snapshots the credentials file before it's
+// overwritten and returns a restore func that puts the snapshot back (or
+// removes the file, if none existed). No cache-validity check on the
+// guardrails binary can ever be airtight -- a file can be nonempty and
+// executable-marked and still fail to actually start (a corrupt binary from
+// an interrupted write, say). Restoring on a genuine start failure is the
+// only way to guarantee a run that never happened never destroys real
+// credentials, regardless of why the binary didn't start.
+func backupGuardrailsCredentials() (restore func(), err error) {
+	path, err := guardrailsCredentialsPath()
+	if err != nil {
+		return nil, err
+	}
+	previous, readErr := os.ReadFile(path)
+	return func() {
+		var restoreErr error
+		if readErr == nil {
+			restoreErr = atomicWriteFile(path, previous, 0o600)
+		} else {
+			restoreErr = os.Remove(path)
+		}
+		if restoreErr != nil && !os.IsNotExist(restoreErr) {
+			fmt.Fprintf(os.Stderr, "warning: could not restore prior credentials at %s: %v\n", path, restoreErr)
+		}
+	}, nil
 }
 
 // runGuardrailsExec is the shared os/exec shim behind all four guardrails
@@ -330,14 +354,23 @@ func writeGuardrailsCredentials(apiKey, model string) error {
 // child with stdio wired straight through, and propagate its exit code.
 // The binary must be ensured before credentials are written: if the
 // download/checksum/extract step fails, we must not have already destroyed
-// the user's existing credentials for a run that's about to fail anyway.
+// the user's existing credentials for a run that's about to fail anyway. If
+// the binary is ensured but still fails to actually start (a corrupt cache
+// entry that passed ensureGuardrailsBinary's checks, say), whatever
+// credentials existed before this run are restored -- see
+// backupGuardrailsCredentials.
 func runGuardrailsExec(args []string, apiKey, model string) {
 	binPath, err := ensureGuardrailsBinary(guardrailsCloudFrontBase, guardrailsPinnedVersion)
 	if err != nil {
 		reportGuardrailsError(err)
 	}
 
+	var restoreCredentials func()
 	if apiKey != "" {
+		restoreCredentials, err = backupGuardrailsCredentials()
+		if err != nil {
+			reportGuardrailsError(err)
+		}
 		if err := writeGuardrailsCredentials(apiKey, model); err != nil {
 			reportGuardrailsError(err)
 		}
@@ -352,6 +385,9 @@ func runGuardrailsExec(args []string, apiKey, model string) {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			os.Exit(exitErr.ExitCode())
+		}
+		if restoreCredentials != nil {
+			restoreCredentials()
 		}
 		reportGuardrailsError(clierrors.NewAPIError(fmt.Sprintf("could not run guardrails: %v", err)))
 	}
