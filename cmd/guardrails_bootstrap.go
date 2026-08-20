@@ -298,16 +298,19 @@ func writeGuardrailsCredentials(apiKey, model string) error {
 // runGuardrailsExec is the shared os/exec shim behind all four guardrails
 // verbs: ensure the binary is cached, write credentials if given, run the
 // child with stdio wired straight through, and propagate its exit code.
+// The binary must be ensured before credentials are written: if the
+// download/checksum/extract step fails, we must not have already destroyed
+// the user's existing credentials for a run that's about to fail anyway.
 func runGuardrailsExec(args []string, apiKey, model string) {
+	binPath, err := ensureGuardrailsBinary(guardrailsCloudFrontBase, guardrailsPinnedVersion)
+	if err != nil {
+		reportGuardrailsError(err)
+	}
+
 	if apiKey != "" {
 		if err := writeGuardrailsCredentials(apiKey, model); err != nil {
 			reportGuardrailsError(err)
 		}
-	}
-
-	binPath, err := ensureGuardrailsBinary(guardrailsCloudFrontBase, guardrailsPinnedVersion)
-	if err != nil {
-		reportGuardrailsError(err)
 	}
 
 	child := exec.Command(binPath, args...)
