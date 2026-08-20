@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -381,111 +379,4 @@ func (c *Client) PostForm(path string, form url.Values) (map[string]any, error) 
 		return nil, err
 	}
 	return result, nil
-}
-
-// PostMultipart sends multipart/form-data: the given form fields plus one file part. It is the
-// second way to hand a route a file — the first being to ask for a pre-authorized upload URL and
-// PUT to that — and exists for servers that cannot issue one.
-//
-// The body is streamed off disk rather than assembled first, so sending a large file does not
-// need room for a second copy of it. Like PutPresigned it takes its own timeout, because a body
-// carrying a file can outlast the API client's.
-func (c *Client) PostMultipart(
-	path string, form url.Values, fileField, filePath string, timeout time.Duration,
-) (map[string]any, error) {
-	auth, err := c.authHeader()
-	if err != nil {
-		return nil, err
-	}
-	f, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	body, out := io.Pipe()
-	mw := multipart.NewWriter(out)
-	// Writing the body has to be able to fail after the request has started, and it must reach the
-	// reader as an error: closing the pipe cleanly instead would hand the server a truncated body
-	// under a complete-looking request, which it would have no way to tell from the real thing.
-	go func() { _ = out.CloseWithError(writeMultipart(mw, form, fileField, filepath.Base(filePath), f)) }()
-
-	req, err := http.NewRequest("POST", c.baseURL+path, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", auth)
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-
-	resp, err := (&http.Client{Timeout: timeout}).Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if err := c.checkResponse(resp); err != nil {
-		return nil, err
-	}
-	var result map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-// writeMultipart writes the fields, then the file, then the closing boundary. Split out so the
-// goroutine above is one line and every error on this path has somewhere to go.
-func writeMultipart(mw *multipart.Writer, form url.Values, fileField, fileName string, file io.Reader) error {
-	for name, values := range form {
-		for _, value := range values {
-			if err := mw.WriteField(name, value); err != nil {
-				return err
-			}
-		}
-	}
-	part, err := mw.CreateFormFile(fileField, fileName)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(part, file); err != nil {
-		return err
-	}
-	// Writes the trailing boundary, without which the server sees an unterminated body.
-	return mw.Close()
-}
-
-// PutPresigned uploads a file to a pre-authorized upload URL.
-//
-// It deliberately sends no Authorization header: the URL carries its own signature, and
-// an unexpected auth header makes the storage service reject the request. size must match
-// the length the URL was issued for — it is part of that signature — so it is set
-// explicitly rather than left to chunked encoding. Uploads get their own timeout because
-// a large body can outlast the API client's.
-func (c *Client) PutPresigned(target, filePath string, size int64, timeout time.Duration) error {
-	f, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	req, err := http.NewRequest("PUT", target, f)
-	if err != nil {
-		return err
-	}
-	req.ContentLength = size
-
-	resp, err := (&http.Client{Timeout: timeout}).Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return &APIError{
-			Message:    fmt.Sprintf("upload failed: %s", strings.TrimSpace(string(body))),
-			StatusCode: resp.StatusCode,
-		}
-	}
-	return nil
 }
