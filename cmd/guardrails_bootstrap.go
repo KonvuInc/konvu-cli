@@ -127,14 +127,16 @@ func guardrailsFetch(url string) ([]byte, error) {
 
 // ensureGuardrailsBinary returns the path to the cached guardrails binary for
 // version, fetching and caching it from baseURL first if it isn't already
-// there. Each version is cached in its own directory, so a file already
-// present at that path can only be that exact build.
+// there, or if what's cached isn't a valid executable (e.g. left truncated by
+// an interrupted install) -- existence alone isn't enough to trust the cache,
+// since callers rely on a successful return meaning the binary can actually
+// run.
 func ensureGuardrailsBinary(baseURL, version string) (string, error) {
 	binPath, err := guardrailsBinaryPath(version)
 	if err != nil {
 		return "", err
 	}
-	if _, err := os.Stat(binPath); err == nil {
+	if info, err := os.Stat(binPath); err == nil && info.Size() > 0 && info.Mode()&0o111 != 0 {
 		return binPath, nil
 	}
 
@@ -275,21 +277,49 @@ func installGuardrailsBinary(destPath string, data []byte) error {
 // must overwrite rather than merge: guardrails picks Azure vs. plain OpenAI by
 // the mere presence of an "endpoint" line, so a stale leftover from an
 // earlier config would silently force Azure mode and ignore these flags.
+// Written via a sibling temp-file-write + rename, like installGuardrailsBinary:
+// a plain os.WriteFile truncates the destination before writing, so a failure
+// partway through (e.g. disk full) would leave the existing credentials gone
+// rather than just not-yet-updated.
 func writeGuardrailsCredentials(apiKey, model string) error {
 	path, err := guardrailsCredentialsPath()
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return &clierrors.CLIError{
 			Code:       "PERMISSION_DENIED",
-			Message:    fmt.Sprintf("cannot create %s: %v", filepath.Dir(path), err),
+			Message:    fmt.Sprintf("cannot create %s: %v", dir, err),
 			Suggestion: "Check permissions on ~/.config/guardrails.",
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	}
+
+	tmp, err := os.CreateTemp(dir, ".credentials-*")
+	if err != nil {
+		return &clierrors.CLIError{
+			Code:       "PERMISSION_DENIED",
+			Message:    fmt.Sprintf("cannot write to %s: %v", dir, err),
+			Suggestion: "Check permissions on ~/.config/guardrails.",
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op after a successful rename
+
 	content := fmt.Sprintf("key = %s\nmodel = %s\n", apiKey, model)
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		return clierrors.NewAPIError(fmt.Sprintf("could not write %s: %v", path, err))
+	}
+	if err := tmp.Close(); err != nil {
+		return clierrors.NewAPIError(fmt.Sprintf("could not write %s: %v", path, err))
+	}
+	if err := os.Chmod(tmpName, 0o600); err != nil {
+		return clierrors.NewAPIError(fmt.Sprintf("could not set permissions on %s: %v", path, err))
+	}
+	if err := os.Rename(tmpName, path); err != nil {
 		return clierrors.NewAPIError(fmt.Sprintf("could not write %s: %v", path, err))
 	}
 	return nil
