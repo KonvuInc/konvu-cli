@@ -23,7 +23,7 @@ const guardrailsCloudFrontBase = "https://dneaqnz3vqe4a.cloudfront.net"
 // guardrailsPinnedVersion is the guardrails-cli release this build of konvu
 // fetches. It tracks the guardrails-cli release cadence, which is separate
 // from konvu-cli's own version -- the two must never share a mechanism.
-const guardrailsPinnedVersion = "v0.1.0"
+const guardrailsPinnedVersion = "v0.2.0"
 
 // guardrailsConfigDir returns ~/.config/guardrails, the fixed path the
 // guardrails binary itself reads its credentials from.
