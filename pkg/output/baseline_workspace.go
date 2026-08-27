@@ -794,6 +794,7 @@ var baselineAssetKindLabels = map[string]string{
 	"endpoint": "Endpoints",
 	"object":   "Objects",
 	"field":    "Fields",
+	"code":     "Code",
 }
 
 func baselineKindIndex(kind string) int {
@@ -1497,7 +1498,7 @@ func (w *BaselineWorkspace) baselineControlRows(
 			}
 		}
 	} else {
-		rows = append(rows, baselinePanelRow{text: "No endpoint, object, or field assets linked.", tone: "dim"})
+		rows = append(rows, baselinePanelRow{text: "No endpoint, object, field, or code Assets linked.", tone: "dim"})
 	}
 
 	rows = append(rows, baselinePanelRow{}, baselinePanelRow{text: "IMPLEMENTATION FORMS", tone: "label"})
@@ -1644,7 +1645,7 @@ func (w *BaselineWorkspace) repositoryHeader(
 	rows = append(rows, "")
 	summary := baselineString(repo["summary"])
 	if summary == "" {
-		summary = "See which security controls protect the repository's endpoints, objects, and fields."
+		summary = "See which security Controls apply to the repository's endpoint, object, field, and code Assets."
 	}
 	for _, row := range baselineWrapText(summary, width, "") {
 		rows = append(rows, style.dim(row))
@@ -1720,6 +1721,9 @@ func (w *BaselineWorkspace) baselineMetadataRows(detailed bool) []string {
 		),
 		baselineCountLabel(counts["object"], "object"),
 		baselineCountLabel(counts["field"], "field"),
+	}
+	if counts["code"] > 0 {
+		baselineParts = append(baselineParts, baselineCountLabel(counts["code"], "code Asset"))
 	}
 	rows = append(rows, "BASELINE\t"+strings.Join(baselineParts, " · "))
 	return rows

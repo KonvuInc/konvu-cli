@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	baselinemodel "github.com/KonvuInc/konvu-cli/pkg/guardrails/baseline"
@@ -15,13 +16,25 @@ var guardrailsBaselineExplainCmd = newGuardrailsBaselineExplainCmd()
 func newGuardrailsBaselineExplainCmd() *cobra.Command {
 	var runID string
 	var repository string
+	var collectionName string
 	var explicitFormat string
 	command := &cobra.Command{
 		Use:   "explain <record-id>",
 		Short: "Explain one baseline record and its relationships",
-		Args:  cobra.ExactArgs(1),
+		Long: `Explain one baseline record and its direct relationships.
+Use --collection when an ID is represented in more than one baseline section.`,
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			runGuardrailsBaselineCommand(cmd, func() error {
+				for _, flag := range []struct{ name, value string }{
+					{name: "run", value: runID},
+					{name: "repo", value: repository},
+					{name: "collection", value: collectionName},
+				} {
+					if err := guardrailsBaselineValidateOptionalFlag(cmd, flag.name, flag.value); err != nil {
+						return err
+					}
+				}
 				format, err := guardrailsBaselineOutputFormat(explicitFormat)
 				if err != nil {
 					return err
@@ -34,11 +47,12 @@ func newGuardrailsBaselineExplainCmd() *cobra.Command {
 				if err != nil {
 					return wrapGuardrailsBaselineError(err)
 				}
-				return writeGuardrailsBaselineExplain(
+				return writeGuardrailsBaselineExplainCollection(
 					cmd.OutOrStdout(),
 					store,
 					args[0],
 					selector,
+					collectionName,
 					format,
 				)
 			})
@@ -46,6 +60,7 @@ func newGuardrailsBaselineExplainCmd() *cobra.Command {
 	}
 	command.Flags().StringVar(&runID, "run", "", "select an exact stored run ID")
 	command.Flags().StringVar(&repository, "repo", "", "select the latest completed run for a codebase name or absolute path")
+	command.Flags().StringVar(&collectionName, "collection", "", "resolve the record inside one exact baseline collection")
 	command.Flags().StringVarP(&explicitFormat, "output", "o", "", "Output format: table, json")
 	return command
 }
@@ -57,11 +72,33 @@ func writeGuardrailsBaselineExplain(
 	selector baselinemodel.Selector,
 	format output.OutputFormat,
 ) error {
+	return writeGuardrailsBaselineExplainCollection(
+		writer,
+		store,
+		target,
+		selector,
+		"",
+		format,
+	)
+}
+
+func writeGuardrailsBaselineExplainCollection(
+	writer io.Writer,
+	store baselinemodel.Store,
+	target string,
+	selector baselinemodel.Selector,
+	collectionName string,
+	format output.OutputFormat,
+) error {
 	run, catalog, err := selectGuardrailsBaselineCatalog(store, selector)
 	if err != nil {
 		return err
 	}
-	entity, ok := catalog.Lookup(target)
+	collectionName = strings.ToLower(strings.TrimSpace(collectionName))
+	entity, ok, err := lookupGuardrailsBaselineEntity(catalog, target, collectionName)
+	if err != nil {
+		return err
+	}
 	if !ok {
 		return guardrailsBaselineError(
 			"GUARDRAILS_BASELINE_RECORD_NOT_FOUND",
@@ -70,6 +107,9 @@ func writeGuardrailsBaselineExplain(
 		)
 	}
 	related := catalog.Related(target)
+	if collectionName != "" {
+		related = catalog.RelatedIn(entity.Collection, target)
+	}
 	if format == output.JSON {
 		relatedValues := make([]any, 0, len(related))
 		for _, relatedEntity := range related {
@@ -93,7 +133,11 @@ func writeGuardrailsBaselineExplain(
 
 	if err := writeGuardrailsBaselineOutput(
 		writer,
-		fmt.Sprintf("%s %s\n\n", guardrailsBaselineCollectionTitle(entity.Collection), entity.ID),
+		fmt.Sprintf(
+			"%s %s\n\n",
+			guardrailsBaselineCollectionTitle(entity.Collection),
+			sanitizeGuardrailsBaselineText(entity.ID),
+		),
 	); err != nil {
 		return err
 	}
@@ -107,7 +151,7 @@ func writeGuardrailsBaselineExplain(
 	for _, relatedEntity := range related {
 		rows = append(rows, map[string]any{
 			"collection": string(relatedEntity.Collection),
-			"id":         relatedEntity.ID,
+			"id":         sanitizeGuardrailsBaselineText(relatedEntity.ID),
 			"name":       guardrailsBaselineRelatedName(relatedEntity.Value),
 			"location":   guardrailsBaselineLocation(relatedEntity.Value),
 		})
@@ -150,6 +194,10 @@ func guardrailsBaselineCollectionTitle(collection baselinemodel.Collection) stri
 		return "Role"
 	case baselinemodel.CollectionControlObservations:
 		return "Control observation"
+	case baselinemodel.CollectionAssetObservations:
+		return "Asset observation"
+	case baselinemodel.CollectionUnresolved:
+		return "Unresolved observation"
 	default:
 		return "Record"
 	}

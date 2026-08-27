@@ -43,7 +43,9 @@ konvu guardrails baseline list --repo <name-or-absolute-path>
 Run queries are independent of the current directory. Use `--run <run-id>` for
 an exact historical run. `--repo` selects the latest completed run for an
 unambiguous repository name or exact stored path. With neither selector, a
-data query succeeds only when exactly one completed run exists.
+data query succeeds only when exactly one completed run exists. `list runs
+--repo` is the one history-filter exception: it returns every stored run for
+that unambiguous repository, including failed and cancelled runs.
 
 ## Explore baseline data
 
@@ -53,11 +55,14 @@ konvu guardrails baseline list controls --run <run-id>
 konvu guardrails baseline list implementations --run <run-id>
 konvu guardrails baseline show <run-id>
 konvu guardrails baseline show <record-id> --run <run-id>
+konvu guardrails baseline show <record-id> --collection <collection> --run <run-id>
 konvu guardrails baseline explain <record-id> --run <run-id>
 ```
 
-Other listable sections include classes, routes, resources, roles, Control
-observations, and unresolved observations. Use `--output json` for scripts.
+Other listable sections include Asset observations, classes, routes, resources,
+roles, Control observations, and unresolved observations. Use `--collection`
+with `show` or `explain` to address an exact section when IDs overlap. Use
+`--output json` for scripts.
 `show <run-id> --output json` returns the exact `baseline.json`. Use `--log` to
 read a run's execution log.
 

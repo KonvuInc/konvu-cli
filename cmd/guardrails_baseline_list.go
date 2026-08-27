@@ -31,6 +31,14 @@ unresolved.`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			runGuardrailsBaselineCommand(cmd, func() error {
+				for _, flag := range []struct{ name, value string }{
+					{name: "run", value: runID},
+					{name: "repo", value: repository},
+				} {
+					if err := guardrailsBaselineValidateOptionalFlag(cmd, flag.name, flag.value); err != nil {
+						return err
+					}
+				}
 				format, err := guardrailsBaselineOutputFormat(explicitFormat)
 				if err != nil {
 					return err
@@ -182,6 +190,19 @@ func filterGuardrailsBaselineRuns(
 				filtered = append(filtered, run)
 			}
 		}
+		if !absolute {
+			paths := make(map[string]bool)
+			for _, run := range filtered {
+				paths[run.Codebase.Path] = true
+			}
+			if len(paths) > 1 {
+				return nil, guardrailsBaselineError(
+					"GUARDRAILS_BASELINE_AMBIGUOUS",
+					fmt.Sprintf("repository name %q matches more than one stored path", repository),
+					clierrors.ExitUsageError,
+				)
+			}
+		}
 	}
 	if len(filtered) == 0 {
 		target := selector.RunID
@@ -236,7 +257,7 @@ func guardrailsBaselineCollectionRows(
 	for _, entity := range entities {
 		value := entity.Value
 		row := map[string]any{
-			"id":       entity.ID,
+			"id":       sanitizeGuardrailsBaselineText(entity.ID),
 			"name":     guardrailsBaselineString(value, "name"),
 			"kind":     guardrailsBaselineString(value, "kind"),
 			"location": guardrailsBaselineLocation(value),

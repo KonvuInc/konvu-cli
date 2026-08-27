@@ -33,6 +33,13 @@ var guardrailsBaselineTUICmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, _ []string) {
 		runGuardrailsBaselineCommand(cmd, func() error {
+			if err := guardrailsBaselineValidateOptionalFlag(
+				cmd,
+				"run",
+				guardrailsBaselineTUIRunID,
+			); err != nil {
+				return err
+			}
 			store, err := defaultGuardrailsBaselineStore()
 			if err != nil {
 				return err

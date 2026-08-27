@@ -11,7 +11,7 @@ import (
 
 func TestParseCanonicalBaseline(t *testing.T) {
 	document := canonicalDocument(t)
-	if document.SchemaVersion != 1 || document.Run.ID != "payments-api--a17c2e9--000042" {
+	if document.SchemaVersion != 1 || document.Run.ID != "payments-api--a17c2e99--000042" {
 		t.Fatalf("identity = version %d, run %q", document.SchemaVersion, document.Run.ID)
 	}
 	if document.Run.Status != StatusCompleted || document.Run.DurationSeconds != 12.5 {
@@ -93,7 +93,14 @@ func TestParseRejectsInvalidShapeIDsAndReferences(t *testing.T) {
 			mutate: func(raw map[string]any) {
 				raw["run"].(map[string]any)["id"] = "../run"
 			},
-			message: "must be a single safe path component",
+			message: "must match",
+		},
+		{
+			name: "run id whitespace is not normalized",
+			mutate: func(raw map[string]any) {
+				raw["run"].(map[string]any)["id"] = " payments-api--a17c2e99--000042\n"
+			},
+			message: "must match",
 		},
 		{
 			name: "invalid status",
@@ -217,6 +224,13 @@ func TestParseRejectsInvalidShapeIDsAndReferences(t *testing.T) {
 			message: "references unknown asset",
 		},
 		{
+			name: "unknown resource parent",
+			mutate: func(raw map[string]any) {
+				array(raw, "resources")[0].(map[string]any)["parent"] = "resource:missing"
+			},
+			message: "references unknown resource",
+		},
+		{
 			name: "unknown asset source",
 			mutate: func(raw map[string]any) {
 				array(raw, "assets")[0].(map[string]any)["source_ids"] = []any{"resource:missing"}
@@ -277,6 +291,8 @@ func TestPartialRunKeepsDiagnosticsButCannotBuildCatalog(t *testing.T) {
 			run["status"] = string(status)
 			if status == StatusRunning {
 				run["completed_at"] = nil
+			} else if status == StatusFailed {
+				run["error"] = "fixture failed"
 			}
 			assetLink(raw)["control_id"] = "control:not-produced-yet"
 			encoded, _ := json.Marshal(raw)
@@ -290,6 +306,130 @@ func TestPartialRunKeepsDiagnosticsButCannotBuildCatalog(t *testing.T) {
 				t.Fatalf("NewCatalog error = %#v", err)
 			}
 		})
+	}
+}
+
+func TestCompletedV1RequiresFullEnvelopeAndEveryCollection(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(map[string]any)
+		field  string
+	}{
+		{name: "run model", mutate: deleteNested("run", "model"), field: "model"},
+		{name: "run estimate", mutate: deleteNested("run", "estimate"), field: "estimate"},
+		{name: "run cost", mutate: deleteNested("run", "cost"), field: "cost"},
+		{name: "run stages", mutate: deleteNested("run", "stages"), field: "stages"},
+		{name: "run usage", mutate: deleteNested("run", "usage"), field: "usage"},
+		{name: "run error", mutate: deleteNested("run", "error"), field: "error"},
+		{name: "codebase summary", mutate: deleteNested("codebase", "summary"), field: "summary"},
+		{name: "codebase layout", mutate: deleteNested("codebase", "layout"), field: "layout"},
+		{name: "codebase git", mutate: deleteNested("codebase", "git"), field: "git"},
+		{name: "codebase fingerprint", mutate: deleteNested("codebase", "source_fingerprint"), field: "source_fingerprint"},
+		{name: "codebase metrics", mutate: deleteNested("codebase", "metrics"), field: "metrics"},
+	}
+	for _, field := range []string{"languages", "components", "frameworks", "databases", "orms", "unknowns"} {
+		tests = append(tests, struct {
+			name   string
+			mutate func(map[string]any)
+			field  string
+		}{name: "codebase " + field, mutate: deleteNested("codebase", field), field: field})
+	}
+	for _, field := range []string{
+		"index", "classes", "routes", "resources", "roles", "assets", "controls",
+		"implementations", "unresolved",
+	} {
+		field := field
+		tests = append(tests, struct {
+			name   string
+			mutate func(map[string]any)
+			field  string
+		}{
+			name: "top-level " + field,
+			mutate: func(raw map[string]any) {
+				delete(raw, field)
+			},
+			field: field,
+		})
+	}
+	for _, field := range []string{"assets", "controls"} {
+		field := field
+		tests = append(tests, struct {
+			name   string
+			mutate func(map[string]any)
+			field  string
+		}{
+			name: "observations " + field,
+			mutate: func(raw map[string]any) {
+				delete(raw["observations"].(map[string]any), field)
+			},
+			field: field,
+		})
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			raw := canonicalRaw(t)
+			test.mutate(raw)
+			assertInvalidArtifactContains(t, raw, test.field)
+		})
+	}
+}
+
+func TestCompletedV1RequiresExactCostUsageStageAndAssetControlFields(t *testing.T) {
+	for _, field := range []string{"nanodollars", "display", "unpriced_calls"} {
+		t.Run("cost "+field, func(t *testing.T) {
+			raw := canonicalRaw(t)
+			delete(raw["run"].(map[string]any)["cost"].(map[string]any), field)
+			assertInvalidArtifactContains(t, raw, field)
+		})
+	}
+	for _, field := range runUsageFields {
+		t.Run("usage "+field, func(t *testing.T) {
+			raw := canonicalRaw(t)
+			delete(raw["run"].(map[string]any)["usage"].(map[string]any), field)
+			assertInvalidArtifactContains(t, raw, field)
+		})
+	}
+	for _, field := range []string{"name", "status", "summary", "duration_seconds"} {
+		t.Run("stage "+field, func(t *testing.T) {
+			raw := canonicalRaw(t)
+			stage := raw["run"].(map[string]any)["stages"].([]any)[0].(map[string]any)
+			delete(stage, field)
+			assertInvalidArtifactContains(t, raw, field)
+		})
+	}
+	for _, field := range []string{
+		"control_id", "status", "description", "implementation_ids", "evidence", "checked",
+		"source_control_observation_ids",
+	} {
+		t.Run("asset control "+field, func(t *testing.T) {
+			raw := canonicalRaw(t)
+			delete(assetLink(raw), field)
+			assertInvalidArtifactContains(t, raw, field)
+		})
+	}
+}
+
+func TestCompletedV1RejectsDuplicateRelationshipsAndAllowsUnknownFields(t *testing.T) {
+	raw := canonicalRaw(t)
+	raw["future"] = map[string]any{"kept": true}
+	raw["run"].(map[string]any)["future"] = "kept"
+	if _, err := Parse(mustJSON(t, raw)); err != nil {
+		t.Fatalf("additive fields were rejected: %v", err)
+	}
+
+	for _, mutate := range []func(map[string]any){
+		func(value map[string]any) {
+			array(value, "assets")[0].(map[string]any)["source_ids"] = []any{"resource:user", "resource:user"}
+		},
+		func(value map[string]any) {
+			unresolved := array(value, "unresolved")[0].(map[string]any)
+			value["unresolved"] = []any{unresolved, cloneMap(unresolved)}
+		},
+	} {
+		raw = canonicalRaw(t)
+		mutate(raw)
+		assertInvalidArtifactContains(t, raw, "duplicate")
 	}
 }
 
@@ -342,4 +482,27 @@ func array(raw map[string]any, key string) []any {
 
 func assetLink(raw map[string]any) map[string]any {
 	return array(raw, "assets")[0].(map[string]any)["controls"].([]any)[0].(map[string]any)
+}
+
+func deleteNested(owner, field string) func(map[string]any) {
+	return func(raw map[string]any) {
+		delete(raw[owner].(map[string]any), field)
+	}
+}
+
+func assertInvalidArtifactContains(t *testing.T, raw map[string]any, fragment string) {
+	t.Helper()
+	_, err := Parse(mustJSON(t, raw))
+	if err == nil || !strings.Contains(err.Error(), fragment) {
+		t.Fatalf("Parse error = %v, want fragment %q", err, fragment)
+	}
+}
+
+func mustJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
 }

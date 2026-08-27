@@ -1,20 +1,56 @@
 {
   "schema_version": 1,
   "run": {
-    "id": "payments-api--a17c2e9--000042",
+    "id": "payments-api--a17c2e99--000042",
     "status": "completed",
     "started_at": "2026-08-27T10:00:00Z",
     "completed_at": "2026-08-27T10:00:12.500Z",
     "duration_seconds": 12.5,
     "model": "gpt-5.6-luna",
+    "cost": {
+      "nanodollars": 125000000,
+      "display": "$0.1250",
+      "unpriced_calls": 0
+    },
+    "estimate": {},
+    "stages": [
+      {
+        "name": "graph",
+        "status": "completed",
+        "duration_seconds": 12.5,
+        "summary": "Baseline graph normalized."
+      }
+    ],
+    "usage": {
+      "calls": 1,
+      "attempts": 1,
+      "retries": 0,
+      "failed_attempts": 0,
+      "rate_limited_attempts": 0,
+      "input_tokens": 100,
+      "cached_input_tokens": 0,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 50,
+      "reasoning_tokens": 10,
+      "request_bytes": 1000,
+      "response_bytes": 500,
+      "api_duration_milliseconds": 1000,
+      "backoff_milliseconds": 0,
+      "priced_calls": 1,
+      "unpriced_calls": 0
+    },
+    "error": null,
     "extension": {"kept": true}
   },
   "codebase": {
     "name": "payments-api",
     "path": "/workspace/payments-api",
     "summary": "Payment service",
+    "layout": "single_component",
+    "source_fingerprint": "fnv1a64:0123456789abcdef",
     "git": {
       "commit": "a17c2e9987654321",
+      "short_commit": "a17c2e99",
       "branch": "main",
       "dirty": false
     },
@@ -34,12 +70,16 @@
     {
       "id": "class:user-service",
       "name": "UserService",
-      "location": "internal/users.go:20"
+      "bases": [],
+      "module": "internal/users.go",
+      "line": 20
     }
   ],
   "routes": [
     {
       "id": "route:get-user",
+      "module": "internal/users.go",
+      "line": 42,
       "method": "GET",
       "path": "/users/{id}",
       "handler": "getUser",
@@ -51,7 +91,8 @@
       "id": "resource:user",
       "name": "User",
       "kind": "object",
-      "description": "A customer account"
+      "description": "A customer account",
+      "decl": "internal/users.go#UserService"
     }
   ],
   "roles": [
@@ -78,15 +119,21 @@
         "property": "authorization",
         "status": "present",
         "description": "Checks the caller can read the requested user",
-        "location": "internal/users.go:45"
+        "decl": "internal/users.go#authorize",
+        "quote": "authorize(userID)",
+        "checked": ["internal/users.go"],
+        "asvs": "V4.1.2"
       },
       {
         "id": "control-observation:rate-limit-user-read",
-        "asset_id": "resource:user",
+        "asset_id": "asset:user",
         "property": "availability",
         "status": "absent",
         "description": "No route-specific rate limit was found",
-        "location": "internal/users.go:42"
+        "decl": "internal/users.go#getUser",
+        "quote": "getUser(request)",
+        "checked": ["internal/users.go"],
+        "asvs": null
       }
     ]
   },
@@ -96,8 +143,18 @@
       "kind": "object",
       "name": "User",
       "description": "A customer account",
+      "origin": "resources",
       "location": "internal/users.go:20",
       "source_ids": ["resource:user"],
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/users/{id}",
+          "handler": "getUser",
+          "decl": "internal/users.go#getUser",
+          "line": 42
+        }
+      ],
       "controls": [
         {
           "control_id": "control:authorize-user-read",
@@ -119,6 +176,7 @@
       "kind": "field",
       "name": "email",
       "description": "Customer email address",
+      "origin": "resources",
       "parent": "asset:user",
       "location": "internal/users.go:24",
       "source_ids": ["resource:user"],
@@ -131,6 +189,7 @@
       "name": "Authorize user reads",
       "description": "Only permitted callers may read user records",
       "property": "authorization",
+      "asvs": ["V4.1.2"],
       "source_control_observation_ids": [
         "control-observation:authorize-user-read"
       ]
@@ -142,7 +201,9 @@
       "name": "authorize(userID)",
       "description": "Shared authorization helper",
       "kind": "code",
-      "locations": ["internal/users.go:45"],
+      "anchors": [
+        {"decl": "internal/users.go#authorize", "quote": "authorize(userID)"}
+      ],
       "source_control_observation_ids": [
         "control-observation:authorize-user-read"
       ]

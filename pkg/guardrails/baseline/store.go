@@ -45,6 +45,9 @@ func DefaultStoreRoot() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("determine home directory: %w", err)
 	}
+	if strings.TrimSpace(home) == "" || !filepath.IsAbs(home) {
+		return "", fmt.Errorf("home directory must be an absolute path")
+	}
 	return filepath.Join(home, filepath.FromSlash(StoreRelativePath)), nil
 }
 
@@ -62,6 +65,9 @@ func DefaultStore() (Store, error) {
 func (s Store) List() ([]RunEntry, error) {
 	if strings.TrimSpace(s.Root) == "" {
 		return nil, fmt.Errorf("baseline store root is empty")
+	}
+	if !filepath.IsAbs(s.Root) {
+		return nil, fmt.Errorf("baseline store root must be absolute")
 	}
 	rootInfo, err := os.Lstat(s.Root)
 	if os.IsNotExist(err) {
@@ -81,12 +87,19 @@ func (s Store) List() ([]RunEntry, error) {
 	runs := make([]RunEntry, 0, len(entries))
 	for _, entry := range entries {
 		name := entry.Name()
-		path := filepath.Join(s.Root, name)
-		if entry.Type()&os.ModeSymlink != 0 {
-			runs = append(runs, invalidRun(name, path, "run directory must not be a symlink"))
+		if initializingRunID(name) {
 			continue
 		}
-		if !entry.IsDir() {
+		path := filepath.Join(s.Root, name)
+		if !entry.IsDir() && entry.Type()&os.ModeSymlink == 0 {
+			continue
+		}
+		if !safeRunID(name) {
+			runs = append(runs, invalidRun(name, path, invalidRunIDMessage(name)))
+			continue
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			runs = append(runs, invalidRun(name, path, "run directory must not be a symlink"))
 			continue
 		}
 		runs = append(runs, loadRunEntry(name, path))
@@ -96,7 +109,7 @@ func (s Store) List() ([]RunEntry, error) {
 		if !left.Equal(right) {
 			return left.After(right)
 		}
-		return runs[i].ID < runs[j].ID
+		return runs[i].ID > runs[j].ID
 	})
 	return runs, nil
 }
@@ -175,14 +188,66 @@ func (s Store) Select(selector Selector) (*RunEntry, error) {
 }
 
 func loadRunEntry(id, dir string) RunEntry {
-	baselinePath := filepath.Join(dir, "baseline.json")
-	logPath := filepath.Join(dir, "run.log")
-	if err := regularFile(logPath); err != nil {
-		return invalidRun(id, dir, fmt.Sprintf("invalid run.log: %v", err))
+	if !safeRunID(id) {
+		return invalidRun(id, dir, invalidRunIDMessage(id))
 	}
-	document, err := Load(baselinePath)
+	runRoot, directoryInfo, err := openRunRoot(dir)
 	if err != nil {
 		return invalidRun(id, dir, err.Error())
+	}
+	defer runRoot.Close()
+	directory, err := runRoot.Open(".")
+	if err != nil {
+		return invalidRun(id, dir, fmt.Sprintf("could not open run directory: %v", err))
+	}
+	entries, err := directory.ReadDir(-1)
+	_ = directory.Close()
+	if err != nil {
+		return invalidRun(id, dir, fmt.Sprintf("could not read run directory: %v", err))
+	}
+	found := make(map[string]bool, len(entries))
+	extras := make([]string, 0)
+	for _, entry := range entries {
+		name := entry.Name()
+		if name != "baseline.json" && name != "run.log" {
+			extras = append(extras, name)
+			continue
+		}
+		found[name] = true
+	}
+	for _, name := range []string{"baseline.json", "run.log"} {
+		if !found[name] {
+			return invalidRun(id, dir, fmt.Sprintf("run directory is missing %s", name))
+		}
+	}
+	if err := validateRootRegularFile(runRoot, "run.log"); err != nil {
+		return invalidRun(id, dir, fmt.Sprintf("invalid run.log: %v", err))
+	}
+	baselinePath := filepath.Join(dir, "baseline.json")
+	logPath := filepath.Join(dir, "run.log")
+	data, err := readRootRegularFile(runRoot, "baseline.json")
+	if err != nil {
+		return invalidRun(id, dir, fmt.Sprintf("invalid baseline.json: %v", err))
+	}
+	document, err := Parse(data)
+	if err != nil {
+		if baselineErr, ok := err.(*Error); ok {
+			baselineErr.Path = baselinePath
+		}
+		return invalidRun(id, dir, err.Error())
+	}
+	for _, name := range extras {
+		if document.Run.Status == StatusRunning && name == ".baseline.json.tmp" {
+			if err := validateRootRegularFile(runRoot, name); err != nil {
+				return invalidRun(id, dir, fmt.Sprintf("invalid %s: %v", name, err))
+			}
+			continue
+		}
+		return invalidRun(id, dir, fmt.Sprintf("run directory contains unexpected artifact %q", name))
+	}
+	currentDirectoryInfo, err := regularRunDirectory(dir)
+	if err != nil || !os.SameFile(directoryInfo, currentDirectoryInfo) {
+		return invalidRun(id, dir, "run directory changed while it was being read")
 	}
 	if document.Run.ID != id {
 		return invalidRun(
@@ -212,15 +277,119 @@ func invalidRun(id, dir, problem string) RunEntry {
 	}
 }
 
-func regularFile(path string) error {
+// ReadLog safely reads this run's execution log without following a symlink or
+// accepting a pathname swap between inspection, open, and read.
+func (r RunEntry) ReadLog() ([]byte, error) {
+	if filepath.Clean(r.LogPath) != filepath.Join(filepath.Clean(r.Dir), "run.log") {
+		return nil, fmt.Errorf("run.log path must remain inside its run directory")
+	}
+	runRoot, directoryInfo, err := openRunRoot(r.Dir)
+	if err != nil {
+		return nil, err
+	}
+	defer runRoot.Close()
+	data, err := readRootRegularFile(runRoot, "run.log")
+	if err != nil {
+		return nil, err
+	}
+	currentDirectoryInfo, err := regularRunDirectory(r.Dir)
+	if err != nil || !os.SameFile(directoryInfo, currentDirectoryInfo) {
+		return nil, fmt.Errorf("run directory changed while run.log was being read")
+	}
+	return data, nil
+}
+
+func openRunRoot(path string) (*os.Root, os.FileInfo, error) {
+	expectedInfo, err := regularRunDirectory(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	directory, err := root.Open(".")
+	if err != nil {
+		_ = root.Close()
+		return nil, nil, err
+	}
+	openedInfo, statErr := directory.Stat()
+	_ = directory.Close()
+	currentInfo, currentErr := regularRunDirectory(path)
+	if statErr != nil || currentErr != nil || !openedInfo.IsDir() ||
+		!os.SameFile(expectedInfo, openedInfo) || !os.SameFile(openedInfo, currentInfo) {
+		_ = root.Close()
+		return nil, nil, fmt.Errorf("run directory changed while it was being opened")
+	}
+	return root, openedInfo, nil
+}
+
+func regularRunDirectory(path string) (os.FileInfo, error) {
 	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return nil, fmt.Errorf("run directory must be a non-symlinked directory")
+	}
+	return info, nil
+}
+
+func validateRootRegularFile(root *os.Root, name string) error {
+	file, err := openRootRegularFile(root, name)
 	if err != nil {
 		return err
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return fmt.Errorf("must be a regular, non-symlinked file")
+	return file.Close()
+}
+
+func readRootRegularFile(root *os.Root, name string) ([]byte, error) {
+	file, err := openRootRegularFile(root, name)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	currentInfo, err := root.Lstat(name)
+	if err != nil || currentInfo.Mode()&os.ModeSymlink != 0 ||
+		!currentInfo.Mode().IsRegular() || !os.SameFile(openedInfo, currentInfo) {
+		return nil, fmt.Errorf("regular file changed while it was being read")
+	}
+	return data, nil
+}
+
+func openRootRegularFile(root *os.Root, name string) (*os.File, error) {
+	expectedInfo, err := root.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	if expectedInfo.Mode()&os.ModeSymlink != 0 || !expectedInfo.Mode().IsRegular() {
+		return nil, fmt.Errorf("must be a regular, non-symlinked file")
+	}
+	file, err := root.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	currentInfo, currentErr := root.Lstat(name)
+	if currentErr != nil || currentInfo.Mode()&os.ModeSymlink != 0 ||
+		!openedInfo.Mode().IsRegular() || !currentInfo.Mode().IsRegular() ||
+		!os.SameFile(expectedInfo, openedInfo) || !os.SameFile(openedInfo, currentInfo) {
+		_ = file.Close()
+		return nil, fmt.Errorf("regular file changed while it was being opened")
+	}
+	return file, nil
 }
 
 func readRegularFile(path string) ([]byte, error) {
@@ -283,15 +452,73 @@ func openRegularFile(
 }
 
 func safeRunID(id string) bool {
-	return id != "" && id != "." && id != ".." && filepath.Base(id) == id &&
-		!strings.ContainsAny(id, `/\\`)
+	// Codebase slugs may contain "--", so split the final two components.
+	lastSeparator := strings.LastIndex(id, "--")
+	if lastSeparator <= 0 {
+		return false
+	}
+	prefix := id[:lastSeparator]
+	sequence := id[lastSeparator+2:]
+	secondSeparator := strings.LastIndex(prefix, "--")
+	if secondSeparator <= 0 {
+		return false
+	}
+	slug := prefix[:secondSeparator]
+	commit := prefix[secondSeparator+2:]
+	if len(sequence) != 6 || !asciiDigits(sequence) || !safeCodebaseSlug(slug) {
+		return false
+	}
+	return commit == "no-commit" || (len(commit) == 8 && lowercaseHex(commit))
+}
+
+func initializingRunID(name string) bool {
+	return strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".initializing")
+}
+
+func safeCodebaseSlug(value string) bool {
+	if value == "" {
+		return false
+	}
+	for index := 0; index < len(value); index++ {
+		byteValue := value[index]
+		if (byteValue < 'a' || byteValue > 'z') &&
+			(byteValue < '0' || byteValue > '9') &&
+			byteValue != '.' && byteValue != '_' && byteValue != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func asciiDigits(value string) bool {
+	for index := 0; index < len(value); index++ {
+		if value[index] < '0' || value[index] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func lowercaseHex(value string) bool {
+	for index := 0; index < len(value); index++ {
+		if (value[index] < '0' || value[index] > '9') &&
+			(value[index] < 'a' || value[index] > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func invalidRunIDMessage(id string) string {
+	return fmt.Sprintf(
+		"baseline run ID %q must match <safe-codebase>--(<8-lowercase-hex>|no-commit)--<6-digits>",
+		id,
+	)
 }
 
 func runSortTime(run RunEntry) time.Time {
-	for _, value := range []string{run.Run.CompletedAt, run.Run.StartedAt} {
-		if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
-			return parsed
-		}
+	if parsed, err := time.Parse(time.RFC3339Nano, run.Run.StartedAt); err == nil {
+		return parsed
 	}
 	return time.Time{}
 }

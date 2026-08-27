@@ -28,7 +28,13 @@ type BaselineRunOption struct {
 // RenderBaselineRunTable renders the runs-first TUI screen without ANSI
 // escapes. It is also the deterministic fallback when stdout is not a TTY.
 func RenderBaselineRunTable(options []BaselineRunOption) string {
-	return renderBaselineRunTable(options, -1, baselineStyle{}, "\n")
+	return RenderBaselineRunTableWidth(options, 120)
+}
+
+// RenderBaselineRunTableWidth renders the run catalog within a fixed terminal
+// width. It is exported for deterministic non-interactive and PTY tests.
+func RenderBaselineRunTableWidth(options []BaselineRunOption, width int) string {
+	return renderBaselineRunTable(options, -1, baselineStyle{}, "\n", width)
 }
 
 // BaselineRunDiagnostics renders the complete diagnostic view for a run that
@@ -79,6 +85,13 @@ func PickBaselineRun(
 		options,
 		selected,
 		baselineColorEnabled(os.Stdout),
+		func() int {
+			width, _, sizeErr := term.GetSize(int(os.Stdout.Fd()))
+			if sizeErr != nil || width <= 0 {
+				return 120
+			}
+			return width
+		},
 		func() (bool, error) {
 			return baselineWaitForInput(stdinFD, baselineEscapeSequenceWait)
 		},
@@ -141,6 +154,7 @@ func pickBaselineRunIO(
 	options []BaselineRunOption,
 	selected int,
 	color bool,
+	width func() int,
 	waiters ...baselineInputWaiter,
 ) (int, bool, error) {
 	if len(options) == 0 {
@@ -152,11 +166,18 @@ func pickBaselineRunIO(
 		if renderedLines > 0 {
 			clearBaselineLines(writer, renderedLines)
 		}
-		frame := renderBaselineRunTable(options, selected, baselineStyle{enabled: color}, "\r\n")
+		terminalWidth := max(20, width())
+		frame := renderBaselineRunTable(
+			options,
+			selected,
+			baselineStyle{enabled: color},
+			"\r\n",
+			terminalWidth,
+		)
 		if _, err := io.WriteString(writer, frame); err != nil {
 			return selected, false, err
 		}
-		renderedLines = strings.Count(frame, "\n")
+		renderedLines = baselinePhysicalLineCount(frame, terminalWidth)
 
 		key, err := readBaselineKey(reader, waiters...)
 		if err != nil {
@@ -185,39 +206,32 @@ func renderBaselineRunTable(
 	selected int,
 	style baselineStyle,
 	newline string,
+	width int,
 ) string {
-	const (
-		repositoryWidth      = 20
-		commitWidth          = 8
-		runWidth             = 28
-		scannedWidth         = 16
-		durationWidth        = 8
-		assetsWidth          = 6
-		controlsWidth        = 8
-		implementationsWidth = 15
-		statusWidth          = 10
-	)
-	columns := func(values ...string) string {
-		widths := []int{
-			repositoryWidth, commitWidth, runWidth, scannedWidth, durationWidth,
-			assetsWidth, controlsWidth, implementationsWidth, statusWidth,
-		}
-		parts := make([]string, len(values))
-		for index, value := range values {
-			parts[index] = baselinePadRight(baselineFit(value, widths[index]), widths[index])
+	width = max(20, width)
+	columns := baselineRunColumns(width)
+	renderColumns := func(option *BaselineRunOption) string {
+		parts := make([]string, len(columns))
+		for index, column := range columns {
+			value := column.header
+			if option != nil {
+				value = baselineRunColumnValue(*option, column.key)
+			}
+			parts[index] = baselinePadRight(baselineFit(value, column.width), column.width)
 		}
 		return strings.Join(parts, "  ")
 	}
 
 	var out strings.Builder
-	out.WriteString(style.bold("Guardrails baselines"))
+	out.WriteString(style.bold(baselineFit("Guardrails baselines", width-1)))
 	out.WriteString(newline)
-	out.WriteString(style.dim("Select a run to explore its Assets, Controls, and Implementations."))
-	out.WriteString(newline)
-	out.WriteString(newline)
-	out.WriteString(style.bold(columns(
-		"Repository", "Commit", "Run", "Scanned", "Time", "Assets", "Controls", "Implementations", "Status",
+	out.WriteString(style.dim(baselineFit(
+		"Select a run to explore its Assets, Controls, and Implementations.",
+		width-1,
 	)))
+	out.WriteString(newline)
+	out.WriteString(newline)
+	out.WriteString(style.bold(renderColumns(nil)))
 	out.WriteString(newline)
 	start, end := 0, len(options)
 	if selected >= 0 && len(options) > baselineRepositoryPickerMaxVisible {
@@ -227,41 +241,139 @@ func renderBaselineRunTable(
 	}
 	for index := start; index < end; index++ {
 		option := options[index]
-		row := columns(
-			baselineRunRepository(option),
-			baselineRunCommit(option),
-			sanitizeBaselineText(option.ID, false),
-			sanitizeBaselineText(option.Scanned, false),
-			sanitizeBaselineText(option.Duration, false),
-			fmt.Sprintf("%d", option.Assets),
-			fmt.Sprintf("%d", option.Controls),
-			fmt.Sprintf("%d", option.Implementations),
-			baselineRunStatus(option),
-		)
+		renderedRow := renderColumns(&option)
 		marker := "  "
 		if index == selected {
 			marker = "› "
-			row = style.highlight(row)
+			renderedRow = style.highlight(renderedRow)
 		}
 		out.WriteString(marker)
-		out.WriteString(row)
+		out.WriteString(renderedRow)
 		out.WriteString(newline)
 	}
 	if end-start < len(options) {
-		out.WriteString(style.dim(fmt.Sprintf(
+		out.WriteString(style.dim(baselineFit(fmt.Sprintf(
 			"  %d–%d of %d · use ↑↓ to scroll",
 			start+1,
 			end,
 			len(options),
-		)))
+		), width-1)))
 		out.WriteString(newline)
 	}
 	if selected >= 0 {
 		out.WriteString(newline)
-		out.WriteString(style.dim("↑↓ select  Enter/→ open  Esc/Q exit"))
+		out.WriteString(style.dim(baselineFit("↑↓ select  Enter/→ open  Esc/Q exit", width-1)))
 		out.WriteString(newline)
 	}
 	return out.String()
+}
+
+type baselineRunColumn struct {
+	key     string
+	header  string
+	minimum int
+	desired int
+	width   int
+}
+
+func baselineRunColumns(terminalWidth int) []baselineRunColumn {
+	full := []baselineRunColumn{
+		{key: "repository", header: "Repository", minimum: 10, desired: 20},
+		{key: "commit", header: "Commit", minimum: 9, desired: 9},
+		{key: "run", header: "Run", minimum: 3, desired: 28},
+		{key: "scanned", header: "Scanned", minimum: 7, desired: 16},
+		{key: "duration", header: "Duration", minimum: 8, desired: 8},
+		{key: "assets", header: "Assets", minimum: 6, desired: 6},
+		{key: "controls", header: "Controls", minimum: 8, desired: 8},
+		{key: "implementations", header: "Implementations", minimum: 15, desired: 15},
+		{key: "status", header: "Status", minimum: 9, desired: 10},
+	}
+	compact := []baselineRunColumn{
+		{key: "repository", header: "Repository", minimum: 10, desired: 16},
+		{key: "commit", header: "Commit", minimum: 9, desired: 9},
+		{key: "run", header: "Run", minimum: 8, desired: 24},
+		{key: "assets", header: "Assets", minimum: 6, desired: 6},
+		{key: "controls", header: "Controls", minimum: 8, desired: 8},
+		{key: "implementations", header: "Implementations", minimum: 15, desired: 15},
+		{key: "status", header: "Status", minimum: 9, desired: 10},
+	}
+	narrow := []baselineRunColumn{
+		{key: "repository", header: "Repository", minimum: 10, desired: 18},
+		{key: "commit", header: "Commit", minimum: 9, desired: 9},
+		{key: "run", header: "Run", minimum: 8, desired: 24},
+		{key: "status", header: "Status", minimum: 9, desired: 10},
+	}
+	available := max(1, terminalWidth-3)
+	columns := full
+	if baselineRunColumnsMinimum(full) > available {
+		columns = compact
+	}
+	if baselineRunColumnsMinimum(columns) > available {
+		columns = narrow
+	}
+	for index := range columns {
+		columns[index].width = columns[index].minimum
+	}
+	extra := max(0, available-baselineRunColumnsMinimum(columns))
+	for _, key := range []string{"run", "repository", "scanned", "status"} {
+		for index := range columns {
+			if columns[index].key != key || extra == 0 {
+				continue
+			}
+			growth := min(extra, columns[index].desired-columns[index].width)
+			columns[index].width += growth
+			extra -= growth
+		}
+	}
+	return columns
+}
+
+func baselineRunColumnsMinimum(columns []baselineRunColumn) int {
+	width := max(0, len(columns)-1) * 2
+	for _, column := range columns {
+		width += column.minimum
+	}
+	return width
+}
+
+func baselineRunColumnValue(option BaselineRunOption, key string) string {
+	switch key {
+	case "repository":
+		return baselineRunRepository(option)
+	case "commit":
+		return baselineRunCommit(option)
+	case "run":
+		return sanitizeBaselineText(option.ID, false)
+	case "scanned":
+		return sanitizeBaselineText(option.Scanned, false)
+	case "duration":
+		return sanitizeBaselineText(option.Duration, false)
+	case "assets":
+		return fmt.Sprintf("%d", option.Assets)
+	case "controls":
+		return fmt.Sprintf("%d", option.Controls)
+	case "implementations":
+		return fmt.Sprintf("%d", option.Implementations)
+	case "status":
+		return baselineRunStatus(option)
+	default:
+		return ""
+	}
+}
+
+func baselinePhysicalLineCount(frame string, width int) int {
+	width = max(1, width)
+	normalized := strings.ReplaceAll(frame, "\r\n", "\n")
+	normalized = strings.TrimSuffix(normalized, "\n")
+	if normalized == "" {
+		return 0
+	}
+	lines := strings.Split(normalized, "\n")
+	count := 0
+	for _, line := range lines {
+		count += max(1, (visibleLen(line)+width-1)/width)
+	}
+	return count
 }
 
 func renderBaselineRunDiagnostics(
@@ -289,9 +401,17 @@ func baselineRunRepository(option BaselineRunOption) string {
 }
 
 func baselineRunCommit(option BaselineRunOption) string {
-	value := baselineShortCommit(sanitizeBaselineText(option.Commit, false))
+	value := sanitizeBaselineText(option.Commit, false)
 	if value == "" {
 		return "—"
+	}
+	dirty := strings.HasSuffix(value, "*")
+	value = strings.TrimSuffix(value, "*")
+	if value != "no-commit" && len(value) > 8 {
+		value = value[:8]
+	}
+	if dirty {
+		value += "*"
 	}
 	return value
 }

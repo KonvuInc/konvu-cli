@@ -42,6 +42,20 @@ func guardrailsBaselineSelector(runID, repository string) (baseline.Selector, er
 	return baseline.Selector{RunID: runID, Repository: repository}, nil
 }
 
+func guardrailsBaselineValidateOptionalFlag(
+	cmd *cobra.Command,
+	name, value string,
+) error {
+	if !cmd.Flags().Changed(name) || strings.TrimSpace(value) != "" {
+		return nil
+	}
+	return guardrailsBaselineError(
+		"INVALID_ARGUMENTS",
+		fmt.Sprintf("--%s requires a non-empty value", name),
+		clierrors.ExitUsageError,
+	)
+}
+
 func selectGuardrailsBaselineCatalog(
 	store baseline.Store,
 	selector baseline.Selector,
@@ -211,6 +225,14 @@ func guardrailsBaselineRunValue(run baseline.RunEntry) map[string]any {
 
 func guardrailsBaselineRunTableValue(run baseline.RunEntry) map[string]any {
 	value := guardrailsBaselineRunValue(run)
+	for _, key := range []string{
+		"id", "status", "problem", "repository", "codebase_path", "commit", "branch",
+		"started_at", "completed_at",
+	} {
+		if text, ok := value[key].(string); ok {
+			value[key] = sanitizeGuardrailsBaselineText(text)
+		}
+	}
 	value["run"] = value["id"]
 	value["scanned"] = value["completed_at"]
 	if value["scanned"] == "" {

@@ -52,9 +52,11 @@ func TestCatalogIndexesCollectionsAndRelationships(t *testing.T) {
 	wantRelated := []string{
 		"assets:asset:user-email",
 		"control-observations:control-observation:authorize-user-read",
+		"control-observations:control-observation:rate-limit-user-read",
 		"controls:control:authorize-user-read",
 		"implementations:implementation:authorize-user-read",
 		"resources:resource:user",
+		"routes:route:get-user",
 	}
 	if got := entityKeys(catalog.Related("asset:user")); !reflect.DeepEqual(got, wantRelated) {
 		t.Fatalf("asset related = %v, want %v", got, wantRelated)
@@ -70,11 +72,45 @@ func TestCatalogIndexesCollectionsAndRelationships(t *testing.T) {
 	wantResourceRelated := []string{
 		"assets:asset:user",
 		"assets:asset:user-email",
-		"control-observations:control-observation:rate-limit-user-read",
+		"classes:class:user-service",
 	}
 	if got := entityKeys(catalog.Related("resource:user")); !reflect.DeepEqual(got, wantResourceRelated) {
 		t.Fatalf("resource related = %v, want %v", got, wantResourceRelated)
 	}
+}
+
+func TestCatalogQualifiedLookupAndReverseSourceRelationships(t *testing.T) {
+	catalog, err := NewCatalog(canonicalDocument(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		collection Collection
+		id         string
+	}{
+		{CollectionAssetObservations, "asset:user"},
+		{CollectionControlObservations, "control-observation:rate-limit-user-read"},
+		{CollectionUnresolved, "control-observation:rate-limit-user-read"},
+	} {
+		entity, found := catalog.LookupIn(test.collection, test.id)
+		if !found || entity.Collection != test.collection || entity.ID != test.id {
+			t.Errorf("LookupIn(%q, %q) = %#v, %v", test.collection, test.id, entity, found)
+		}
+	}
+	if _, found := catalog.LookupIn(CollectionAssets, "control-observation:rate-limit-user-read"); found {
+		t.Fatal("qualified lookup crossed collection boundary")
+	}
+
+	assertRelatedContains(t, catalog.RelatedIn(CollectionAssetObservations, "asset:user"),
+		"assets:asset:user")
+	assertRelatedContains(t, catalog.Related("route:get-user"), "assets:asset:user")
+	assertRelatedContains(t, catalog.Related("control-observation:rate-limit-user-read"),
+		"unresolved:control-observation:rate-limit-user-read")
+	assertRelatedContains(t, catalog.RelatedIn(
+		CollectionUnresolved,
+		"control-observation:rate-limit-user-read",
+	), "control-observations:control-observation:rate-limit-user-read")
+	assertRelatedContains(t, catalog.Related("resource:user"), "classes:class:user-service")
 }
 
 func TestCatalogResultsAreIndependentCopies(t *testing.T) {
@@ -125,4 +161,14 @@ func containsCollection(values []Collection, target Collection) bool {
 		}
 	}
 	return false
+}
+
+func assertRelatedContains(t *testing.T, entities []Entity, expected string) {
+	t.Helper()
+	for _, key := range entityKeys(entities) {
+		if key == expected {
+			return
+		}
+	}
+	t.Fatalf("related = %v, missing %q", entityKeys(entities), expected)
 }

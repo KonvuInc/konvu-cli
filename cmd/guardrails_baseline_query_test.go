@@ -13,6 +13,7 @@ import (
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	baselinemodel "github.com/KonvuInc/konvu-cli/pkg/guardrails/baseline"
 	"github.com/KonvuInc/konvu-cli/pkg/output"
+	"github.com/spf13/cobra"
 )
 
 func TestGuardrailsBaselineSelectorRejectsConflictingSelectors(t *testing.T) {
@@ -20,21 +21,49 @@ func TestGuardrailsBaselineSelectorRejectsConflictingSelectors(t *testing.T) {
 	assertGuardrailsBaselineCLIError(t, err, "INVALID_ARGUMENTS", clierrors.ExitUsageError)
 }
 
+func TestGuardrailsBaselineExplicitOptionalFlagsRequireValues(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value string
+	}{
+		{name: "run", value: ""},
+		{name: "repo", value: "   "},
+		{name: "collection", value: "\t"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			command := &cobra.Command{Use: "fixture"}
+			var value string
+			command.Flags().StringVar(&value, test.name, "", "fixture")
+			if err := command.Flags().Set(test.name, test.value); err != nil {
+				t.Fatal(err)
+			}
+			err := guardrailsBaselineValidateOptionalFlag(command, test.name, value)
+			assertGuardrailsBaselineCLIError(t, err, "INVALID_ARGUMENTS", clierrors.ExitUsageError)
+		})
+	}
+
+	command := &cobra.Command{Use: "fixture"}
+	command.Flags().String("run", "", "fixture")
+	if err := guardrailsBaselineValidateOptionalFlag(command, "run", ""); err != nil {
+		t.Fatalf("absent optional flag was rejected: %v", err)
+	}
+}
+
 func TestWriteGuardrailsBaselineListRunsKeepsInvalidAndIncompleteRuns(t *testing.T) {
 	store := newGuardrailsBaselineCommandStore(t)
 	writeGuardrailsBaselineCommandRun(t, store, guardrailsBaselineCommandRun{
-		id: "payments-api--aaaaaaa--000001", status: "completed", repository: "payments-api",
+		id: "payments-api--aaaaaaaa--000001", status: "completed", repository: "payments-api",
 		path: "/code/payments-api", started: "2026-08-27T10:00:00Z", completed: "2026-08-27T10:00:12Z",
 	})
 	writeGuardrailsBaselineCommandRun(t, store, guardrailsBaselineCommandRun{
-		id: "orders-api--bbbbbbb--000002", status: "failed", repository: "orders-api",
+		id: "orders-api--bbbbbbbb--000002", status: "failed", repository: "orders-api",
 		path: "/code/orders-api", started: "2026-08-27T11:00:00Z", completed: "2026-08-27T11:00:05Z",
 	})
 	writeGuardrailsBaselineCommandRun(t, store, guardrailsBaselineCommandRun{
-		id: "payments-api--ddddddd--000004", status: "cancelled", repository: "payments-api",
+		id: "payments-api--dddddddd--000004", status: "cancelled", repository: "payments-api",
 		path: "/code/payments-api", started: "2026-08-27T12:00:00Z", completed: "2026-08-27T12:00:03Z",
 	})
-	invalidDir := filepath.Join(store.Root, "broken--ccccccc--000003")
+	invalidDir := filepath.Join(store.Root, "broken--cccccccc--000003")
 	if err := os.MkdirAll(invalidDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +141,7 @@ func TestWriteGuardrailsBaselineListRunsKeepsInvalidAndIncompleteRuns(t *testing
 
 func TestWriteGuardrailsBaselineListCollectionUsesCanonicalData(t *testing.T) {
 	store := newGuardrailsBaselineCommandStore(t)
-	runID := "payments-api--aaaaaaa--000001"
+	runID := "payments-api--aaaaaaaa--000001"
 	writeGuardrailsBaselineCommandRun(t, store, guardrailsBaselineCommandRun{
 		id: runID, status: "completed", repository: "payments-api", path: "/code/payments-api",
 		started: "2026-08-27T10:00:00Z", completed: "2026-08-27T10:00:12Z",
@@ -172,7 +201,7 @@ func TestWriteGuardrailsBaselineListCollectionUsesCanonicalData(t *testing.T) {
 
 func TestWriteGuardrailsBaselineListValidatesCollectionAndRunLifecycle(t *testing.T) {
 	store := newGuardrailsBaselineCommandStore(t)
-	failedID := "payments-api--aaaaaaa--000001"
+	failedID := "payments-api--aaaaaaaa--000001"
 	writeGuardrailsBaselineCommandRun(t, store, guardrailsBaselineCommandRun{
 		id: failedID, status: "failed", repository: "payments-api", path: "/code/payments-api",
 		started: "2026-08-27T10:00:00Z", completed: "2026-08-27T10:00:12Z",
@@ -209,9 +238,48 @@ func TestWriteGuardrailsBaselineListValidatesCollectionAndRunLifecycle(t *testin
 	assertGuardrailsBaselineCLIError(t, err, "GUARDRAILS_BASELINE_NOT_FOUND", clierrors.ExitNotFound)
 }
 
+func TestWriteGuardrailsBaselineListRunsRepoRejectsAmbiguousName(t *testing.T) {
+	store := newGuardrailsBaselineCommandStore(t)
+	for _, run := range []guardrailsBaselineCommandRun{
+		{
+			id: "payments-a--aaaaaaaa--000001", status: "completed", repository: "payments",
+			path: "/code/acme/payments", started: "2026-08-27T10:00:00Z", completed: "2026-08-27T10:00:12Z",
+		},
+		{
+			id: "payments-b--bbbbbbbb--000002", status: "completed", repository: "payments",
+			path: "/code/other/payments", started: "2026-08-27T11:00:00Z", completed: "2026-08-27T11:00:12Z",
+		},
+	} {
+		writeGuardrailsBaselineCommandRun(t, store, run)
+	}
+	err := writeGuardrailsBaselineList(
+		&bytes.Buffer{},
+		store,
+		"runs",
+		baselinemodel.Selector{Repository: "payments"},
+		output.JSON,
+	)
+	assertGuardrailsBaselineCLIError(t, err, "GUARDRAILS_BASELINE_AMBIGUOUS", clierrors.ExitUsageError)
+
+	var absolute bytes.Buffer
+	if err := writeGuardrailsBaselineList(
+		&absolute,
+		store,
+		"runs",
+		baselinemodel.Selector{Repository: "/code/acme/payments"},
+		output.JSON,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(absolute.String(), "payments-a--aaaaaaaa--000001") ||
+		strings.Contains(absolute.String(), "payments-b--bbbbbbbb--000002") {
+		t.Fatalf("absolute history filter = %s", absolute.String())
+	}
+}
+
 func TestWriteGuardrailsBaselineListAssetObservationsDoesNotChangeAssetLookup(t *testing.T) {
 	store := newGuardrailsBaselineCommandStore(t)
-	runID := "payments-api--aaaaaaa--000001"
+	runID := "payments-api--aaaaaaaa--000001"
 	writeGuardrailsBaselineCommandRun(t, store, guardrailsBaselineCommandRun{
 		id: runID, status: "completed", repository: "payments-api", path: "/code/payments-api",
 		started: "2026-08-27T10:00:00Z", completed: "2026-08-27T10:00:12Z",
@@ -257,10 +325,94 @@ func TestWriteGuardrailsBaselineListAssetObservationsDoesNotChangeAssetLookup(t 
 	}
 }
 
+func TestWriteGuardrailsBaselineShowAndExplainQualifiedCollections(t *testing.T) {
+	store := newGuardrailsBaselineCommandStore(t)
+	runID := "payments-api--aaaaaaaa--000001"
+	writeGuardrailsBaselineCommandRun(t, store, guardrailsBaselineCommandRun{
+		id: runID, status: "completed", repository: "payments-api", path: "/code/payments-api",
+		started: "2026-08-27T10:00:00Z", completed: "2026-08-27T10:00:12Z",
+	})
+	selector := baselinemodel.Selector{RunID: runID}
+
+	var observationOutput bytes.Buffer
+	if err := writeGuardrailsBaselineShowCollection(
+		&observationOutput,
+		store,
+		"asset:user",
+		selector,
+		false,
+		"asset-observations",
+		output.JSON,
+	); err != nil {
+		t.Fatal(err)
+	}
+	var observation map[string]any
+	if err := json.Unmarshal(observationOutput.Bytes(), &observation); err != nil {
+		t.Fatal(err)
+	}
+	if observation["description"] == nil || observation["controls"] != nil {
+		t.Fatalf("qualified Asset observation = %#v", observation)
+	}
+
+	var unresolvedOutput bytes.Buffer
+	if err := writeGuardrailsBaselineShowCollection(
+		&unresolvedOutput,
+		store,
+		"control-observation:rate-limit-user-read",
+		selector,
+		false,
+		"unresolved",
+		output.JSON,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(unresolvedOutput.String(), "No reusable Control was inferred") {
+		t.Fatalf("qualified unresolved record = %s", unresolvedOutput.String())
+	}
+
+	var explanation bytes.Buffer
+	if err := writeGuardrailsBaselineExplainCollection(
+		&explanation,
+		store,
+		"control-observation:rate-limit-user-read",
+		selector,
+		"unresolved",
+		output.JSON,
+	); err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Record struct {
+			Collection string `json:"collection"`
+		} `json:"record"`
+		Related []struct {
+			Collection string `json:"collection"`
+		} `json:"related"`
+	}
+	if err := json.Unmarshal(explanation.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Record.Collection != "unresolved" {
+		t.Fatalf("qualified explanation record = %#v", payload.Record)
+	}
+	foundObservation := false
+	for _, related := range payload.Related {
+		foundObservation = foundObservation || related.Collection == "control-observations"
+	}
+	if !foundObservation {
+		t.Fatalf("qualified explanation has no source observation: %s", explanation.String())
+	}
+
+	err := writeGuardrailsBaselineShowCollection(
+		&bytes.Buffer{}, store, "asset:user", selector, false, "mechanisms", output.JSON,
+	)
+	assertGuardrailsBaselineCLIError(t, err, "INVALID_ARGUMENTS", clierrors.ExitUsageError)
+}
+
 func TestWriteGuardrailsBaselineShowRunRecordAndLog(t *testing.T) {
 	store := newGuardrailsBaselineCommandStore(t)
-	completedID := "payments-api--aaaaaaa--000001"
-	failedID := "payments-api--aaaaaaa--000002"
+	completedID := "payments-api--aaaaaaaa--000001"
+	failedID := "payments-api--aaaaaaaa--000002"
 	writeGuardrailsBaselineCommandRun(t, store, guardrailsBaselineCommandRun{
 		id: completedID, status: "completed", repository: "payments-api", path: "/code/payments-api",
 		started: "2026-08-27T10:00:00Z", completed: "2026-08-27T10:00:12Z",
@@ -302,7 +454,7 @@ func TestWriteGuardrailsBaselineShowRunRecordAndLog(t *testing.T) {
 	if err := json.Unmarshal(recordJSON.Bytes(), &implementation); err != nil {
 		t.Fatal(err)
 	}
-	if implementation["id"] != "implementation:authorize-user-read" || implementation["locations"] == nil {
+	if implementation["id"] != "implementation:authorize-user-read" || implementation["anchors"] == nil {
 		t.Fatalf("implementation = %#v", implementation)
 	}
 
@@ -329,7 +481,7 @@ func TestWriteGuardrailsBaselineShowRunRecordAndLog(t *testing.T) {
 
 func TestWriteGuardrailsBaselineShowRejectsIncompleteRecordAndMissingRecord(t *testing.T) {
 	store := newGuardrailsBaselineCommandStore(t)
-	failedID := "payments-api--aaaaaaa--000001"
+	failedID := "payments-api--aaaaaaaa--000001"
 	writeGuardrailsBaselineCommandRun(t, store, guardrailsBaselineCommandRun{
 		id: failedID, status: "failed", repository: "payments-api", path: "/code/payments-api",
 		started: "2026-08-27T10:00:00Z", completed: "2026-08-27T10:00:12Z",
@@ -344,7 +496,7 @@ func TestWriteGuardrailsBaselineShowRejectsIncompleteRecordAndMissingRecord(t *t
 	)
 	assertGuardrailsBaselineCLIError(t, err, "GUARDRAILS_BASELINE_INCOMPLETE", clierrors.ExitGeneralError)
 
-	completedID := "payments-api--aaaaaaa--000002"
+	completedID := "payments-api--aaaaaaaa--000002"
 	writeGuardrailsBaselineCommandRun(t, store, guardrailsBaselineCommandRun{
 		id: completedID, status: "completed", repository: "payments-api", path: "/code/payments-api",
 		started: "2026-08-27T11:00:00Z", completed: "2026-08-27T11:00:12Z",
@@ -368,11 +520,21 @@ func TestWriteGuardrailsBaselineShowRejectsIncompleteRecordAndMissingRecord(t *t
 		output.Table,
 	)
 	assertGuardrailsBaselineCLIError(t, err, "INVALID_ARGUMENTS", clierrors.ExitUsageError)
+
+	err = writeGuardrailsBaselineShow(
+		&bytes.Buffer{},
+		store,
+		failedID,
+		baselinemodel.Selector{RunID: completedID},
+		false,
+		output.Table,
+	)
+	assertGuardrailsBaselineCLIError(t, err, "INVALID_ARGUMENTS", clierrors.ExitUsageError)
 }
 
 func TestWriteGuardrailsBaselineShowInvalidRunDiagnosticsAndSafeLog(t *testing.T) {
 	store := newGuardrailsBaselineCommandStore(t)
-	invalidID := "payments-api--aaaaaaa--000001"
+	invalidID := "payments-api--aaaaaaaa--000001"
 	directory := filepath.Join(store.Root, invalidID)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		t.Fatal(err)
@@ -462,7 +624,7 @@ func TestGuardrailsBaselineLocationProducerShapes(t *testing.T) {
 
 func TestWriteGuardrailsBaselineExplainReturnsRelationships(t *testing.T) {
 	store := newGuardrailsBaselineCommandStore(t)
-	runID := "payments-api--aaaaaaa--000001"
+	runID := "payments-api--aaaaaaaa--000001"
 	writeGuardrailsBaselineCommandRun(t, store, guardrailsBaselineCommandRun{
 		id: runID, status: "completed", repository: "payments-api", path: "/code/payments-api",
 		started: "2026-08-27T10:00:00Z", completed: "2026-08-27T10:00:12Z",
@@ -532,6 +694,30 @@ func TestWriteGuardrailsBaselineOutputReturnsCLIError(t *testing.T) {
 	assertGuardrailsBaselineCLIError(t, err, "GUARDRAILS_BASELINE_OUTPUT_FAILED", clierrors.ExitGeneralError)
 }
 
+func TestGuardrailsBaselineTablesSanitizeStoredTextAndFieldNames(t *testing.T) {
+	value := guardrailsBaselineRunTableValue(baselinemodel.RunEntry{
+		ID:      "bad\x1b[2J-run",
+		Problem: "failed\n\x1b[31mred",
+	})
+	for _, field := range []string{"run", "problem"} {
+		if rendered := fmt.Sprint(value[field]); strings.ContainsAny(rendered, "\x1b\n\r") {
+			t.Errorf("run table %s was not sanitized: %q", field, rendered)
+		}
+	}
+
+	var table bytes.Buffer
+	if err := writeGuardrailsBaselineFields(
+		&table,
+		map[string]any{"unsafe\x1b[2J": "value\x1b[31m"},
+		[]string{"unsafe\x1b[2J"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(table.String(), "\x1b") {
+		t.Fatalf("field table contains terminal control: %q", table.String())
+	}
+}
+
 type failingGuardrailsBaselineWriter struct{}
 
 func (failingGuardrailsBaselineWriter) Write([]byte) (int, error) {
@@ -580,6 +766,9 @@ func writeGuardrailsBaselineCommandRun(
 		runValue["completed_at"] = nil
 	} else {
 		runValue["completed_at"] = run.completed
+	}
+	if run.status == "failed" {
+		runValue["error"] = "fixture failed"
 	}
 	codebase := artifact["codebase"].(map[string]any)
 	codebase["name"] = run.repository

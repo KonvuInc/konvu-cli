@@ -167,7 +167,7 @@ func TestBaselineCatalogReviewableAssetsUseRelationshipSemantics(t *testing.T) {
 	catalog := mustSyntheticBaselineCatalog(t)
 
 	counts := catalog.ReviewableAssetCounts()
-	wantCounts := map[string]int{"endpoint": 2, "object": 1, "field": 1}
+	wantCounts := map[string]int{"endpoint": 2, "object": 1, "field": 1, "code": 0}
 	if !reflect.DeepEqual(counts, wantCounts) {
 		t.Fatalf("reviewable counts = %v, want %v", counts, wantCounts)
 	}
