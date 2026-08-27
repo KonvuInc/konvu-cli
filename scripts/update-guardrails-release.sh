@@ -12,7 +12,9 @@ if [[ ${1:-} == "--check" ]]; then
   mode=check
   shift
 fi
-destination=cmd/guardrails_artifacts.go
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+repo_root=$(cd -- "$script_dir/.." && pwd)
+destination="$repo_root/cmd/guardrails_artifacts.go"
 if [[ "$mode" == check && $# -eq 0 ]]; then
   version=$(awk -F\" '/^const guardrailsPinnedVersion = / { print $2; exit }' "$destination")
 elif [[ "$mode" == write && $# -eq 1 ]]; then
