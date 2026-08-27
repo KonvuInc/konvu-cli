@@ -1,0 +1,30 @@
+name: Guardrails release authenticity
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/guardrails-release-authenticity.yml
+      - cmd/guardrails_artifacts.go
+      - internal/tools/updateguardrails/**
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/guardrails-release-authenticity.yml
+      - cmd/guardrails_artifacts.go
+      - internal/tools/updateguardrails/**
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4 (v4.3.1)
+      - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6 (v6.2.0)
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4 (v4.1.2)
+      - name: Verify Guardrails release authenticity
+        run: go run ./internal/tools/updateguardrails --check
