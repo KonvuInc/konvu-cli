@@ -408,8 +408,17 @@ func runGuardrailsExec(args []string, apiKey, model string) {
 		reportGuardrailsError(err)
 	}
 
+	env := guardrailsEnvironment(os.Environ(), apiKey, model)
 	child := exec.Command(binPath, args...)
-	child.Env = guardrailsEnvironment(os.Environ(), apiKey, model)
+	child.Env = env
+	cleanup := func() {}
+	if !guardrailsNoSandbox {
+		child, cleanup, err = sandboxedGuardrailsCommand(binPath, args, env)
+		if err != nil {
+			reportGuardrailsError(err)
+		}
+	}
+	defer cleanup()
 	child.Stdin = os.Stdin
 	child.Stdout = os.Stdout
 	child.Stderr = os.Stderr
