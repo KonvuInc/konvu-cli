@@ -2,6 +2,7 @@ package baseline
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -220,6 +221,65 @@ func regularFile(path string) error {
 		return fmt.Errorf("must be a regular, non-symlinked file")
 	}
 	return nil
+}
+
+func readRegularFile(path string) ([]byte, error) {
+	return readRegularFileWithOpen(path, os.Open)
+}
+
+func readRegularFileWithOpen(
+	path string,
+	open func(string) (*os.File, error),
+) ([]byte, error) {
+	file, err := openRegularFile(path, open)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	currentInfo, err := os.Lstat(path)
+	if err != nil || currentInfo.Mode()&os.ModeSymlink != 0 ||
+		!currentInfo.Mode().IsRegular() || !os.SameFile(openedInfo, currentInfo) {
+		return nil, fmt.Errorf("regular file changed while it was being read")
+	}
+	return data, nil
+}
+
+func openRegularFile(
+	path string,
+	open func(string) (*os.File, error),
+) (*os.File, error) {
+	expectedInfo, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if expectedInfo.Mode()&os.ModeSymlink != 0 || !expectedInfo.Mode().IsRegular() {
+		return nil, fmt.Errorf("must be a regular, non-symlinked file")
+	}
+	file, err := open(path)
+	if err != nil {
+		return nil, err
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	currentInfo, currentErr := os.Lstat(path)
+	if currentErr != nil || currentInfo.Mode()&os.ModeSymlink != 0 ||
+		!openedInfo.Mode().IsRegular() || !currentInfo.Mode().IsRegular() ||
+		!os.SameFile(expectedInfo, openedInfo) || !os.SameFile(openedInfo, currentInfo) {
+		_ = file.Close()
+		return nil, fmt.Errorf("regular file changed while it was being opened")
+	}
+	return file, nil
 }
 
 func safeRunID(id string) bool {

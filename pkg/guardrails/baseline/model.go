@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -98,14 +97,7 @@ func Parse(data []byte) (*Document, error) {
 
 // Load reads and validates one regular, non-symlinked baseline.json file.
 func Load(path string) (*Document, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, artifactError(path, "could not read artifact: %v", err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return nil, artifactError(path, "artifact must be a regular, non-symlinked file")
-	}
-	data, err := os.ReadFile(path)
+	data, err := readRegularFile(path)
 	if err != nil {
 		return nil, artifactError(path, "could not read artifact: %v", err)
 	}

@@ -114,6 +114,28 @@ func TestStoreListMarksSymlinkedRunsAndArtifactsInvalid(t *testing.T) {
 	}
 }
 
+func TestReadRegularFileRejectsSymlinkSwapBetweenInspectionAndOpen(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "run.log")
+	original := filepath.Join(directory, "original.log")
+	outside := filepath.Join(directory, "outside.log")
+	mustWrite(t, path, []byte("expected\n"))
+	mustWrite(t, outside, []byte("secret\n"))
+
+	_, err := readRegularFileWithOpen(path, func(name string) (*os.File, error) {
+		if renameErr := os.Rename(name, original); renameErr != nil {
+			return nil, renameErr
+		}
+		if linkErr := os.Symlink(outside, name); linkErr != nil {
+			return nil, linkErr
+		}
+		return os.Open(name)
+	})
+	if err == nil || !strings.Contains(err.Error(), "changed while it was being opened") {
+		t.Fatalf("race error = %v", err)
+	}
+}
+
 func TestStoreSelectUsesExactRunPathAndUnambiguousName(t *testing.T) {
 	root := t.TempDir()
 	writeStoredRun(t, root, storedRunFixture{
