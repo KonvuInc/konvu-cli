@@ -63,17 +63,20 @@ func (s Store) List() ([]RunEntry, error) {
 	if strings.TrimSpace(s.Root) == "" {
 		return nil, fmt.Errorf("baseline store root is empty")
 	}
-	rootInfo, err := os.Lstat(s.Root)
+	storeRoot, rootInfo, err := openStoreRoot(s.Root)
 	if os.IsNotExist(err) {
 		return []RunEntry{}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("inspect baseline store %s: %w", s.Root, err)
 	}
-	if rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
-		return nil, fmt.Errorf("baseline store %s must be a non-symlinked directory", s.Root)
+	defer storeRoot.Close()
+	directory, err := storeRoot.Open(".")
+	if err != nil {
+		return nil, fmt.Errorf("open baseline store %s: %w", s.Root, err)
 	}
-	entries, err := os.ReadDir(s.Root)
+	entries, err := directory.ReadDir(-1)
+	_ = directory.Close()
 	if err != nil {
 		return nil, fmt.Errorf("read baseline store %s: %w", s.Root, err)
 	}
@@ -89,7 +92,11 @@ func (s Store) List() ([]RunEntry, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		runs = append(runs, loadRunEntry(name, path))
+		runs = append(runs, loadRunEntry(storeRoot, name, path))
+	}
+	currentRootInfo, err := regularStoreDirectory(s.Root)
+	if err != nil || !os.SameFile(rootInfo, currentRootInfo) {
+		return nil, fmt.Errorf("baseline store %s changed while it was being read", s.Root)
 	}
 	sort.SliceStable(runs, func(i, j int) bool {
 		left, right := runSortTime(runs[i]), runSortTime(runs[j])
@@ -174,14 +181,29 @@ func (s Store) Select(selector Selector) (*RunEntry, error) {
 	return latestRepositoryRun(matches, repository)
 }
 
-func loadRunEntry(id, dir string) RunEntry {
-	baselinePath := filepath.Join(dir, "baseline.json")
-	logPath := filepath.Join(dir, "run.log")
-	if err := regularFile(logPath); err != nil {
+func loadRunEntry(storeRoot *os.Root, id, dir string) RunEntry {
+	if !safeRunID(id) {
+		return invalidRun(id, dir, "run directory name must be a safe path component")
+	}
+	runRoot, directoryInfo, err := openStoredRunRoot(storeRoot, id)
+	if err != nil {
+		return invalidRun(id, dir, err.Error())
+	}
+	defer runRoot.Close()
+	if err := validateRootRegularFile(runRoot, "run.log"); err != nil {
 		return invalidRun(id, dir, fmt.Sprintf("invalid run.log: %v", err))
 	}
-	document, err := Load(baselinePath)
+	baselinePath := filepath.Join(dir, "baseline.json")
+	logPath := filepath.Join(dir, "run.log")
+	data, err := readRootRegularFile(runRoot, "baseline.json")
 	if err != nil {
+		return invalidRun(id, dir, fmt.Sprintf("invalid baseline.json: %v", err))
+	}
+	document, err := Parse(data)
+	if err != nil {
+		if baselineErr, ok := err.(*Error); ok {
+			baselineErr.Path = baselinePath
+		}
 		return invalidRun(id, dir, err.Error())
 	}
 	if document.Run.ID != id {
@@ -190,6 +212,19 @@ func loadRunEntry(id, dir string) RunEntry {
 			dir,
 			fmt.Sprintf("baseline run id %q does not match directory name %q", document.Run.ID, id),
 		)
+	}
+	if document.Run.Status == StatusRunning {
+		recoveredDocument, err := recoverTerminalSnapshot(runRoot, id)
+		if err != nil {
+			return invalidRun(id, dir, err.Error())
+		}
+		if recoveredDocument != nil {
+			document = recoveredDocument
+		}
+	}
+	currentDirectoryInfo, err := regularStoredRunDirectory(storeRoot, id)
+	if err != nil || !os.SameFile(directoryInfo, currentDirectoryInfo) {
+		return invalidRun(id, dir, "run directory changed while it was being read")
 	}
 	return RunEntry{
 		ID:       id,
@@ -212,15 +247,207 @@ func invalidRun(id, dir, problem string) RunEntry {
 	}
 }
 
-func regularFile(path string) error {
+func openStoreRoot(path string) (*os.Root, os.FileInfo, error) {
+	expectedInfo, err := regularStoreDirectory(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	directory, err := root.Open(".")
+	if err != nil {
+		_ = root.Close()
+		return nil, nil, err
+	}
+	openedInfo, statErr := directory.Stat()
+	_ = directory.Close()
+	currentInfo, currentErr := regularStoreDirectory(path)
+	if statErr != nil || currentErr != nil || !openedInfo.IsDir() ||
+		!os.SameFile(expectedInfo, openedInfo) || !os.SameFile(openedInfo, currentInfo) {
+		_ = root.Close()
+		return nil, nil, fmt.Errorf("baseline store changed while it was being opened")
+	}
+	return root, openedInfo, nil
+}
+
+func regularStoreDirectory(path string) (os.FileInfo, error) {
 	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return nil, fmt.Errorf("must be a non-symlinked directory")
+	}
+	return info, nil
+}
+
+func openStoredRunRoot(storeRoot *os.Root, id string) (*os.Root, os.FileInfo, error) {
+	expectedInfo, err := regularStoredRunDirectory(storeRoot, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	root, err := storeRoot.OpenRoot(id)
+	if err != nil {
+		return nil, nil, err
+	}
+	directory, err := root.Open(".")
+	if err != nil {
+		_ = root.Close()
+		return nil, nil, err
+	}
+	openedInfo, statErr := directory.Stat()
+	_ = directory.Close()
+	currentInfo, currentErr := regularStoredRunDirectory(storeRoot, id)
+	if statErr != nil || currentErr != nil || !openedInfo.IsDir() ||
+		!os.SameFile(expectedInfo, openedInfo) || !os.SameFile(openedInfo, currentInfo) {
+		_ = root.Close()
+		return nil, nil, fmt.Errorf("run directory changed while it was being opened")
+	}
+	return root, openedInfo, nil
+}
+
+func regularStoredRunDirectory(storeRoot *os.Root, id string) (os.FileInfo, error) {
+	info, err := storeRoot.Lstat(id)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return nil, fmt.Errorf("run directory must be a non-symlinked directory")
+	}
+	return info, nil
+}
+
+func openRunRoot(path string) (*os.Root, os.FileInfo, error) {
+	expectedInfo, err := regularRunDirectory(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	directory, err := root.Open(".")
+	if err != nil {
+		_ = root.Close()
+		return nil, nil, err
+	}
+	openedInfo, statErr := directory.Stat()
+	_ = directory.Close()
+	currentInfo, currentErr := regularRunDirectory(path)
+	if statErr != nil || currentErr != nil || !openedInfo.IsDir() ||
+		!os.SameFile(expectedInfo, openedInfo) || !os.SameFile(openedInfo, currentInfo) {
+		_ = root.Close()
+		return nil, nil, fmt.Errorf("run directory changed while it was being opened")
+	}
+	return root, openedInfo, nil
+}
+
+func regularRunDirectory(path string) (os.FileInfo, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return nil, fmt.Errorf("run directory must be a non-symlinked directory")
+	}
+	return info, nil
+}
+
+func validateRootRegularFile(root *os.Root, name string) error {
+	file, err := openRootRegularFile(root, name)
 	if err != nil {
 		return err
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return fmt.Errorf("must be a regular, non-symlinked file")
+	return file.Close()
+}
+
+func readRootRegularFile(root *os.Root, name string) ([]byte, error) {
+	file, err := openRootRegularFile(root, name)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return readOpenedRootRegularFile(root, name, file)
+}
+
+func readOpenedRootRegularFile(root *os.Root, name string, file *os.File) ([]byte, error) {
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateOpenedRootRegularFile(root, name, file); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func openRootRegularFile(root *os.Root, name string) (*os.File, error) {
+	return openRootRegularFileWithOpen(root, name, func() (*os.File, error) {
+		return root.Open(name)
+	})
+}
+
+func openRootRegularFileForUpdate(root *os.Root, name string) (*os.File, error) {
+	return openRootRegularFileWithOpen(root, name, func() (*os.File, error) {
+		return root.OpenFile(name, os.O_RDWR, 0)
+	})
+}
+
+func openRootRegularFileWithOpen(
+	root *os.Root,
+	name string,
+	open func() (*os.File, error),
+) (*os.File, error) {
+	expectedInfo, err := root.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	if expectedInfo.Mode()&os.ModeSymlink != 0 || !expectedInfo.Mode().IsRegular() {
+		return nil, fmt.Errorf("must be a regular, non-symlinked file")
+	}
+	file, err := open()
+	if err != nil {
+		return nil, err
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	currentInfo, currentErr := root.Lstat(name)
+	if currentErr != nil || currentInfo.Mode()&os.ModeSymlink != 0 ||
+		!openedInfo.Mode().IsRegular() || !currentInfo.Mode().IsRegular() ||
+		!os.SameFile(expectedInfo, openedInfo) || !os.SameFile(openedInfo, currentInfo) {
+		_ = file.Close()
+		return nil, fmt.Errorf("regular file changed while it was being opened")
+	}
+	return file, nil
+}
+
+func validateOpenedRootRegularFile(root *os.Root, name string, file *os.File) error {
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	currentInfo, err := root.Lstat(name)
+	if err != nil || currentInfo.Mode()&os.ModeSymlink != 0 ||
+		!openedInfo.Mode().IsRegular() || !currentInfo.Mode().IsRegular() ||
+		!os.SameFile(openedInfo, currentInfo) {
+		return fmt.Errorf("regular file changed while it was being read")
 	}
 	return nil
+}
+
+func syncOpenedRootRegularFile(root *os.Root, name string, file *os.File) error {
+	if err := validateOpenedRootRegularFile(root, name, file); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	return validateOpenedRootRegularFile(root, name, file)
 }
 
 func readRegularFile(path string) ([]byte, error) {
