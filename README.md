@@ -155,8 +155,9 @@ konvu guardrails baseline tui
 Queries work from any directory. Select an exact historical run with `--run`,
 or use `--repo` to select the latest completed run for a stored repository.
 The TUI starts with a runs table; selecting a completed run opens its Asset and
-Control workspace, while failed or cancelled runs open diagnostics. Use
-`--output json` for lossless scripted access to `baseline.json`.
+Control workspace, while failed or cancelled runs open diagnostics. Run
+`show <run-id> --output json` to retrieve the complete `baseline.json`; JSON
+from `list`, record-level `show`, and `explain` is scoped to that query.
 
 ### Finding sources
 
