@@ -75,11 +75,26 @@ func TestGuardrailsEnvironmentReplacesOpenAIValues(t *testing.T) {
 	}
 }
 
-func TestGuardrailsEnvironmentWithoutExplicitKeyIsUnchanged(t *testing.T) {
-	base := []string{"PATH=/usr/bin", "OPENAI_API_KEY=ambient"}
-	got := guardrailsEnvironment(base, "", "gpt-5.6-luna")
-	if len(got) != len(base) || got[1] != base[1] {
-		t.Errorf("environment = %v, want unchanged %v", got, base)
+func TestGuardrailsEnvironmentModelOverridePreservesAmbientKey(t *testing.T) {
+	base := []string{
+		"PATH=/usr/bin",
+		"OPENAI_API_KEY=ambient-key",
+		"OPENAI_MODEL=ambient-model",
+	}
+
+	got := guardrailsEnvironment(base, "", " gpt-5.6-luna ")
+	want := []string{
+		"PATH=/usr/bin",
+		"OPENAI_API_KEY=ambient-key",
+		"OPENAI_MODEL=gpt-5.6-luna",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("environment length = %d, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("environment[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 

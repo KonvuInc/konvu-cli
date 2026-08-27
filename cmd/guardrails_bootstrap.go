@@ -295,19 +295,25 @@ func installGuardrailsBinary(destPath string, data []byte) error {
 // entries with platform-dependent precedence.
 func guardrailsEnvironment(base []string, apiKey, model string) []string {
 	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
+	model = strings.TrimSpace(model)
+	if apiKey == "" && model == "" {
 		return base
 	}
 
 	env := make([]string, 0, len(base)+2)
 	for _, entry := range base {
-		if strings.HasPrefix(entry, "OPENAI_API_KEY=") || strings.HasPrefix(entry, "OPENAI_MODEL=") {
+		if apiKey != "" && strings.HasPrefix(entry, "OPENAI_API_KEY=") {
+			continue
+		}
+		if model != "" && strings.HasPrefix(entry, "OPENAI_MODEL=") {
 			continue
 		}
 		env = append(env, entry)
 	}
-	env = append(env, "OPENAI_API_KEY="+apiKey)
-	if model = strings.TrimSpace(model); model != "" {
+	if apiKey != "" {
+		env = append(env, "OPENAI_API_KEY="+apiKey)
+	}
+	if model != "" {
 		env = append(env, "OPENAI_MODEL="+model)
 	}
 	return env
