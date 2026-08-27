@@ -64,7 +64,6 @@ func prepareGuardrailsSandbox(
 		return guardrailsSandboxPaths{}, nil, func() {}, sandboxSetupError(err)
 	}
 	paths := guardrailsSandboxPaths{workDir: canonicalWorkDir}
-	paths.addCanonicalReadOnly(canonicalWorkDir)
 	if err := paths.addReadOnly(filepath.Dir(binPath)); err != nil {
 		cleanup()
 		return guardrailsSandboxPaths{}, nil, func() {}, sandboxSetupError(err)
@@ -83,6 +82,7 @@ func prepareGuardrailsSandbox(
 			cleanup()
 			return guardrailsSandboxPaths{}, nil, func() {}, sandboxSetupError(err)
 		}
+		paths.workDir = root
 		paths.addCanonicalReadOnly(root)
 		paths.addGitPaths(root, env)
 		if args[0] == "scan" {
@@ -103,6 +103,8 @@ func prepareGuardrailsSandbox(
 				}
 			}
 		}
+	} else if guardrailsNeedsWorkingDirectory(args) {
+		paths.addCanonicalReadOnly(canonicalWorkDir)
 	}
 
 	for _, path := range guardrailsExplicitReadPaths(args) {
@@ -176,6 +178,17 @@ func guardrailsExplicitReadPaths(args []string) []string {
 		}
 	}
 	return nil
+}
+
+func guardrailsNeedsWorkingDirectory(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "show", "explain":
+		return len(args) < 3
+	}
+	return false
 }
 
 func (paths *guardrailsSandboxPaths) addReadOnly(path string) error {

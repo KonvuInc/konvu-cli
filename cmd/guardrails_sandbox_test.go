@@ -29,6 +29,24 @@ func TestGuardrailsRepoArgument(t *testing.T) {
 	}
 }
 
+func TestGuardrailsNeedsWorkingDirectory(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		want bool
+	}{
+		{[]string{"show"}, true},
+		{[]string{"show", "file.go"}, true},
+		{[]string{"show", "file.go", "/profile"}, false},
+		{[]string{"explain", "guard"}, true},
+		{[]string{"explain", "guard", "/profile"}, false},
+		{[]string{"list"}, false},
+	} {
+		if got := guardrailsNeedsWorkingDirectory(test.args); got != test.want {
+			t.Errorf("guardrailsNeedsWorkingDirectory(%v) = %v, want %v", test.args, got, test.want)
+		}
+	}
+}
+
 func TestPrepareGuardrailsSandboxUsesPrivateTempAndNarrowPaths(t *testing.T) {
 	base := t.TempDir()
 	home := filepath.Join(base, "home")
@@ -69,6 +87,13 @@ func TestPrepareGuardrailsSandboxUsesPrivateTempAndNarrowPaths(t *testing.T) {
 		if !containsPath(paths.readOnly, canonical) {
 			t.Errorf("read-only paths do not include %s: %v", canonical, paths.readOnly)
 		}
+	}
+	workDir, err := canonicalPath(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workDir != repo && containsPath(paths.readOnly, workDir) {
+		t.Errorf("unrelated working directory is readable: %v", paths.readOnly)
 	}
 	cache, err := canonicalPath(filepath.Join(home, ".cache", "guardrails"))
 	if err != nil {

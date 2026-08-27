@@ -31,6 +31,9 @@ func platformGuardrailsSandboxCommand(
 	}
 
 	commandArgs := []string{"--die-with-parent", "--new-session"}
+	if paths.workDir != "/" {
+		commandArgs = append(commandArgs, "--dir", paths.workDir)
+	}
 	for _, path := range linuxSandboxSystemPaths {
 		if _, err := os.Stat(path); err == nil {
 			commandArgs = append(commandArgs, "--ro-bind", path, path)
