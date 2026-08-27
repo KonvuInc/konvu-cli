@@ -1,8 +1,10 @@
 package baseline
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -11,26 +13,26 @@ import (
 
 func TestParseCanonicalBaseline(t *testing.T) {
 	document := canonicalDocument(t)
-	if document.SchemaVersion != 1 || document.Run.ID != "payments-api--a17c2e99--000042" {
+	if document.SchemaVersion != 1 || document.Run.ID != "payments--01234567--000001" {
 		t.Fatalf("identity = version %d, run %q", document.SchemaVersion, document.Run.ID)
 	}
-	if document.Run.Status != StatusCompleted || document.Run.DurationSeconds != 12.5 {
+	if document.Run.Status != StatusCompleted || document.Run.DurationSeconds != 123.4 {
 		t.Fatalf("run = %#v", document.Run)
 	}
-	if document.Codebase.Name != "payments-api" || document.Codebase.Path != "/workspace/payments-api" {
+	if document.Codebase.Name != "payments" || document.Codebase.Path != "/work/payments" {
 		t.Fatalf("codebase = %#v", document.Codebase)
 	}
-	if document.Codebase.Git.Commit != "a17c2e9987654321" || document.Codebase.Git.Dirty {
+	if document.Codebase.Git.Commit != "0123456789abcdef0123456789abcdef01234567" || document.Codebase.Git.Dirty {
 		t.Fatalf("git = %#v", document.Codebase.Git)
 	}
 	wantCounts := Counts{
 		Classes:             1,
 		Routes:              1,
-		Resources:           1,
+		Resources:           3,
 		Roles:               1,
 		AssetObservations:   1,
 		ControlObservations: 2,
-		Assets:              2,
+		Assets:              4,
 		Controls:            1,
 		Implementations:     1,
 		Unresolved:          1,
@@ -40,20 +42,35 @@ func TestParseCanonicalBaseline(t *testing.T) {
 	}
 
 	raw := document.Raw()
-	if raw["extension"].(map[string]any)["kept"] != true {
-		t.Fatal("unknown top-level extension was dropped")
+	stages := raw["run"].(map[string]any)["stages"].([]any)
+	stageNames := make([]string, len(stages))
+	for index, stage := range stages {
+		stageNames[index], _ = stage.(map[string]any)["name"].(string)
 	}
-	raw["extension"].(map[string]any)["kept"] = false
-	if document.Raw()["extension"].(map[string]any)["kept"] != true {
-		t.Fatal("Raw exposed mutable document state")
+	wantStages := []string{"index", "structure", "overview", "resources", "controls", "graph"}
+	if !reflect.DeepEqual(stageNames, wantStages) {
+		t.Fatalf("stages = %v, want %v", stageNames, wantStages)
+	}
+	estimate := raw["run"].(map[string]any)["estimate"].(map[string]any)
+	if estimate["repo"] != "/work/payments" ||
+		fmt.Sprint(estimate["index"].(map[string]any)["files"]) != "4" {
+		t.Fatalf("estimate = %#v", estimate)
 	}
 	index := document.Index()
-	index["version"] = json.Number("99")
-	if document.Index()["version"] == json.Number("99") {
+	if index["root"] != "payments" || len(index["symbols"].(map[string]any)) != 4 {
+		t.Fatalf("index = %#v", index)
+	}
+
+	raw["codebase"].(map[string]any)["name"] = "changed"
+	if document.Raw()["codebase"].(map[string]any)["name"] != "payments" {
+		t.Fatal("Raw exposed mutable document state")
+	}
+	index["root"] = "changed"
+	if document.Index()["root"] == "changed" {
 		t.Fatal("Index exposed mutable document state")
 	}
 	assets, err := document.Section(CollectionAssets)
-	if err != nil || len(assets) != 2 {
+	if err != nil || len(assets) != 4 {
 		t.Fatalf("assets = %#v, error = %v", assets, err)
 	}
 	assets[0]["name"] = "mutated"
@@ -63,6 +80,14 @@ func TestParseCanonicalBaseline(t *testing.T) {
 	}
 	if _, err := document.Section("not-a-section"); err == nil {
 		t.Fatal("unknown section was accepted")
+	}
+}
+
+func TestCanonicalFixtureMatchesProducerArtifact(t *testing.T) {
+	got := fmt.Sprintf("%x", sha256.Sum256(canonicalData(t)))
+	const want = "5b2468ad3201ffd5babb8b61657ecbfb974d8e26ad9e5373e363fdddbb4c04a2"
+	if got != want {
+		t.Fatalf("canonical fixture SHA-256 = %s, want producer artifact %s", got, want)
 	}
 }
 
@@ -98,7 +123,7 @@ func TestParseRejectsInvalidShapeIDsAndReferences(t *testing.T) {
 		{
 			name: "run id whitespace is not normalized",
 			mutate: func(raw map[string]any) {
-				raw["run"].(map[string]any)["id"] = " payments-api--a17c2e99--000042\n"
+				raw["run"].(map[string]any)["id"] = " payments--01234567--000001\n"
 			},
 			message: "must match",
 		},
@@ -219,14 +244,14 @@ func TestParseRejectsInvalidShapeIDsAndReferences(t *testing.T) {
 		{
 			name: "unknown parent",
 			mutate: func(raw map[string]any) {
-				array(raw, "assets")[1].(map[string]any)["parent"] = "asset:missing"
+				array(raw, "assets")[2].(map[string]any)["parent"] = "asset:missing"
 			},
 			message: "references unknown asset",
 		},
 		{
 			name: "unknown resource parent",
 			mutate: func(raw map[string]any) {
-				array(raw, "resources")[0].(map[string]any)["parent"] = "resource:missing"
+				array(raw, "resources")[2].(map[string]any)["parent"] = "resource:missing"
 			},
 			message: "references unknown resource",
 		},
@@ -355,16 +380,16 @@ func TestParseRejectsBarePublicIDPrefixes(t *testing.T) {
 		},
 		{
 			name: "resource parent",
-			path: "baseline.resources[0].parent",
+			path: "baseline.resources[2].parent",
 			mutate: func(raw map[string]any) {
-				array(raw, "resources")[0].(map[string]any)["parent"] = "resource:"
+				array(raw, "resources")[2].(map[string]any)["parent"] = "resource:"
 			},
 		},
 		{
 			name: "asset parent",
-			path: "baseline.assets[1].parent",
+			path: "baseline.assets[2].parent",
 			mutate: func(raw map[string]any) {
-				array(raw, "assets")[1].(map[string]any)["parent"] = "asset:"
+				array(raw, "assets")[2].(map[string]any)["parent"] = "asset:"
 			},
 		},
 		{
@@ -384,21 +409,21 @@ func TestParseRejectsBarePublicIDPrefixes(t *testing.T) {
 		},
 		{
 			name: "asset control",
-			path: "baseline.assets[0].controls[0].control_id",
+			path: "baseline.assets[1].controls[0].control_id",
 			mutate: func(raw map[string]any) {
 				assetLink(raw)["control_id"] = "control:"
 			},
 		},
 		{
 			name: "asset implementation",
-			path: "baseline.assets[0].controls[0].implementation_ids",
+			path: "baseline.assets[1].controls[0].implementation_ids",
 			mutate: func(raw map[string]any) {
 				assetLink(raw)["implementation_ids"] = []any{"implementation:"}
 			},
 		},
 		{
 			name: "asset control observation source",
-			path: "baseline.assets[0].controls[0].source_control_observation_ids",
+			path: "baseline.assets[1].controls[0].source_control_observation_ids",
 			mutate: func(raw map[string]any) {
 				assetLink(raw)["source_control_observation_ids"] = []any{"control-observation:"}
 			},
@@ -429,45 +454,45 @@ func TestParseRejectsBarePublicIDPrefixes(t *testing.T) {
 		},
 		{
 			name: "route ids",
-			path: "baseline.assets[0].route_ids",
+			path: "baseline.assets[1].route_ids",
 			mutate: func(raw map[string]any) {
-				array(raw, "assets")[0].(map[string]any)["route_ids"] = []any{"route:"}
+				array(raw, "assets")[1].(map[string]any)["route_ids"] = []any{"route:"}
 			},
 		},
 		{
 			name: "embedded route string",
-			path: "baseline.assets[0].routes[0]",
+			path: "baseline.assets[1].routes[0]",
 			mutate: func(raw map[string]any) {
-				array(raw, "assets")[0].(map[string]any)["routes"] = []any{"route:"}
+				array(raw, "assets")[1].(map[string]any)["routes"] = []any{"route:"}
 			},
 		},
 		{
 			name: "embedded route object",
-			path: "baseline.assets[0].routes[0].id",
+			path: "baseline.assets[1].routes[0].id",
 			mutate: func(raw map[string]any) {
-				array(raw, "assets")[0].(map[string]any)["routes"] =
+				array(raw, "assets")[1].(map[string]any)["routes"] =
 					[]any{map[string]any{"id": "route:"}}
 			},
 		},
 		{
 			name: "resource ids",
-			path: "baseline.assets[0].resource_ids",
+			path: "baseline.assets[1].resource_ids",
 			mutate: func(raw map[string]any) {
-				array(raw, "assets")[0].(map[string]any)["resource_ids"] = []any{"resource:"}
+				array(raw, "assets")[1].(map[string]any)["resource_ids"] = []any{"resource:"}
 			},
 		},
 		{
 			name: "role ids",
-			path: "baseline.assets[0].role_ids",
+			path: "baseline.assets[1].role_ids",
 			mutate: func(raw map[string]any) {
-				array(raw, "assets")[0].(map[string]any)["role_ids"] = []any{"role:"}
+				array(raw, "assets")[1].(map[string]any)["role_ids"] = []any{"role:"}
 			},
 		},
 		{
 			name: "class ids",
-			path: "baseline.assets[0].class_ids",
+			path: "baseline.assets[1].class_ids",
 			mutate: func(raw map[string]any) {
-				array(raw, "assets")[0].(map[string]any)["class_ids"] = []any{"class:"}
+				array(raw, "assets")[1].(map[string]any)["class_ids"] = []any{"class:"}
 			},
 		},
 	}
@@ -641,7 +666,9 @@ func TestCompletedV1RejectsDuplicateRelationshipsAndAllowsUnknownFields(t *testi
 
 	for _, mutate := range []func(map[string]any){
 		func(value map[string]any) {
-			array(value, "assets")[0].(map[string]any)["source_ids"] = []any{"resource:user", "resource:user"}
+			array(value, "assets")[0].(map[string]any)["source_ids"] = []any{
+				"asset:code:audit-log", "asset:code:audit-log",
+			}
 		},
 		func(value map[string]any) {
 			unresolved := array(value, "unresolved")[0].(map[string]any)
@@ -702,7 +729,7 @@ func array(raw map[string]any, key string) []any {
 }
 
 func assetLink(raw map[string]any) map[string]any {
-	return array(raw, "assets")[0].(map[string]any)["controls"].([]any)[0].(map[string]any)
+	return array(raw, "assets")[1].(map[string]any)["controls"].([]any)[0].(map[string]any)
 }
 
 func deleteNested(owner, field string) func(map[string]any) {

@@ -175,11 +175,22 @@ func TestWriteGuardrailsBaselineListCollectionUsesCanonicalData(t *testing.T) {
 	if err := json.Unmarshal(payload["assets"], &assets); err != nil {
 		t.Fatal(err)
 	}
-	if len(assets) != 2 || assets[0]["id"] != "asset:user" {
+	wantAssetIDs := []string{
+		"asset:code:audit-log",
+		"asset:endpoint:accounts",
+		"asset:field:account.owner_id",
+		"asset:object:account",
+	}
+	if len(assets) != len(wantAssetIDs) {
 		t.Fatalf("assets = %#v", assets)
 	}
-	if _, ok := assets[0]["controls"]; !ok {
-		t.Fatalf("asset record is not lossless: %#v", assets[0])
+	for index, want := range wantAssetIDs {
+		if assets[index]["id"] != want {
+			t.Fatalf("assets[%d] id = %v, want %s", index, assets[index]["id"], want)
+		}
+	}
+	if _, ok := assets[1]["controls"]; !ok {
+		t.Fatalf("asset record is not lossless: %#v", assets[1])
 	}
 
 	var tableOutput bytes.Buffer
@@ -192,7 +203,7 @@ func TestWriteGuardrailsBaselineListCollectionUsesCanonicalData(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"control:authorize-user-read", "authorization", "Implementations"} {
+	for _, expected := range []string{"control:account-owner", "authorization", "Implementations"} {
 		if !strings.Contains(tableOutput.String(), expected) {
 			t.Errorf("control table missing %q:\n%s", expected, tableOutput.String())
 		}
@@ -301,7 +312,8 @@ func TestWriteGuardrailsBaselineListAssetObservationsDoesNotChangeAssetLookup(t 
 	if err := json.Unmarshal(observationsJSON.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload.AssetObservations) != 1 || payload.AssetObservations[0]["id"] != "asset:user" {
+	if len(payload.AssetObservations) != 1 ||
+		payload.AssetObservations[0]["id"] != "asset:code:audit-log" {
 		t.Fatalf("asset observations = %#v", payload.AssetObservations)
 	}
 
@@ -309,7 +321,7 @@ func TestWriteGuardrailsBaselineListAssetObservationsDoesNotChangeAssetLookup(t 
 	if err := writeGuardrailsBaselineShow(
 		&assetJSON,
 		store,
-		"asset:user",
+		"asset:code:audit-log",
 		baselinemodel.Selector{RunID: runID},
 		false,
 		output.JSON,
@@ -320,7 +332,7 @@ func TestWriteGuardrailsBaselineListAssetObservationsDoesNotChangeAssetLookup(t 
 	if err := json.Unmarshal(assetJSON.Bytes(), &asset); err != nil {
 		t.Fatal(err)
 	}
-	if asset["kind"] != "object" || asset["controls"] == nil {
+	if asset["kind"] != "code" || asset["origin"] != "controls" || asset["controls"] == nil {
 		t.Fatalf("lookup returned observation instead of normalized asset: %#v", asset)
 	}
 }
@@ -338,7 +350,7 @@ func TestWriteGuardrailsBaselineShowAndExplainQualifiedCollections(t *testing.T)
 	if err := writeGuardrailsBaselineShowCollection(
 		&observationOutput,
 		store,
-		"asset:user",
+		"asset:code:audit-log",
 		selector,
 		false,
 		"asset-observations",
@@ -358,7 +370,7 @@ func TestWriteGuardrailsBaselineShowAndExplainQualifiedCollections(t *testing.T)
 	if err := writeGuardrailsBaselineShowCollection(
 		&unresolvedOutput,
 		store,
-		"control-observation:rate-limit-user-read",
+		"control-observation:audit-retention",
 		selector,
 		false,
 		"unresolved",
@@ -366,7 +378,10 @@ func TestWriteGuardrailsBaselineShowAndExplainQualifiedCollections(t *testing.T)
 	); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(unresolvedOutput.String(), "No reusable Control was inferred") {
+	if !strings.Contains(
+		unresolvedOutput.String(),
+		"Repository inspection could not identify the owner of audit retention.",
+	) {
 		t.Fatalf("qualified unresolved record = %s", unresolvedOutput.String())
 	}
 
@@ -374,7 +389,7 @@ func TestWriteGuardrailsBaselineShowAndExplainQualifiedCollections(t *testing.T)
 	if err := writeGuardrailsBaselineExplainCollection(
 		&explanation,
 		store,
-		"control-observation:rate-limit-user-read",
+		"control-observation:audit-retention",
 		selector,
 		"unresolved",
 		output.JSON,
@@ -404,7 +419,7 @@ func TestWriteGuardrailsBaselineShowAndExplainQualifiedCollections(t *testing.T)
 	}
 
 	err := writeGuardrailsBaselineShowCollection(
-		&bytes.Buffer{}, store, "asset:user", selector, false, "mechanisms", output.JSON,
+		&bytes.Buffer{}, store, "asset:code:audit-log", selector, false, "mechanisms", output.JSON,
 	)
 	assertGuardrailsBaselineCLIError(t, err, "INVALID_ARGUMENTS", clierrors.ExitUsageError)
 }
@@ -443,7 +458,7 @@ func TestWriteGuardrailsBaselineShowRunRecordAndLog(t *testing.T) {
 	if err := writeGuardrailsBaselineShow(
 		&recordJSON,
 		store,
-		"implementation:authorize-user-read",
+		"implementation:account-owner",
 		baselinemodel.Selector{RunID: completedID},
 		false,
 		output.JSON,
@@ -454,7 +469,7 @@ func TestWriteGuardrailsBaselineShowRunRecordAndLog(t *testing.T) {
 	if err := json.Unmarshal(recordJSON.Bytes(), &implementation); err != nil {
 		t.Fatal(err)
 	}
-	if implementation["id"] != "implementation:authorize-user-read" || implementation["anchors"] == nil {
+	if implementation["id"] != "implementation:account-owner" || implementation["anchors"] == nil {
 		t.Fatalf("implementation = %#v", implementation)
 	}
 
@@ -489,7 +504,7 @@ func TestWriteGuardrailsBaselineShowRejectsIncompleteRecordAndMissingRecord(t *t
 	err := writeGuardrailsBaselineShow(
 		&bytes.Buffer{},
 		store,
-		"asset:user",
+		"asset:endpoint:accounts",
 		baselinemodel.Selector{RunID: failedID},
 		false,
 		output.JSON,
@@ -634,7 +649,7 @@ func TestWriteGuardrailsBaselineExplainReturnsRelationships(t *testing.T) {
 	if err := writeGuardrailsBaselineExplain(
 		&jsonOutput,
 		store,
-		"asset:user",
+		"asset:endpoint:accounts",
 		baselinemodel.Selector{Repository: "payments-api"},
 		output.JSON,
 	); err != nil {
@@ -653,7 +668,7 @@ func TestWriteGuardrailsBaselineExplainReturnsRelationships(t *testing.T) {
 	if err := json.Unmarshal(jsonOutput.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Record.Collection != "assets" || payload.Record.Data["id"] != "asset:user" {
+	if payload.Record.Collection != "assets" || payload.Record.Data["id"] != "asset:endpoint:accounts" {
 		t.Fatalf("record = %#v", payload.Record)
 	}
 	relatedIDs := make(map[string]bool)
@@ -661,11 +676,11 @@ func TestWriteGuardrailsBaselineExplainReturnsRelationships(t *testing.T) {
 		relatedIDs[fmt.Sprint(related.Record["id"])] = true
 	}
 	for _, id := range []string{
-		"asset:user-email",
-		"resource:user",
-		"control:authorize-user-read",
-		"implementation:authorize-user-read",
-		"control-observation:authorize-user-read",
+		"resource:endpoint:accounts",
+		"route:app/routes.py-5-get-/accounts-list_accounts",
+		"control:account-owner",
+		"implementation:account-owner",
+		"control-observation:account-owner",
 	} {
 		if !relatedIDs[id] {
 			t.Errorf("explain missing related %s: %s", id, jsonOutput.String())
@@ -676,13 +691,18 @@ func TestWriteGuardrailsBaselineExplainReturnsRelationships(t *testing.T) {
 	if err := writeGuardrailsBaselineExplain(
 		&tableOutput,
 		store,
-		"control:authorize-user-read",
+		"control:account-owner",
 		baselinemodel.Selector{RunID: runID},
 		output.Table,
 	); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"Control control:authorize-user-read", "Related", "asset:user", "implementation:authorize-user-read"} {
+	for _, expected := range []string{
+		"Control control:account-owner",
+		"Related",
+		"asset:endpoint:accounts",
+		"implementation:account-owner",
+	} {
 		if !strings.Contains(tableOutput.String(), expected) {
 			t.Errorf("explain table missing %q:\n%s", expected, tableOutput.String())
 		}

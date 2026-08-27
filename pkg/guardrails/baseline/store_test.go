@@ -55,7 +55,7 @@ func TestStoreListKeepsInvalidRunsWithoutHidingValidRuns(t *testing.T) {
 	for _, run := range runs {
 		if run.Valid {
 			valid++
-			if run.Run.Status != StatusCompleted || run.Counts.Assets != 2 || run.Document == nil {
+			if run.Run.Status != StatusCompleted || run.Counts.Assets != 4 || run.Document == nil {
 				t.Fatalf("valid run summary = %#v", run)
 			}
 		} else {
