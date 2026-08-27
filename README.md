@@ -162,8 +162,9 @@ instead of selecting only its latest completed run. Use `--collection` on
 `show` or `explain` when an ID is represented in more than one section, such
 as a normalized Asset and its raw Asset observation.
 The TUI starts with a runs table; selecting a completed run opens its Asset and
-Control workspace, while failed or cancelled runs open diagnostics. Use
-`--output json` for lossless scripted access to `baseline.json`.
+Control workspace, while failed or cancelled runs open diagnostics. Run
+`show <run-id> --output json` to retrieve the complete `baseline.json`; JSON
+from `list`, record-level `show`, and `explain` is scoped to that query.
 
 ### Finding sources
 
