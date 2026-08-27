@@ -132,8 +132,11 @@ CLI. Prefer the environment variable so the key is not recorded in shell
 history. The downloaded Guardrails runtime is pinned to exact hashes embedded
 in this public CLI; cached executables are verified before every run. The child
 process receives only the credentials and runtime environment it needs, not
-unrelated ambient cloud or developer credentials. The final artifact is
-`protections.json` under
+unrelated ambient cloud or developer credentials. It also runs in an OS
+filesystem sandbox: the repository is read-only, with writes limited to
+Guardrails outputs, cache, and a private temporary directory. Linux requires
+`bubblewrap`; `--no-sandbox` explicitly disables isolation. The final artifact
+is `protections.json` under
 `~/.cache/guardrails/posture/`.
 
 ### Guardrails assets browser
