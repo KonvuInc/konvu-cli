@@ -16,7 +16,7 @@ var guardrailsListCmd = &cobra.Command{
 default, or from the given registry file.
 
 Thin wrapper over the cached guardrails-cli binary -- see 'konvu guardrails
-scan --help' for the shared bootstrap/credentials behavior.`,
+scan --help' for the shared bootstrap behavior.`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		runGuardrailsExec(append([]string{"list"}, args...), guardrailsListAPIKey, guardrailsListModel)
@@ -24,7 +24,7 @@ scan --help' for the shared bootstrap/credentials behavior.`,
 }
 
 func init() {
-	guardrailsListCmd.Flags().StringVar(&guardrailsListAPIKey, "openai-api-key", "", "OpenAI API key; writes ~/.config/guardrails/credentials")
-	guardrailsListCmd.Flags().StringVar(&guardrailsListModel, "openai-model", "gpt-4o", "OpenAI model, written alongside --openai-api-key")
+	guardrailsListCmd.Flags().StringVar(&guardrailsListAPIKey, "openai-api-key", "", "OpenAI API key (prefer OPENAI_API_KEY to avoid shell history)")
+	guardrailsListCmd.Flags().StringVar(&guardrailsListModel, "openai-model", "gpt-4o", "OpenAI model used with --openai-api-key")
 	guardrailsCmd.AddCommand(guardrailsListCmd)
 }

@@ -18,7 +18,7 @@ Reads .konvu/guardrails/ under the current directory unless a profile-dir is
 given.
 
 Thin wrapper over the cached guardrails-cli binary -- see 'konvu guardrails
-scan --help' for the shared bootstrap/credentials behavior.`,
+scan --help' for the shared bootstrap behavior.`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		runGuardrailsExec(append([]string{"show"}, args...), guardrailsShowAPIKey, guardrailsShowModel)
@@ -26,7 +26,7 @@ scan --help' for the shared bootstrap/credentials behavior.`,
 }
 
 func init() {
-	guardrailsShowCmd.Flags().StringVar(&guardrailsShowAPIKey, "openai-api-key", "", "OpenAI API key; writes ~/.config/guardrails/credentials")
-	guardrailsShowCmd.Flags().StringVar(&guardrailsShowModel, "openai-model", "gpt-4o", "OpenAI model, written alongside --openai-api-key")
+	guardrailsShowCmd.Flags().StringVar(&guardrailsShowAPIKey, "openai-api-key", "", "OpenAI API key (prefer OPENAI_API_KEY to avoid shell history)")
+	guardrailsShowCmd.Flags().StringVar(&guardrailsShowModel, "openai-model", "gpt-4o", "OpenAI model used with --openai-api-key")
 	guardrailsCmd.AddCommand(guardrailsShowCmd)
 }
