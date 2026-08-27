@@ -403,7 +403,7 @@ func guardrailsEnvironment(base []string, apiKey, model string) []string {
 
 // runGuardrailsExec runs the verified bundle and propagates its exit code.
 func runGuardrailsExec(args []string, apiKey, model string) {
-	binPath, err := ensureGuardrailsBinary(guardrailsCloudFrontBase, guardrailsPinnedVersion)
+	binPath, err := resolveGuardrailsBinary()
 	if err != nil {
 		reportGuardrailsError(err)
 	}
@@ -430,10 +430,6 @@ func runGuardrailsExec(args []string, apiKey, model string) {
 		}
 		reportGuardrailsError(clierrors.NewAPIError(fmt.Sprintf("could not run guardrails: %v", err)))
 	}
-}
-
-func runGuardrailsReadOnly(args []string) {
-	runGuardrailsExec(args, "", "")
 }
 
 func reportGuardrailsError(err error) {
