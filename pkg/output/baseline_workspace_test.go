@@ -481,6 +481,9 @@ func TestBaselineWorkspaceFramesUseTwoAndThreePanelDrilldown(t *testing.T) {
 	if strings.Contains(initial, "ENDPOINT GROUP") {
 		t.Fatal("initial type-focused frame rendered asset details")
 	}
+	if !strings.Contains(initial, "←/Esc runs") || strings.Contains(initial, "←/Esc repositories") {
+		t.Fatalf("initial frame has stale catalog navigation copy:\n%s", initial)
+	}
 
 	detail := baselineWorkspaceState{
 		assetIndex:   1,
@@ -534,8 +537,8 @@ func TestBaselineWorkspaceFrameGoldens(t *testing.T) {
 		color  bool
 		want   string
 	}{
-		{name: "minimum_no_color_initial", state: initialBaselineWorkspaceState(), width: 76, height: 22, color: false, want: "a028e4b52b837d4b0cd20497d3eed1db60e16193b5c2f9bba8758fc35bd6531e"},
-		{name: "standard_color_initial", state: initialBaselineWorkspaceState(), width: 120, height: 36, color: true, want: "c8942cfbd158a98ae45cd0cab9298953dd81043c1bc5b7483952d5eb528e260f"},
+		{name: "minimum_no_color_initial", state: initialBaselineWorkspaceState(), width: 76, height: 22, color: false, want: "2261966ff977be07f3bacc0d1ec4a343d820e9b2f8a0edb7f88440d995c9f5d7"},
+		{name: "standard_color_initial", state: initialBaselineWorkspaceState(), width: 120, height: 36, color: true, want: "32dbcec6bd711b36fa9ca1d5341aef286173b407c50744c2b0444d0bf6cb46cf"},
 		{name: "short_no_color_detail", state: detail, width: 100, height: 22, color: false, want: "52007928ef4e1ce1bb83b5ffab8985ea85132c7a7fafeca5e4ec00b8f3f88245"},
 		{name: "minimum_color_detail", state: detail, width: 76, height: 30, color: true, want: "5b1dd0476818bb6026cf32fb61d67b6bd0b4828bc84bf5ddfb7b772953f86ae1"},
 		{name: "standard_color_control", state: control, width: 132, height: 52, color: true, want: "bb8bce79ced0f3c53f88b565b2500b65d5260c7d0629ec2413b1af22e946ebe5"},

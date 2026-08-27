@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"os"
+	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -65,6 +68,42 @@ func TestGuardrailsCommandTreeOnlyExposesBaselineExperience(t *testing.T) {
 		if !baselineChildren[name] {
 			t.Errorf("baseline command missing %q: %v", name, baselineChildren)
 		}
+	}
+}
+
+func TestGuardrailsCommandParentsRejectLegacyAndUnknownArguments(t *testing.T) {
+	const helperEnv = "KONVU_TEST_INVALID_GUARDRAILS_ARGS"
+	if rawArgs := os.Getenv(helperEnv); rawArgs != "" {
+		rootCmd.SetArgs(strings.Fields(rawArgs))
+		if err := rootCmd.Execute(); err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "legacy scan", args: []string{"guardrails", "scan"}},
+		{name: "legacy assets", args: []string{"guardrails", "assets"}},
+		{name: "legacy list", args: []string{"guardrails", "list"}},
+		{name: "legacy show", args: []string{"guardrails", "show"}},
+		{name: "legacy explain", args: []string{"guardrails", "explain"}},
+		{name: "unknown baseline command", args: []string{"guardrails", "baseline", "bogus"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command := exec.Command(os.Args[0], "-test.run=^TestGuardrailsCommandParentsRejectLegacyAndUnknownArguments$")
+			command.Env = append(os.Environ(), helperEnv+"="+strings.Join(test.args, " "))
+			output, err := command.CombinedOutput()
+			if err == nil {
+				t.Fatalf("konvu %s exited successfully; output:\n%s", strings.Join(test.args, " "), output)
+			}
+			if !strings.Contains(string(output), "unknown command") {
+				t.Fatalf("konvu %s did not return a usage error:\n%s", strings.Join(test.args, " "), output)
+			}
+		})
 	}
 }
 

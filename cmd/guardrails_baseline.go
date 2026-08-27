@@ -19,6 +19,10 @@ type guardrailsRunner func(args []string, apiKey, model string)
 var guardrailsBaselineCmd = &cobra.Command{
 	Use:   "baseline",
 	Short: "Scan and explore codebase security baselines",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return cmd.Help()
+	},
 }
 
 var guardrailsBaselineScanCmd = &cobra.Command{

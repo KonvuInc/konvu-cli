@@ -1108,7 +1108,7 @@ func (w *BaselineWorkspace) renderBaselineFrame(
 		case baselineFocusControl:
 			footer = "↑↓ switch control  Pg↑↓ scroll  ←/Esc asset details  Q exit"
 		case baselineFocusTypes:
-			footer = "↑↓ asset type  Enter/→ asset list  ←/Esc repositories  Q exit"
+			footer = "↑↓ asset type  Enter/→ asset list  ←/Esc runs  Q exit"
 		default:
 			footer = "↑↓ asset  Enter/→ details  ←/Esc types  / find  Pg↑↓ detail" + clear + "  Q exit"
 		}
