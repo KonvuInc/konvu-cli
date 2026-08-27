@@ -16,33 +16,15 @@ func TestGuardrailsRepoArgument(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"scan"}, "."},
-		{[]string{"scan", "/repo"}, "/repo"},
-		{[]string{"baseline", "prepare", "/repo"}, "/repo"},
-		{[]string{"baseline", "continue", "/repo"}, "/repo"},
+		{[]string{"baseline", "scan", "/repo"}, "/repo"},
+		{[]string{"baseline", "scan"}, ""},
+		{[]string{"scan", "/repo"}, ""},
+		{[]string{"baseline", "list"}, ""},
 		{[]string{"show"}, ""},
 	}
 	for _, test := range tests {
 		if got := guardrailsRepoArgument(test.args); got != test.want {
 			t.Errorf("guardrailsRepoArgument(%v) = %q, want %q", test.args, got, test.want)
-		}
-	}
-}
-
-func TestGuardrailsNeedsWorkingDirectory(t *testing.T) {
-	for _, test := range []struct {
-		args []string
-		want bool
-	}{
-		{[]string{"show"}, true},
-		{[]string{"show", "file.go"}, true},
-		{[]string{"show", "file.go", "/profile"}, false},
-		{[]string{"explain", "guard"}, true},
-		{[]string{"explain", "guard", "/profile"}, false},
-		{[]string{"list"}, false},
-	} {
-		if got := guardrailsNeedsWorkingDirectory(test.args); got != test.want {
-			t.Errorf("guardrailsNeedsWorkingDirectory(%v) = %v, want %v", test.args, got, test.want)
 		}
 	}
 }
@@ -64,7 +46,7 @@ func TestPrepareGuardrailsSandboxUsesPrivateTempAndNarrowPaths(t *testing.T) {
 
 	paths, env, cleanup, err := prepareGuardrailsSandbox(
 		binPath,
-		[]string{"baseline", "prepare", repo},
+		[]string{"baseline", "scan", repo},
 		[]string{"HOME=" + home, "PATH=/usr/bin", "TMPDIR=/shared/tmp"},
 	)
 	if err != nil {
@@ -95,12 +77,12 @@ func TestPrepareGuardrailsSandboxUsesPrivateTempAndNarrowPaths(t *testing.T) {
 	if workDir != repo && containsPath(paths.readOnly, workDir) {
 		t.Errorf("unrelated working directory is readable: %v", paths.readOnly)
 	}
-	cache, err := canonicalPath(filepath.Join(home, ".cache", "guardrails"))
+	store, err := canonicalPath(filepath.Join(home, ".konvu", "guardrails"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsPath(paths.writable, cache) {
-		t.Errorf("writable paths do not include cache %s: %v", cache, paths.writable)
+	if !containsPath(paths.writable, store) {
+		t.Errorf("writable paths do not include baseline store %s: %v", store, paths.writable)
 	}
 
 	cleanup()
@@ -109,7 +91,7 @@ func TestPrepareGuardrailsSandboxUsesPrivateTempAndNarrowPaths(t *testing.T) {
 	}
 }
 
-func TestPrepareGuardrailsSandboxOnlyMakesScanOutputWritable(t *testing.T) {
+func TestPrepareGuardrailsSandboxOnlyMakesGlobalStoreWritable(t *testing.T) {
 	repo := t.TempDir()
 	home := t.TempDir()
 	binDir := t.TempDir()
@@ -127,7 +109,7 @@ func TestPrepareGuardrailsSandboxOnlyMakesScanOutputWritable(t *testing.T) {
 
 	paths, _, cleanup, err := prepareGuardrailsSandbox(
 		binPath,
-		[]string{"scan", repo},
+		[]string{"baseline", "scan", repo},
 		[]string{"HOME=" + home, "PATH=/usr/bin"},
 	)
 	if err != nil {
@@ -136,7 +118,7 @@ func TestPrepareGuardrailsSandboxOnlyMakesScanOutputWritable(t *testing.T) {
 	defer cleanup()
 
 	root, _ := canonicalPath(repo)
-	output, _ := canonicalPath(filepath.Join(repo, ".konvu", "guardrails"))
+	store, _ := canonicalPath(filepath.Join(home, ".konvu", "guardrails"))
 	credentials, _ = canonicalPath(credentials)
 	if !containsPath(paths.readOnly, root) {
 		t.Errorf("repo is not readable: %v", paths.readOnly)
@@ -144,15 +126,18 @@ func TestPrepareGuardrailsSandboxOnlyMakesScanOutputWritable(t *testing.T) {
 	if containsPath(paths.writable, root) {
 		t.Errorf("whole repo is writable: %v", paths.writable)
 	}
-	if !containsPath(paths.writable, output) {
-		t.Errorf("scan output is not writable: %v", paths.writable)
+	if !containsPath(paths.writable, store) {
+		t.Errorf("global baseline store is not writable: %v", paths.writable)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".konvu")); !os.IsNotExist(err) {
+		t.Errorf("scan created a repository-local artifact directory: %v", err)
 	}
 	if !containsPath(paths.readOnly, credentials) {
 		t.Errorf("existing Guardrails credentials are not readable: %v", paths.readOnly)
 	}
 }
 
-func TestPrepareGuardrailsSandboxRejectsSymlinkedScanOutput(t *testing.T) {
+func TestPrepareGuardrailsSandboxRejectsSymlinkedBaselineStore(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Guardrails is not shipped for Windows")
 	}
@@ -167,7 +152,7 @@ func TestPrepareGuardrailsSandboxRejectsSymlinkedScanOutput(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			link := filepath.Join(repo, ".konvu")
+			link := filepath.Join(home, ".konvu")
 			if !symlinkParent {
 				if err := os.Mkdir(link, 0o755); err != nil {
 					t.Fatal(err)
@@ -180,11 +165,11 @@ func TestPrepareGuardrailsSandboxRejectsSymlinkedScanOutput(t *testing.T) {
 
 			_, _, cleanup, err := prepareGuardrailsSandbox(
 				binPath,
-				[]string{"scan", repo},
+				[]string{"baseline", "scan", repo},
 				[]string{"HOME=" + home, "PATH=/usr/bin"},
 			)
 			cleanup()
-			if err == nil || !strings.Contains(err.Error(), "symlinked output") {
+			if err == nil || !strings.Contains(err.Error(), "symlinked baseline store") {
 				t.Fatalf("error = %v, want symlink rejection", err)
 			}
 		})

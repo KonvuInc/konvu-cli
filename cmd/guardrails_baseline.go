@@ -4,56 +4,42 @@ import (
 	"os"
 	"strings"
 
-	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
-	"github.com/KonvuInc/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
 )
 
 const guardrailsBaselineModel = "gpt-5.6-luna"
 
 var (
-	guardrailsBaselineRepo   string
 	guardrailsBaselineAPIKey string
 	guardrailsBaselineYes    bool
 )
 
 type guardrailsRunner func(args []string, apiKey, model string)
-type guardrailsConfirmer func(prompt string, defaultYes bool) bool
 
 var guardrailsBaselineCmd = &cobra.Command{
 	Use:   "baseline",
-	Short: "Create a normalized security baseline for a repository",
+	Short: "Scan and explore codebase security baselines",
 }
 
 var guardrailsBaselineScanCmd = &cobra.Command{
-	Use:   "scan",
+	Use:   "scan <codebase>",
 	Short: "Index, estimate, and run a baseline scan",
-	Long: `Index a repository and estimate the remaining baseline scan before asking
-whether to continue. The accepted run uses public OpenAI with gpt-5.6-luna and
-writes its final normalized graph to protections.json.
+	Long: `Index a repository, estimate the remaining scan, and ask whether to
+continue. The Guardrails runtime owns the complete workflow and records the run
+as baseline.json and run.log under ~/.konvu/guardrails/baselines.
 
-Set OPENAI_API_KEY in the environment or pass --openai-api-key. The key is
-provided only to the model-backed guardrails child process and is not written
-to disk. The downloaded runtime is hash-pinned and does not inherit unrelated
-ambient credentials.`,
-	Args: cobra.NoArgs,
+An OpenAI API key is required only when continuing into model-backed steps.
+Set OPENAI_API_KEY or pass --openai-api-key. The key is provided only to the
+Guardrails child process and is not written to disk. Use --yes to continue
+without prompting.`,
+	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		apiKey := resolveGuardrailsAPIKey(guardrailsBaselineAPIKey, os.Getenv("OPENAI_API_KEY"))
-		if apiKey == "" {
-			reportGuardrailsError(&clierrors.CLIError{
-				Code:       "MISSING_OPENAI_API_KEY",
-				Message:    "an OpenAI API key is required for a baseline scan",
-				Suggestion: "Set OPENAI_API_KEY or pass --openai-api-key.",
-				ExitCode:   clierrors.ExitUsageError,
-			})
-		}
-
 		runGuardrailsBaselineScan(
-			guardrailsBaselineRepo,
+			args[0],
 			apiKey,
 			guardrailsBaselineYes,
 			runGuardrailsExec,
-			output.Confirm,
 		)
 	},
 }
@@ -69,19 +55,23 @@ func runGuardrailsBaselineScan(
 	repo, apiKey string,
 	yes bool,
 	run guardrailsRunner,
-	confirm guardrailsConfirmer,
 ) {
-	run([]string{"baseline", "prepare", repo}, "", "")
-	if !yes && !confirm("Continue with the baseline scan?", false) {
-		return
+	args := []string{"baseline", "scan", repo}
+	if yes {
+		args = append(args, "--yes")
 	}
-	run([]string{"baseline", "continue", repo}, apiKey, guardrailsBaselineModel)
+	run(args, apiKey, guardrailsBaselineModel)
 }
 
 func init() {
-	guardrailsBaselineScanCmd.Flags().StringVar(&guardrailsBaselineRepo, "repo", ".", "repository path to scan")
 	guardrailsBaselineScanCmd.Flags().StringVar(&guardrailsBaselineAPIKey, "openai-api-key", "", "OpenAI API key (prefer OPENAI_API_KEY to avoid shell history)")
 	guardrailsBaselineScanCmd.Flags().BoolVarP(&guardrailsBaselineYes, "yes", "y", false, "continue without prompting")
+	guardrailsBaselineScanCmd.Flags().BoolVar(
+		&guardrailsNoSandbox,
+		"no-sandbox",
+		false,
+		"run the Guardrails runtime without OS filesystem isolation",
+	)
 	guardrailsBaselineCmd.AddCommand(guardrailsBaselineScanCmd)
 	guardrailsCmd.AddCommand(guardrailsBaselineCmd)
 }

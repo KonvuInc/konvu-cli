@@ -1,6 +1,10 @@
 package cmd
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/spf13/cobra"
+)
 
 type recordedGuardrailsRun struct {
 	args   []string
@@ -17,56 +21,108 @@ func TestResolveGuardrailsAPIKey(t *testing.T) {
 	}
 }
 
-func TestRunGuardrailsBaselineScanDeclined(t *testing.T) {
+func TestGuardrailsBaselineScanCommandContract(t *testing.T) {
+	if guardrailsBaselineScanCmd.Use != "scan <codebase>" {
+		t.Fatalf("Use = %q", guardrailsBaselineScanCmd.Use)
+	}
+	if err := guardrailsBaselineScanCmd.Args(guardrailsBaselineScanCmd, nil); err == nil {
+		t.Error("scan accepted no codebase")
+	}
+	if err := guardrailsBaselineScanCmd.Args(guardrailsBaselineScanCmd, []string{"/repo"}); err != nil {
+		t.Errorf("scan rejected one codebase: %v", err)
+	}
+	if err := guardrailsBaselineScanCmd.Args(guardrailsBaselineScanCmd, []string{"/one", "/two"}); err == nil {
+		t.Error("scan accepted more than one codebase")
+	}
+	for _, name := range []string{"yes", "openai-api-key"} {
+		if guardrailsBaselineScanCmd.Flags().Lookup(name) == nil {
+			t.Errorf("scan missing --%s", name)
+		}
+	}
+	if guardrailsBaselineScanCmd.Flags().Lookup("repo") != nil {
+		t.Error("scan still exposes legacy --repo")
+	}
+}
+
+func TestGuardrailsCommandTreeOnlyExposesBaselineExperience(t *testing.T) {
+	direct := func(command *cobra.Command) map[string]bool {
+		children := make(map[string]bool)
+		for _, child := range command.Commands() {
+			children[child.Name()] = true
+		}
+		return children
+	}
+
+	guardrailsChildren := direct(guardrailsCmd)
+	if len(guardrailsChildren) != 1 || !guardrailsChildren["baseline"] {
+		t.Fatalf("guardrails children = %v, want baseline only", guardrailsChildren)
+	}
+	baselineChildren := direct(guardrailsBaselineCmd)
+	if len(baselineChildren) != 5 {
+		t.Fatalf("baseline children = %v, want exactly five commands", baselineChildren)
+	}
+	for _, name := range []string{"scan", "list", "show", "explain", "tui"} {
+		if !baselineChildren[name] {
+			t.Errorf("baseline command missing %q: %v", name, baselineChildren)
+		}
+	}
+}
+
+func TestRunGuardrailsBaselineScanDelegatesInteractiveWorkflow(t *testing.T) {
 	var runs []recordedGuardrailsRun
 	run := func(args []string, apiKey, model string) {
 		runs = append(runs, recordedGuardrailsRun{args: args, apiKey: apiKey, model: model})
 	}
-	confirm := func(prompt string, defaultYes bool) bool {
-		if prompt != "Continue with the baseline scan?" {
-			t.Errorf("prompt = %q", prompt)
-		}
-		if defaultYes {
-			t.Error("confirmation must default to no")
-		}
-		return false
-	}
 
-	runGuardrailsBaselineScan("../repo", "sk-test", false, run, confirm)
+	runGuardrailsBaselineScan("../repo", "sk-test", false, run)
 	if len(runs) != 1 {
-		t.Fatalf("runs = %d, want prepare only", len(runs))
+		t.Fatalf("runs = %d, want one runtime workflow", len(runs))
 	}
-	assertGuardrailsRun(t, runs[0], []string{"baseline", "prepare", "../repo"}, "", "")
+	assertGuardrailsRun(
+		t,
+		runs[0],
+		[]string{"baseline", "scan", "../repo"},
+		"sk-test",
+		guardrailsBaselineModel,
+	)
 }
 
-func TestRunGuardrailsBaselineScanAccepted(t *testing.T) {
+func TestRunGuardrailsBaselineScanAllowsEstimateWithoutAPIKey(t *testing.T) {
 	var runs []recordedGuardrailsRun
 	run := func(args []string, apiKey, model string) {
 		runs = append(runs, recordedGuardrailsRun{args: args, apiKey: apiKey, model: model})
 	}
 
-	runGuardrailsBaselineScan("../repo", "sk-test", false, run, func(string, bool) bool {
-		return true
-	})
-	if len(runs) != 2 {
-		t.Fatalf("runs = %d, want prepare and continue", len(runs))
+	runGuardrailsBaselineScan("../repo", "", false, run)
+	if len(runs) != 1 {
+		t.Fatalf("runs = %d, want one runtime workflow", len(runs))
 	}
-	assertGuardrailsRun(t, runs[0], []string{"baseline", "prepare", "../repo"}, "", "")
-	assertGuardrailsRun(t, runs[1], []string{"baseline", "continue", "../repo"}, "sk-test", guardrailsBaselineModel)
+	assertGuardrailsRun(
+		t,
+		runs[0],
+		[]string{"baseline", "scan", "../repo"},
+		"",
+		guardrailsBaselineModel,
+	)
 }
 
-func TestRunGuardrailsBaselineScanYesSkipsConfirmation(t *testing.T) {
-	var runs int
-	run := func([]string, string, string) { runs++ }
-	confirm := func(string, bool) bool {
-		t.Fatal("confirmation called with --yes")
-		return false
+func TestRunGuardrailsBaselineScanYesForwardsFlag(t *testing.T) {
+	var runs []recordedGuardrailsRun
+	run := func(args []string, apiKey, model string) {
+		runs = append(runs, recordedGuardrailsRun{args: args, apiKey: apiKey, model: model})
 	}
 
-	runGuardrailsBaselineScan(".", "sk-test", true, run, confirm)
-	if runs != 2 {
-		t.Errorf("runs = %d, want 2", runs)
+	runGuardrailsBaselineScan(".", "sk-test", true, run)
+	if len(runs) != 1 {
+		t.Fatalf("runs = %d, want one runtime workflow", len(runs))
 	}
+	assertGuardrailsRun(
+		t,
+		runs[0],
+		[]string{"baseline", "scan", ".", "--yes"},
+		"sk-test",
+		guardrailsBaselineModel,
+	)
 }
 
 func assertGuardrailsRun(t *testing.T, got recordedGuardrailsRun, args []string, apiKey, model string) {

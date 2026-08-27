@@ -129,7 +129,7 @@ func TestGuardrailsEnvironmentWithoutModelGetsNoOpenAICredentials(t *testing.T) 
 
 func TestGuardrailsReadOnlyCommandsHaveNoOpenAIFlags(t *testing.T) {
 	for _, commandName := range []string{"list", "show", "explain"} {
-		command, _, err := guardrailsCmd.Find([]string{commandName})
+		command, _, err := guardrailsCmd.Find([]string{"baseline", commandName})
 		if err != nil {
 			t.Fatal(err)
 		}
