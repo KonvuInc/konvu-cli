@@ -95,13 +95,19 @@ func Confirm(prompt string, defaultYes bool) bool {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	if scanner.Scan() {
-		text := strings.TrimSpace(strings.ToLower(scanner.Text()))
-		if text == "" {
-			return defaultYes
-		}
-		return text == "y" || text == "yes"
+		return confirmation(scanner.Text(), defaultYes)
 	}
 	return defaultYes
+}
+
+func confirmation(text string, defaultYes bool) bool {
+	text = strings.ReplaceAll(text, "\x1b[200~", "")
+	text = strings.ReplaceAll(text, "\x1b[201~", "")
+	text = strings.TrimSpace(strings.ToLower(text))
+	if text == "" {
+		return defaultYes
+	}
+	return text == "y" || text == "yes"
 }
 
 // FallbackPick is a numbered prompt fallback for non-TTY or when interactive fails.
