@@ -18,6 +18,7 @@ type CLIError struct {
 	Suggestion string
 	Retryable  bool
 	ExitCode   int
+	Context    map[string]any
 }
 
 func (e *CLIError) Error() string {
@@ -25,14 +26,16 @@ func (e *CLIError) Error() string {
 }
 
 func FormatErrorJSON(err *CLIError) string {
-	obj := map[string]any{
-		"error": map[string]any{
-			"code":       err.Code,
-			"message":    err.Message,
-			"suggestion": err.Suggestion,
-			"retryable":  err.Retryable,
-		},
+	errorObject := map[string]any{
+		"code":       err.Code,
+		"message":    err.Message,
+		"suggestion": err.Suggestion,
+		"retryable":  err.Retryable,
 	}
+	if err.Context != nil {
+		errorObject["context"] = err.Context
+	}
+	obj := map[string]any{"error": errorObject}
 	b, _ := json.MarshalIndent(obj, "", "  ")
 	return string(b)
 }
