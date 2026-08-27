@@ -50,11 +50,12 @@ type BaselineRepositoryOption struct {
 
 // BaselineWorkspace is a read-only terminal view over one normalized baseline.
 type BaselineWorkspace struct {
-	catalog      *BaselineCatalog
-	blueprint    map[string]any
-	repositoryID string
-	commit       string
-	color        bool
+	catalog                   *BaselineCatalog
+	blueprint                 map[string]any
+	repositoryID              string
+	commit                    string
+	color                     bool
+	includeUncontrolledAssets bool
 }
 
 // NewBaselineWorkspace validates and normalizes one repository's artifact.
@@ -809,7 +810,7 @@ func baselineKindIndex(kind string) int {
 func (w *BaselineWorkspace) filteredBaselineAssets(
 	kind, query string,
 ) ([]BaselineDiscovery, error) {
-	assets, err := w.catalog.ReviewableAssets(kind)
+	assets, err := w.baselineAssets(kind)
 	if err != nil || query == "" {
 		return assets, err
 	}
@@ -827,6 +828,22 @@ func (w *BaselineWorkspace) filteredBaselineAssets(
 		}
 	}
 	return filtered, nil
+}
+
+func (w *BaselineWorkspace) baselineAssets(kind string) ([]BaselineDiscovery, error) {
+	if w.includeUncontrolledAssets {
+		return w.catalog.Discoveries(kind)
+	}
+	return w.catalog.ReviewableAssets(kind)
+}
+
+func (w *BaselineWorkspace) baselineAssetCounts() map[string]int {
+	counts := make(map[string]int, len(baselineAssetKinds))
+	for _, kind := range baselineAssetKinds {
+		assets, _ := w.baselineAssets(kind)
+		counts[kind] = len(assets)
+	}
+	return counts
 }
 
 func (w *BaselineWorkspace) baselineDetailTargets(
@@ -878,6 +895,9 @@ func baselineProtectionTarget(
 
 func (w *BaselineWorkspace) controlledBaselineFields(parentID string) []BaselineAsset {
 	fields := w.catalog.FieldsForParent(parentID)
+	if w.includeUncontrolledAssets {
+		return fields
+	}
 	controlled := make([]BaselineAsset, 0, len(fields))
 	for _, field := range fields {
 		if len(w.catalog.ProtectionsForAsset(field.ID)) > 0 {
@@ -1040,7 +1060,7 @@ func (w *BaselineWorkspace) renderBaselineFrame(
 		state,
 		kind,
 		assets,
-		w.catalog.ReviewableAssetCounts(),
+		w.baselineAssetCounts(),
 		panelHeight-2,
 		leftWidth-4,
 	)
@@ -1706,9 +1726,9 @@ func (w *BaselineWorkspace) baselineMetadataRows(detailed bool) []string {
 		}
 	}
 
-	counts := w.catalog.ReviewableAssetCounts()
+	counts := w.baselineAssetCounts()
 	routeCount := 0
-	endpoints, _ := w.catalog.ReviewableAssets("endpoint")
+	endpoints, _ := w.baselineAssets("endpoint")
 	for _, endpoint := range endpoints {
 		routeCount += len(w.catalog.EndpointDisplayRoutes(endpoint.ID))
 	}

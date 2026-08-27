@@ -24,15 +24,28 @@ func TestBaselineWorkspaceV1ConsumesProducerAssetKinds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	codeAssets, err := workspace.catalog.Discoveries("code")
-	if err != nil {
-		t.Fatal(err)
+	for kind, want := range map[string]string{
+		"endpoint": "asset:endpoint:accounts",
+		"object":   "asset:object:account",
+		"field":    "asset:field:account.owner_id",
+		"code":     "asset:code:audit-log",
+	} {
+		assets, listErr := workspace.baselineAssets(kind)
+		if listErr != nil {
+			t.Fatal(listErr)
+		}
+		if len(assets) != 1 || assets[0].ID != want {
+			t.Fatalf("%s Assets = %#v, want %s", kind, assets, want)
+		}
 	}
-	if len(codeAssets) != 1 || codeAssets[0].ID != "asset:code:audit-log" {
-		t.Fatalf("Code Assets = %#v", codeAssets)
+	for kind, got := range workspace.baselineAssetCounts() {
+		if got != 1 {
+			t.Fatalf("%s Asset count = %d, want 1", kind, got)
+		}
 	}
-	if got := workspace.catalog.ReviewableAssetCounts()["code"]; got != 0 {
-		t.Fatalf("reviewable Code Assets = %d, want unresolved Asset excluded", got)
+	fields := workspace.controlledBaselineFields("asset:object:account")
+	if len(fields) != 1 || fields[0].ID != "asset:field:account.owner_id" {
+		t.Fatalf("object child fields = %#v", fields)
 	}
 
 	state := initialBaselineWorkspaceState()
@@ -48,6 +61,21 @@ func TestBaselineWorkspaceV1ConsumesProducerAssetKinds(t *testing.T) {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("producer Asset frame is missing %q:\n%s", want, frame)
 		}
+	}
+	state = initialBaselineWorkspaceState()
+	for range 3 {
+		state, _, err = workspace.reduceBaselineState(state, baselineKey{kind: baselineKeyDown})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	state, _, err = workspace.reduceBaselineState(state, baselineKey{kind: baselineKeyEnter})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame = workspace.renderBaselineFrame(state, 120, 32)
+	if !strings.Contains(frame, "Audit log") {
+		t.Fatalf("uncontrolled Code Asset is not explorable:\n%s", frame)
 	}
 }
 
@@ -103,6 +131,11 @@ func TestBaselineWorkspaceV1StaticSummaryUsesPublicVocabulary(t *testing.T) {
 	for _, legacy := range []string{"mechanism", "protection", "ctrl:", "impl:", "prot:"} {
 		if strings.Contains(summary, legacy) {
 			t.Fatalf("summary contains legacy vocabulary %q:\n%s", legacy, summary)
+		}
+	}
+	for _, want := range []string{"1 endpoint group", "1 object", "1 field", "1 code asset"} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("summary is missing %q:\n%s", want, summary)
 		}
 	}
 }
