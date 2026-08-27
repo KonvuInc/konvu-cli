@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "run": {
+    "id": "payments-api--a17c2e9--000042",
+    "status": "completed",
+    "started_at": "2026-08-27T10:00:00Z",
+    "completed_at": "2026-08-27T10:00:12.500Z",
+    "duration_seconds": 12.5,
+    "model": "gpt-5.6-luna",
+    "extension": {"kept": true}
+  },
+  "codebase": {
+    "name": "payments-api",
+    "path": "/workspace/payments-api",
+    "summary": "Payment service",
+    "git": {
+      "commit": "a17c2e9987654321",
+      "branch": "main",
+      "dirty": false
+    },
+    "metrics": {"files": 12, "lines": 900},
+    "languages": [{"name": "Go", "files": 12}],
+    "components": [],
+    "frameworks": [],
+    "databases": [],
+    "orms": [],
+    "unknowns": []
+  },
+  "index": {
+    "version": 1,
+    "files": [{"path": "internal/users.go"}]
+  },
+  "classes": [
+    {
+      "id": "class:user-service",
+      "name": "UserService",
+      "location": "internal/users.go:20"
+    }
+  ],
+  "routes": [
+    {
+      "id": "route:get-user",
+      "method": "GET",
+      "path": "/users/{id}",
+      "handler": "getUser",
+      "location": "internal/users.go:42"
+    }
+  ],
+  "resources": [
+    {
+      "id": "resource:user",
+      "name": "User",
+      "kind": "object",
+      "description": "A customer account"
+    }
+  ],
+  "roles": [
+    {
+      "id": "role:admin",
+      "name": "Admin",
+      "raw": "administrator",
+      "location": "internal/auth.go:8"
+    }
+  ],
+  "observations": {
+    "assets": [
+      {
+        "id": "asset:user",
+        "name": "User",
+        "description": "User records are security-relevant",
+        "location": "internal/users.go:20"
+      }
+    ],
+    "controls": [
+      {
+        "id": "control-observation:authorize-user-read",
+        "asset_id": "asset:user",
+        "property": "authorization",
+        "status": "present",
+        "description": "Checks the caller can read the requested user",
+        "location": "internal/users.go:45"
+      },
+      {
+        "id": "control-observation:rate-limit-user-read",
+        "asset_id": "resource:user",
+        "property": "availability",
+        "status": "absent",
+        "description": "No route-specific rate limit was found",
+        "location": "internal/users.go:42"
+      }
+    ]
+  },
+  "assets": [
+    {
+      "id": "asset:user",
+      "kind": "object",
+      "name": "User",
+      "description": "A customer account",
+      "location": "internal/users.go:20",
+      "source_ids": ["resource:user"],
+      "controls": [
+        {
+          "control_id": "control:authorize-user-read",
+          "status": "present",
+          "description": "Caller authorization is enforced",
+          "implementation_ids": ["implementation:authorize-user-read"],
+          "evidence": [
+            {"location": "internal/users.go:45", "quote": "authorize(userID)"}
+          ],
+          "checked": ["internal/users.go"],
+          "source_control_observation_ids": [
+            "control-observation:authorize-user-read"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "asset:user-email",
+      "kind": "field",
+      "name": "email",
+      "description": "Customer email address",
+      "parent": "asset:user",
+      "location": "internal/users.go:24",
+      "source_ids": ["resource:user"],
+      "controls": []
+    }
+  ],
+  "controls": [
+    {
+      "id": "control:authorize-user-read",
+      "name": "Authorize user reads",
+      "description": "Only permitted callers may read user records",
+      "property": "authorization",
+      "source_control_observation_ids": [
+        "control-observation:authorize-user-read"
+      ]
+    }
+  ],
+  "implementations": [
+    {
+      "id": "implementation:authorize-user-read",
+      "name": "authorize(userID)",
+      "description": "Shared authorization helper",
+      "kind": "code",
+      "locations": ["internal/users.go:45"],
+      "source_control_observation_ids": [
+        "control-observation:authorize-user-read"
+      ]
+    }
+  ],
+  "unresolved": [
+    {
+      "control_observation_id": "control-observation:rate-limit-user-read",
+      "reason": "No reusable Control was inferred",
+      "checked": ["internal/users.go"]
+    }
+  ],
+  "extension": {
+    "kept": true
+  }
+}
