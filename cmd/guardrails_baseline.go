@@ -33,7 +33,9 @@ whether to continue. The accepted run uses public OpenAI with gpt-5.6-luna and
 writes its final normalized graph to protections.json.
 
 Set OPENAI_API_KEY in the environment or pass --openai-api-key. The key is
-provided only to the guardrails child process and is not written to disk.`,
+provided only to the model-backed guardrails child process and is not written
+to disk. The downloaded runtime is hash-pinned and does not inherit unrelated
+ambient credentials.`,
 	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		apiKey := resolveGuardrailsAPIKey(guardrailsBaselineAPIKey, os.Getenv("OPENAI_API_KEY"))

@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -52,16 +50,31 @@ func TestGuardrailsArchiveName(t *testing.T) {
 	}
 }
 
-func TestGuardrailsEnvironmentReplacesOpenAIValues(t *testing.T) {
+func TestGuardrailsEnvironmentKeepsOnlyRequiredValues(t *testing.T) {
 	base := []string{
+		"HOME=/home/test",
 		"PATH=/usr/bin",
+		"HTTPS_PROXY=http://proxy.test",
+		"SSL_CERT_FILE=/certs/ca.pem",
+		"LANG=en_US.UTF-8",
+		"LC_ALL=en_US.UTF-8",
+		"GUARDRAILS_VERBOSE=1",
 		"OPENAI_API_KEY=old-key",
 		"OPENAI_MODEL=old-model",
+		"AWS_SECRET_ACCESS_KEY=aws-secret",
+		"GITHUB_TOKEN=github-secret",
+		"SSH_AUTH_SOCK=/tmp/ssh-agent",
 	}
 
 	got := guardrailsEnvironment(base, " new-key ", " gpt-5.6-luna ")
 	want := []string{
+		"HOME=/home/test",
 		"PATH=/usr/bin",
+		"HTTPS_PROXY=http://proxy.test",
+		"SSL_CERT_FILE=/certs/ca.pem",
+		"LANG=en_US.UTF-8",
+		"LC_ALL=en_US.UTF-8",
+		"GUARDRAILS_VERBOSE=1",
 		"OPENAI_API_KEY=new-key",
 		"OPENAI_MODEL=gpt-5.6-luna",
 	}
@@ -80,6 +93,7 @@ func TestGuardrailsEnvironmentModelOverridePreservesAmbientKey(t *testing.T) {
 		"PATH=/usr/bin",
 		"OPENAI_API_KEY=ambient-key",
 		"OPENAI_MODEL=ambient-model",
+		"AWS_ACCESS_KEY_ID=not-needed",
 	}
 
 	got := guardrailsEnvironment(base, "", " gpt-5.6-luna ")
@@ -95,6 +109,21 @@ func TestGuardrailsEnvironmentModelOverridePreservesAmbientKey(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("environment[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestGuardrailsEnvironmentWithoutModelGetsNoOpenAICredentials(t *testing.T) {
+	base := []string{
+		"HOME=/home/test",
+		"OPENAI_API_KEY=ambient-key",
+		"OPENAI_MODEL=ambient-model",
+		"KUBECONFIG=/home/test/.kube/config",
+	}
+
+	got := guardrailsEnvironment(base, "", "")
+	want := []string{"HOME=/home/test"}
+	if len(got) != len(want) || got[0] != want[0] {
+		t.Errorf("environment = %v, want %v", got, want)
 	}
 }
 
@@ -134,9 +163,12 @@ func buildFixtureArchive(t *testing.T, main, scanner []byte) []byte {
 	return data
 }
 
-func checksumsFile(archiveName string, data []byte) []byte {
-	sum := sha256.Sum256(data)
-	return []byte(hex.EncodeToString(sum[:]) + "  " + archiveName + "\n")
+func fixtureArtifact(archive, main, scanner []byte) guardrailsArtifact {
+	return guardrailsArtifact{
+		archiveSHA256:         sha256Hex(archive),
+		mainSHA256:            sha256Hex(main),
+		resourceScannerSHA256: sha256Hex(scanner),
+	}
 }
 
 func TestEnsureGuardrailsBinary(t *testing.T) {
@@ -148,7 +180,7 @@ func TestEnsureGuardrailsBinary(t *testing.T) {
 	binaryContents := []byte("#!/bin/sh\necho fake-guardrails\n")
 	scannerContents := []byte("#!/bin/sh\necho fake-resource-scanner\n")
 	archive := buildFixtureArchive(t, binaryContents, scannerContents)
-	checksums := checksumsFile(archiveName, archive)
+	artifact := fixtureArtifact(archive, binaryContents, scannerContents)
 
 	const version = "v0.1.0-test"
 	var requests int
@@ -157,10 +189,6 @@ func TestEnsureGuardrailsBinary(t *testing.T) {
 		requests++
 		w.Write(archive)
 	})
-	mux.HandleFunc("/guardrails/"+version+"/checksums.txt", func(w http.ResponseWriter, r *http.Request) {
-		requests++
-		w.Write(checksums)
-	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
@@ -168,7 +196,7 @@ func TestEnsureGuardrailsBinary(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	// Cache-miss: fetches and installs.
-	binPath, err := ensureGuardrailsBinary(server.URL, version)
+	binPath, err := ensureGuardrailsBinaryForArtifact(server.URL, version, triple, artifact)
 	if err != nil {
 		t.Fatalf("ensureGuardrailsBinary (cache-miss): %v", err)
 	}
@@ -196,26 +224,40 @@ func TestEnsureGuardrailsBinary(t *testing.T) {
 	if info, err := os.Stat(scannerPath); err != nil || info.Mode()&0o111 == 0 {
 		t.Errorf("installed resource scanner is not executable: %v", err)
 	}
-	if requests != 2 {
-		t.Fatalf("expected 2 requests (archive + checksums) on cache-miss, got %d", requests)
+	if requests != 1 {
+		t.Fatalf("expected 1 archive request on cache-miss, got %d", requests)
 	}
 
-	// Cache-hit: same version, must not touch the network again.
-	if _, err := ensureGuardrailsBinary(server.URL, version); err != nil {
+	// Cache-hit: matching executable hashes must not touch the network again.
+	if _, err := ensureGuardrailsBinaryForArtifact(server.URL, version, triple, artifact); err != nil {
 		t.Fatalf("ensureGuardrailsBinary (cache-hit): %v", err)
 	}
-	if requests != 2 {
+	if requests != 1 {
 		t.Errorf("expected cache-hit to skip the fetch, but requests = %d", requests)
+	}
+
+	// A modified executable is never run; a valid release archive heals it.
+	if err := os.WriteFile(binPath, []byte("tampered"), 0o755); err != nil {
+		t.Fatalf("tamper cached binary: %v", err)
+	}
+	if _, err := ensureGuardrailsBinaryForArtifact(server.URL, version, triple, artifact); err != nil {
+		t.Fatalf("ensureGuardrailsBinary (tampered cache): %v", err)
+	}
+	if requests != 2 {
+		t.Errorf("expected tampered cache to fetch once, got %d requests", requests)
+	}
+	if got, err := os.ReadFile(binPath); err != nil || string(got) != string(binaryContents) {
+		t.Errorf("tampered binary was not healed: content %q, err %v", got, err)
 	}
 
 	// Incomplete bundle: a missing sidecar invalidates the cached release.
 	if err := os.Remove(scannerPath); err != nil {
 		t.Fatalf("remove resource scanner: %v", err)
 	}
-	if _, err := ensureGuardrailsBinary(server.URL, version); err != nil {
+	if _, err := ensureGuardrailsBinaryForArtifact(server.URL, version, triple, artifact); err != nil {
 		t.Fatalf("ensureGuardrailsBinary (missing sidecar): %v", err)
 	}
-	if requests != 4 {
+	if requests != 3 {
 		t.Errorf("expected a fresh fetch for an incomplete bundle, got %d requests", requests)
 	}
 
@@ -227,11 +269,11 @@ func TestEnsureGuardrailsBinary(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(dir, "bin", version)); err != nil {
 		t.Fatalf("RemoveAll cache dir: %v", err)
 	}
-	if _, err := ensureGuardrailsBinary(server.URL, version); err != nil {
+	if _, err := ensureGuardrailsBinaryForArtifact(server.URL, version, triple, artifact); err != nil {
 		t.Fatalf("ensureGuardrailsBinary (post-deletion): %v", err)
 	}
-	if requests != 6 {
-		t.Errorf("expected a fresh fetch (2 more requests) after cache deletion, got %d total", requests)
+	if requests != 4 {
+		t.Errorf("expected a fresh fetch after cache deletion, got %d total", requests)
 	}
 }
 
@@ -242,15 +284,13 @@ func TestEnsureGuardrailsBinaryChecksumMismatch(t *testing.T) {
 	}
 	archiveName := guardrailsArchiveName(triple)
 	archive := buildFixtureArchive(t, []byte("irrelevant"), []byte("scanner"))
-	badChecksums := []byte("0000000000000000000000000000000000000000000000000000000000000000  " + archiveName + "\n")
+	artifact := fixtureArtifact(archive, []byte("irrelevant"), []byte("scanner"))
+	artifact.archiveSHA256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
 	const version = "v0.1.0-badsum"
 	mux := http.NewServeMux()
 	mux.HandleFunc("/guardrails/"+version+"/"+archiveName, func(w http.ResponseWriter, r *http.Request) {
 		w.Write(archive)
-	})
-	mux.HandleFunc("/guardrails/"+version+"/checksums.txt", func(w http.ResponseWriter, r *http.Request) {
-		w.Write(badChecksums)
 	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -258,7 +298,7 @@ func TestEnsureGuardrailsBinaryChecksumMismatch(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	_, err = ensureGuardrailsBinary(server.URL, version)
+	_, err = ensureGuardrailsBinaryForArtifact(server.URL, version, triple, artifact)
 	if err == nil {
 		t.Fatal("expected checksum mismatch error, got nil")
 	}
@@ -283,26 +323,47 @@ func TestEnsureGuardrailsBinaryRejectsMissingResourceScanner(t *testing.T) {
 	}
 	archiveName := guardrailsArchiveName(triple)
 	archive := buildFixtureArchive(t, []byte("guardrails"), nil)
-	checksums := checksumsFile(archiveName, archive)
+	artifact := fixtureArtifact(archive, []byte("guardrails"), []byte("scanner"))
 
 	const version = "v0.1.0-missing-scanner"
 	mux := http.NewServeMux()
 	mux.HandleFunc("/guardrails/"+version+"/"+archiveName, func(w http.ResponseWriter, r *http.Request) {
 		w.Write(archive)
 	})
-	mux.HandleFunc("/guardrails/"+version+"/checksums.txt", func(w http.ResponseWriter, r *http.Request) {
-		w.Write(checksums)
-	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
 	t.Setenv("HOME", t.TempDir())
-	_, err = ensureGuardrailsBinary(server.URL, version)
+	_, err = ensureGuardrailsBinaryForArtifact(server.URL, version, triple, artifact)
 	if err == nil {
 		t.Fatal("expected invalid archive error, got nil")
 	}
 	cliErr, ok := err.(*clierrors.CLIError)
 	if !ok || cliErr.Code != "INVALID_ARCHIVE" {
 		t.Errorf("expected INVALID_ARCHIVE, got %v", err)
+	}
+}
+
+func TestGuardrailsPinnedArtifactsCoverSupportedPlatforms(t *testing.T) {
+	for _, triple := range []string{
+		"aarch64-apple-darwin",
+		"x86_64-apple-darwin",
+		"aarch64-unknown-linux-gnu",
+		"x86_64-unknown-linux-gnu",
+	} {
+		artifact, ok := guardrailsArtifacts[triple]
+		if !ok {
+			t.Errorf("missing trusted artifact for %s", triple)
+			continue
+		}
+		for name, digest := range map[string]string{
+			"archive":                  artifact.archiveSHA256,
+			"guardrails":               artifact.mainSHA256,
+			"guardrails-resource-scan": artifact.resourceScannerSHA256,
+		} {
+			if len(digest) != 64 {
+				t.Errorf("%s %s digest length = %d, want 64", triple, name, len(digest))
+			}
+		}
 	}
 }

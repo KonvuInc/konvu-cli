@@ -21,7 +21,7 @@ Thin wrapper over the cached guardrails-cli binary -- see 'konvu guardrails
 scan --help' for the shared bootstrap behavior.`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		runGuardrailsExec(append([]string{"explain"}, args...), guardrailsExplainAPIKey, guardrailsExplainModel)
+		runGuardrailsReadOnly(append([]string{"explain"}, args...))
 	},
 }
 
