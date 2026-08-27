@@ -4,7 +4,7 @@ package cmd
 
 // guardrailsPinnedVersion is the Guardrails release installed by this version
 // of Konvu CLI.
-const guardrailsPinnedVersion = "v0.5.2"
+const guardrailsPinnedVersion = "v0.5.3"
 
 type guardrailsArtifact struct {
 	archiveSHA256         string
@@ -15,23 +15,23 @@ type guardrailsArtifact struct {
 // guardrailsArtifacts is the trust anchor for downloaded runtime bytes.
 var guardrailsArtifacts = map[string]guardrailsArtifact{
 	"aarch64-apple-darwin": {
-		archiveSHA256:         "490186d3deccaeb937007c83a0e1d6c98f74cc7f354725898cbd2e9c07318eaf",
-		mainSHA256:            "9568e10a69bd145e6db7851aa1cb65358ef0485bcb81c657efeaaa3e6a5be290",
-		resourceScannerSHA256: "a59adc52d86b3c38fb503c9f2a6049998e467749ac43430d919044d2097f7250",
+		archiveSHA256:         "ddb7fa9f28ca1a1a6e558ae6f474a51fe9bc16326026a14d9620a2428bd897cb",
+		mainSHA256:            "73d0b821296bd7eefbd8fa03febccb79e85f9deb2e1767ec3acc17df4f6ba567",
+		resourceScannerSHA256: "531557476d2dee065f49c697f7543474bfc96c1d7f36aaeb1d627a19e09a313a",
 	},
 	"x86_64-apple-darwin": {
-		archiveSHA256:         "dba2a40e3263825cab8b0c17cdcde1f8eade4a9117e32731246e92434a6a8760",
-		mainSHA256:            "100f019f9b46daa0888be8dd5da033677dd264c9aaa6750370aa6110c5fdec00",
-		resourceScannerSHA256: "02b900d8956b96b8fe9cea5e4198fbaf3d8e1d465d7ad7f795e06bede488b75e",
+		archiveSHA256:         "4cb795da045424db83095b781c5fecf8a2890140f52a0f64771ed67778446a26",
+		mainSHA256:            "6ad5c6b5a3a48e62e5d676b5e374d99af3035720356512fa67d37ca84bc522ea",
+		resourceScannerSHA256: "19329549f9a928735e0e09eb8c1599d95165529feb748dab252346fbe5e811e0",
 	},
 	"aarch64-unknown-linux-gnu": {
-		archiveSHA256:         "db6a5b067e55cf5bc983cf8a44bafdab2637b6c73cb05f3ceff9c18f65cbeea1",
-		mainSHA256:            "3de139373db9012cbbaeebeea156437c25c4a1b9805ce222c6e1b2b9d28a1122",
-		resourceScannerSHA256: "78e8be3908512e2ebcfecd85f2998b2114f08350074b9dba8e84452f1be89863",
+		archiveSHA256:         "2be391a4855c651915effa2563bd3a9dc9c45f1b71e3d879b8eeaea1bb231e98",
+		mainSHA256:            "7d0bd7d712a08240f34d1a5e6d3e636485150efc449e7d0c473d3948b2eb3a64",
+		resourceScannerSHA256: "a5f47970d94fdbe82837533043c77510a38a2c6606ea395826065754f4f2be6f",
 	},
 	"x86_64-unknown-linux-gnu": {
-		archiveSHA256:         "7c4dbd0e78f949e05d7994097693e93b4298b8bf0ec7b12b7be5100c869966a5",
-		mainSHA256:            "4fdd890578dec7503f500216d7c9aa675f1dc4564cca91404e7ff6fe87db2324",
-		resourceScannerSHA256: "b572cd4d5ce399957419dcf6198752c7c36219005e1dca7d7f4ae165b6de4bab",
+		archiveSHA256:         "69eeff8b18680c805fd88b30afc9984e6e4e0aacb540141a8822e4e6acdd1baa",
+		mainSHA256:            "757c10d595bed35b2924b63a666498b1e1b80e826f971f65a32c7a70f77d4723",
+		resourceScannerSHA256: "dcea04c2dbf82a8c8222ea290ffe71f6a26678b8fec00e88c72e6fadb127c2d5",
 	},
 }
