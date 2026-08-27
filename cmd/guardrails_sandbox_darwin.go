@@ -35,6 +35,7 @@ func platformGuardrailsSandboxCommand(
 	profile.WriteString("(allow sysctl-read)\n(allow mach*)\n(allow ipc-posix*)\n(allow network*)\n")
 	profile.WriteString("(allow file-read-metadata)\n(allow file-read-data (literal \"/\"))\n")
 	profile.WriteString("(allow file-read* (subpath \"/dev\"))\n")
+	profile.WriteString("(allow file-write-data (literal \"/dev/null\"))\n")
 	for _, path := range darwinSandboxSystemPaths {
 		if _, err := os.Stat(path); err == nil {
 			fmt.Fprintf(&profile, "(allow file-read* (subpath %s))\n", strconv.Quote(path))
