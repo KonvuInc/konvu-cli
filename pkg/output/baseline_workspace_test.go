@@ -280,6 +280,38 @@ func TestReadBaselineKeyWaitsForSplitEscapeSequence(t *testing.T) {
 			t.Fatalf("standalone Escape returned before suffix timeout: %s", elapsed)
 		}
 	})
+
+	t.Run("slow CSI suffix remains one key", func(t *testing.T) {
+		readEnd, writeEnd, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer readEnd.Close()
+		defer writeEnd.Close()
+
+		if _, err := writeEnd.Write([]byte("\x1b[")); err != nil {
+			t.Fatal(err)
+		}
+		writeResult := make(chan error, 1)
+		go func() {
+			time.Sleep(2 * baselineEscapeSequenceWait)
+			_, suffixErr := writeEnd.Write([]byte("A"))
+			writeResult <- suffixErr
+		}()
+
+		key, err := readBaselineKey(bufio.NewReader(readEnd), func() (bool, error) {
+			return baselineWaitForInput(int(readEnd.Fd()), baselineEscapeSequenceWait)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if suffixErr := <-writeResult; suffixErr != nil {
+			t.Fatal(suffixErr)
+		}
+		if key.kind != baselineKeyUp {
+			t.Fatalf("slow CSI key kind = %v, want Up", key.kind)
+		}
+	})
 }
 
 func TestReadBaselineKeyRequiresCompletePageSequences(t *testing.T) {

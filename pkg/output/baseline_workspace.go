@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -95,18 +98,17 @@ func (w *BaselineWorkspace) Browse() (BaselineWorkspaceOutcome, error) {
 	}
 
 	stdinFD := int(os.Stdin.Fd())
-	oldState, err := term.MakeRaw(stdinFD)
+	restore, err := enterBaselineRawTerminal(stdinFD, func() {
+		_, _ = io.WriteString(os.Stdout, "\033[?25h\033[?1049l")
+	})
 	if err != nil {
 		return BaselineWorkspaceQuit, fmt.Errorf("entering raw terminal mode: %w", err)
 	}
-	defer func() { _ = term.Restore(stdinFD, oldState) }()
+	defer restore()
 
 	if _, err := io.WriteString(os.Stdout, "\033[?1049h\033[?25l"); err != nil {
 		return BaselineWorkspaceQuit, err
 	}
-	defer func() {
-		_, _ = io.WriteString(os.Stdout, "\033[?25h\033[?1049l")
-	}()
 
 	w.color = baselineColorEnabled(os.Stdout)
 	return w.runBaselineWorkspace(bufio.NewReader(os.Stdin), os.Stdout, func() (int, int) {
@@ -135,11 +137,11 @@ func PickBaselineRepository(
 	}
 
 	stdinFD := int(os.Stdin.Fd())
-	oldState, err := term.MakeRaw(stdinFD)
+	restore, err := enterBaselineRawTerminal(stdinFD, nil)
 	if err != nil {
 		return selected, false, fmt.Errorf("entering raw terminal mode: %w", err)
 	}
-	defer func() { _ = term.Restore(stdinFD, oldState) }()
+	defer restore()
 
 	return pickBaselineRepositoryIO(
 		bufio.NewReader(os.Stdin),
@@ -151,6 +153,45 @@ func PickBaselineRepository(
 			return baselineWaitForInput(stdinFD, baselineEscapeSequenceWait)
 		},
 	)
+}
+
+// enterBaselineRawTerminal restores the terminal before this process exits for
+// an interactive terminating signal. Go defers are not run for those signals.
+func enterBaselineRawTerminal(stdinFD int, cleanup func()) (func(), error) {
+	oldState, err := term.MakeRaw(stdinFD)
+	if err != nil {
+		return nil, err
+	}
+
+	var once sync.Once
+	restore := func() {
+		once.Do(func() {
+			if cleanup != nil {
+				cleanup()
+			}
+			_ = term.Restore(stdinFD, oldState)
+		})
+	}
+
+	signals := make(chan os.Signal, 1)
+	done := make(chan struct{})
+	signal.Notify(signals, os.Interrupt, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM)
+	go func() {
+		select {
+		case sig := <-signals:
+			restore()
+			signal.Stop(signals)
+			signal.Reset(sig)
+			_ = syscall.Kill(os.Getpid(), sig.(syscall.Signal))
+		case <-done:
+		}
+	}()
+
+	return func() {
+		close(done)
+		signal.Stop(signals)
+		restore()
+	}, nil
 }
 
 type baselineInputWaiter func() (bool, error)
@@ -362,13 +403,9 @@ func readBaselineKey(reader *bufio.Reader, waiters ...baselineInputWaiter) (base
 		if secondErr != nil || second != '[' {
 			return baselineKey{kind: baselineKeyEscape}, nil
 		}
-		ready, waitErr = baselineInputReady(reader, waiters)
-		if waitErr != nil {
-			return baselineKey{}, waitErr
-		}
-		if !ready {
-			return baselineKey{kind: baselineKeyEscape}, nil
-		}
+		// Once CSI has started, read it to completion. A slow terminal may
+		// deliver its final byte after the Escape-disambiguation timeout; that
+		// must not be treated as a standalone Escape/back-navigation request.
 		third, thirdErr := reader.ReadByte()
 		if thirdErr != nil {
 			return baselineKey{kind: baselineKeyEscape}, nil
@@ -383,13 +420,6 @@ func readBaselineKey(reader *bufio.Reader, waiters ...baselineInputWaiter) (base
 		case 'D':
 			return baselineKey{kind: baselineKeyLeft}, nil
 		case '5', '6':
-			ready, waitErr = baselineInputReady(reader, waiters)
-			if waitErr != nil {
-				return baselineKey{}, waitErr
-			}
-			if !ready {
-				return baselineKey{kind: baselineKeyUnknown}, nil
-			}
 			trailing, trailingErr := reader.ReadByte()
 			if trailingErr != nil || trailing != '~' {
 				return baselineKey{kind: baselineKeyUnknown}, nil
