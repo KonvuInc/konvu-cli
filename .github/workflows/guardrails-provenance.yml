@@ -1,0 +1,26 @@
+name: Guardrails provenance
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/guardrails-provenance.yml
+      - cmd/guardrails_artifacts.go
+      - scripts/update-guardrails-release.sh
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/guardrails-provenance.yml
+      - cmd/guardrails_artifacts.go
+      - scripts/update-guardrails-release.sh
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4 (v4.3.1)
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4 (v4.1.2)
+      - name: Verify Guardrails release provenance
+        run: scripts/update-guardrails-release.sh --check
