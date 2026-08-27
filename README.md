@@ -132,6 +132,22 @@ CLI. Prefer the environment variable so the key is not recorded in shell
 history. The final artifact is `protections.json` under
 `~/.cache/guardrails/posture/`.
 
+### Guardrails assets browser
+
+Browse the assets and security controls in a completed stored baseline without
+rerunning the scan:
+
+```bash
+konvu guardrails assets
+konvu guardrails assets --repo organization/service
+konvu guardrails assets --repo organization/service --output json
+```
+
+Interactive use starts with the repositories recorded by prior baseline scans.
+For scripts, select a repository with `--repo`; it may be omitted when exactly
+one stored baseline exists. Use `--output table` for a static human-readable
+summary when output is redirected.
+
 ### Finding sources
 
 Findings come from four scanner categories, each with its own subcommand:

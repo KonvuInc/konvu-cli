@@ -36,6 +36,40 @@ func TestFormatErrorJSON(t *testing.T) {
 	if errObj["code"] != "NOT_FOUND" {
 		t.Errorf("code = %v, want NOT_FOUND", errObj["code"])
 	}
+	if _, ok := errObj["context"]; ok {
+		t.Fatal("context should be omitted when the error has no structured context")
+	}
+}
+
+func TestFormatErrorJSONIncludesStructuredContext(t *testing.T) {
+	err := &CLIError{
+		Code:     "REPOSITORY_REQUIRED",
+		Message:  "Select a stored repository",
+		ExitCode: ExitUsageError,
+		Context: map[string]any{
+			"available_repositories": []string{"example/api", "example/web"},
+		},
+	}
+
+	var parsed struct {
+		Error struct {
+			Context struct {
+				Available []string `json:"available_repositories"`
+			} `json:"context"`
+		} `json:"error"`
+	}
+	if jsonErr := json.Unmarshal([]byte(FormatErrorJSON(err)), &parsed); jsonErr != nil {
+		t.Fatalf("FormatErrorJSON() returned invalid JSON: %v", jsonErr)
+	}
+	want := []string{"example/api", "example/web"}
+	if len(parsed.Error.Context.Available) != len(want) {
+		t.Fatalf("available repositories = %v, want %v", parsed.Error.Context.Available, want)
+	}
+	for index := range want {
+		if parsed.Error.Context.Available[index] != want[index] {
+			t.Fatalf("available repositories = %v, want %v", parsed.Error.Context.Available, want)
+		}
+	}
 }
 
 func TestExitCodes(t *testing.T) {

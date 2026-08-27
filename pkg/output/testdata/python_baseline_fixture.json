@@ -1,0 +1,163 @@
+{
+  "format_version": 1,
+  "repo": "/tmp/example-repo",
+  "source": {
+    "kind": "verified-mechanism-catalog",
+    "observation_count": 5
+  },
+  "assets": [
+    {
+      "id": "ep:users",
+      "kind": "endpoint",
+      "name": "user routes",
+      "decl": "app.py#users",
+      "origin": "resources",
+      "source_ids": ["ep:users"],
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/users",
+          "handler": "list_users",
+          "decl": "app.py#list_users",
+          "line": 10
+        },
+        {
+          "method": "POST",
+          "path": "/users",
+          "handler": "create_user",
+          "decl": "app.py#create_user",
+          "line": 20
+        },
+        {
+          "method": "POST",
+          "path": "/users",
+          "handler": "create_user",
+          "decl": "app.py#create_user",
+          "line": 21
+        }
+      ]
+    },
+    {
+      "id": "obj:user",
+      "kind": "object",
+      "name": "User",
+      "decl": "models.py#User",
+      "origin": "resources",
+      "source_ids": ["obj:user"]
+    },
+    {
+      "id": "field:user_email",
+      "kind": "field",
+      "name": "User.email",
+      "decl": "models.py#User.email",
+      "origin": "resources",
+      "source_ids": ["field:user_email"],
+      "parent": "obj:user"
+    }
+  ],
+  "controls": [
+    {
+      "id": "ctrl:auth",
+      "name": "active authentication",
+      "description": "Requests require an active company credential.",
+      "property": "authentication",
+      "asvs": ["V2"],
+      "source_observation_ids": ["mech:auth"]
+    },
+    {
+      "id": "ctrl:minimize",
+      "name": "response data minimization",
+      "description": "Responses expose only necessary fields.",
+      "property": "confidentiality",
+      "asvs": ["V8"],
+      "source_observation_ids": ["mech:minimize"]
+    },
+    {
+      "id": "ctrl:tenant",
+      "name": "tenant-scoped data access",
+      "description": "Queries remain within the current company.",
+      "property": "authorization",
+      "asvs": ["V4"],
+      "source_observation_ids": ["mech:tenant"]
+    }
+  ],
+  "implementations": [
+    {
+      "id": "impl:auth",
+      "name": "active token dependency",
+      "description": "The route dependency validates the active token.",
+      "kind": "code",
+      "anchors": [
+        {
+          "decl": "auth.py#get_token",
+          "quote": "token.active"
+        }
+      ],
+      "source_observation_ids": ["mech:auth"]
+    },
+    {
+      "id": "impl:tenant",
+      "name": "company query filter",
+      "description": "Repository queries include company_id.",
+      "kind": "code",
+      "anchors": [
+        {
+          "decl": "repositories.py#find_user",
+          "quote": "company_id=company.id"
+        }
+      ],
+      "source_observation_ids": ["mech:tenant"]
+    }
+  ],
+  "protections": [
+    {
+      "id": "prot:users_auth",
+      "asset_id": "ep:users",
+      "control_id": "ctrl:auth",
+      "implementation_ids": ["impl:auth"],
+      "presence": "present",
+      "description": "The route requires an active token.",
+      "evidence": [
+        {
+          "decl": "app.py#users",
+          "quote": "Depends(get_token)"
+        }
+      ],
+      "checked": [],
+      "source_observation_ids": ["mech:auth"]
+    },
+    {
+      "id": "prot:user_tenant",
+      "asset_id": "obj:user",
+      "control_id": "ctrl:tenant",
+      "implementation_ids": ["impl:tenant"],
+      "presence": "partial",
+      "description": "Most user queries include the company filter.",
+      "evidence": [
+        {
+          "decl": "repositories.py#find_user",
+          "quote": "company_id=company.id"
+        }
+      ],
+      "checked": [],
+      "source_observation_ids": ["mech:tenant"]
+    },
+    {
+      "id": "prot:email_minimize",
+      "asset_id": "field:user_email",
+      "control_id": "ctrl:minimize",
+      "implementation_ids": [],
+      "presence": "absent",
+      "description": "The email field is exposed in a broad response.",
+      "evidence": [
+        {
+          "decl": "schemas.py#UserResponse",
+          "quote": "email: str"
+        }
+      ],
+      "checked": [],
+      "source_observation_ids": ["mech:minimize"]
+    }
+  ],
+  "unresolved": []
+}

@@ -4,11 +4,20 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"golang.org/x/term"
 )
+
+// WriteString sends an already-rendered user-facing value to the requested
+// destination. Commands use this helper so output remains owned by pkg/output
+// while still allowing Cobra's test writers to be injected.
+func WriteString(writer io.Writer, value string) error {
+	_, err := io.WriteString(writer, value)
+	return err
+}
 
 type OutputFormat int
 
