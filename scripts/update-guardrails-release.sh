@@ -91,8 +91,8 @@ else
       --certificate-oidc-issuer "$issuer" \
       "$archive" >/dev/null
 
-    guardrails_member=$(tar -tf "$archive" | awk -F/ '$NF == "guardrails" { print; exit }')
-    scanner_member=$(tar -tf "$archive" | awk -F/ '$NF == "guardrails-resource-scan" { print; exit }')
+    guardrails_member=$(tar -tf "$archive" | awk -F/ '$NF == "guardrails" { print }')
+    scanner_member=$(tar -tf "$archive" | awk -F/ '$NF == "guardrails-resource-scan" { print }')
     if [[ -z "$guardrails_member" || -z "$scanner_member" ]]; then
       echo "$archive_name is missing a Guardrails runtime binary" >&2
       exit 1
