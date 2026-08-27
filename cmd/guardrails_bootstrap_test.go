@@ -127,6 +127,20 @@ func TestGuardrailsEnvironmentWithoutModelGetsNoOpenAICredentials(t *testing.T) 
 	}
 }
 
+func TestGuardrailsReadOnlyCommandsHaveNoOpenAIFlags(t *testing.T) {
+	for _, commandName := range []string{"list", "show", "explain"} {
+		command, _, err := guardrailsCmd.Find([]string{commandName})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"openai-api-key", "openai-model"} {
+			if command.Flags().Lookup(name) != nil {
+				t.Errorf("%s unexpectedly accepts --%s", command.Name(), name)
+			}
+		}
+	}
+}
+
 // buildFixtureArchive shells out to the system tar to produce a real
 // tar.xz containing the runtime binaries, since Go's stdlib has no xz encoder
 // either. A nil scanner omits the sidecar for invalid-archive tests. Skips (not

@@ -4,11 +4,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	guardrailsListAPIKey string
-	guardrailsListModel  string
-)
-
 var guardrailsListCmd = &cobra.Command{
 	Use:   "list [registry.json]",
 	Short: "List past guardrails scans",
@@ -24,7 +19,5 @@ scan --help' for the shared bootstrap behavior.`,
 }
 
 func init() {
-	guardrailsListCmd.Flags().StringVar(&guardrailsListAPIKey, "openai-api-key", "", "OpenAI API key (prefer OPENAI_API_KEY to avoid shell history)")
-	guardrailsListCmd.Flags().StringVar(&guardrailsListModel, "openai-model", "gpt-4o", "OpenAI model used with --openai-api-key")
 	guardrailsCmd.AddCommand(guardrailsListCmd)
 }

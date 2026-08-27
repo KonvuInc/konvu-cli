@@ -4,11 +4,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	guardrailsExplainAPIKey string
-	guardrailsExplainModel  string
-)
-
 var guardrailsExplainCmd = &cobra.Command{
 	Use:   "explain <name> [profile-dir]",
 	Short: "Explain one entry from the profile by name",
@@ -26,7 +21,5 @@ scan --help' for the shared bootstrap behavior.`,
 }
 
 func init() {
-	guardrailsExplainCmd.Flags().StringVar(&guardrailsExplainAPIKey, "openai-api-key", "", "OpenAI API key (prefer OPENAI_API_KEY to avoid shell history)")
-	guardrailsExplainCmd.Flags().StringVar(&guardrailsExplainModel, "openai-model", "gpt-4o", "OpenAI model used with --openai-api-key")
 	guardrailsCmd.AddCommand(guardrailsExplainCmd)
 }

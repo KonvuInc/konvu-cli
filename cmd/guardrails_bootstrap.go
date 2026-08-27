@@ -363,9 +363,7 @@ var guardrailsEnvironmentAllowlist = map[string]struct{}{
 	"no_proxy":           {},
 }
 
-// guardrailsEnvironment gives the child only the process settings needed for
-// paths, terminal output, locale, temporary files, and network configuration.
-// OpenAI credentials are included only when the invocation requests them.
+// guardrailsEnvironment keeps only required runtime settings and credentials.
 func guardrailsEnvironment(base []string, apiKey, model string) []string {
 	apiKey = strings.TrimSpace(apiKey)
 	model = strings.TrimSpace(model)
@@ -403,10 +401,7 @@ func guardrailsEnvironment(base []string, apiKey, model string) []string {
 	return env
 }
 
-// runGuardrailsExec is the shared os/exec shim behind the guardrails commands:
-// ensure the release bundle is cached, run it with stdio wired straight
-// through, and propagate its exit code. Explicit OpenAI credentials are passed
-// to the child only; the user's credentials file is never changed.
+// runGuardrailsExec runs the verified bundle and propagates its exit code.
 func runGuardrailsExec(args []string, apiKey, model string) {
 	binPath, err := ensureGuardrailsBinary(guardrailsCloudFrontBase, guardrailsPinnedVersion)
 	if err != nil {
@@ -428,8 +423,6 @@ func runGuardrailsExec(args []string, apiKey, model string) {
 	}
 }
 
-// runGuardrailsReadOnly preserves the existing command-line surface while
-// keeping credentials out of view-only child processes.
 func runGuardrailsReadOnly(args []string) {
 	runGuardrailsExec(args, "", "")
 }

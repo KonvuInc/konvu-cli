@@ -10,9 +10,7 @@ type guardrailsArtifact struct {
 	resourceScannerSHA256 string
 }
 
-// guardrailsArtifacts binds the proprietary runtime bytes to this public CLI
-// release. Remote checksums are intentionally not a trust anchor: an attacker
-// able to replace a CDN archive could otherwise replace its checksum too.
+// guardrailsArtifacts is the trust anchor for downloaded runtime bytes.
 var guardrailsArtifacts = map[string]guardrailsArtifact{
 	"aarch64-apple-darwin": {
 		archiveSHA256:         "1d7e495805a4eee04b39b211d5bf6a9775627c190f03fc04cc7b5c64855bea2e",
