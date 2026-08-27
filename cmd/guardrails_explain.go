@@ -4,11 +4,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	guardrailsExplainAPIKey string
-	guardrailsExplainModel  string
-)
-
 var guardrailsExplainCmd = &cobra.Command{
 	Use:   "explain <name> [profile-dir]",
 	Short: "Explain one entry from the profile by name",
@@ -21,12 +16,10 @@ Thin wrapper over the cached guardrails-cli binary -- see 'konvu guardrails
 scan --help' for the shared bootstrap behavior.`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		runGuardrailsExec(append([]string{"explain"}, args...), guardrailsExplainAPIKey, guardrailsExplainModel)
+		runGuardrailsReadOnly(append([]string{"explain"}, args...))
 	},
 }
 
 func init() {
-	guardrailsExplainCmd.Flags().StringVar(&guardrailsExplainAPIKey, "openai-api-key", "", "OpenAI API key (prefer OPENAI_API_KEY to avoid shell history)")
-	guardrailsExplainCmd.Flags().StringVar(&guardrailsExplainModel, "openai-model", "gpt-4o", "OpenAI model used with --openai-api-key")
 	guardrailsCmd.AddCommand(guardrailsExplainCmd)
 }

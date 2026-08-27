@@ -4,11 +4,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	guardrailsShowAPIKey string
-	guardrailsShowModel  string
-)
-
 var guardrailsShowCmd = &cobra.Command{
 	Use:   "show [file[:line]] [profile-dir]",
 	Short: "Show the profile for a file or the whole repo",
@@ -21,12 +16,10 @@ Thin wrapper over the cached guardrails-cli binary -- see 'konvu guardrails
 scan --help' for the shared bootstrap behavior.`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		runGuardrailsExec(append([]string{"show"}, args...), guardrailsShowAPIKey, guardrailsShowModel)
+		runGuardrailsReadOnly(append([]string{"show"}, args...))
 	},
 }
 
 func init() {
-	guardrailsShowCmd.Flags().StringVar(&guardrailsShowAPIKey, "openai-api-key", "", "OpenAI API key (prefer OPENAI_API_KEY to avoid shell history)")
-	guardrailsShowCmd.Flags().StringVar(&guardrailsShowModel, "openai-model", "gpt-4o", "OpenAI model used with --openai-api-key")
 	guardrailsCmd.AddCommand(guardrailsShowCmd)
 }

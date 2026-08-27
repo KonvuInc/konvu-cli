@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -15,13 +17,9 @@ import (
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 )
 
-// guardrailsCloudFrontBase hosts the public Guardrails release archives and
-// checksums under <base>/guardrails/<version>/.
+// guardrailsCloudFrontBase hosts the public Guardrails release archives under
+// <base>/guardrails/<version>/.
 const guardrailsCloudFrontBase = "https://dneaqnz3vqe4a.cloudfront.net"
-
-// guardrailsPinnedVersion is the Guardrails release installed by this version
-// of Konvu CLI.
-const guardrailsPinnedVersion = "v0.5.0"
 
 // guardrailsConfigDir returns the fixed location shared with the Guardrails
 // binary on every supported platform.
@@ -121,6 +119,26 @@ func guardrailsFetch(url string) ([]byte, error) {
 // since callers rely on a successful return meaning the binary can actually
 // run.
 func ensureGuardrailsBinary(baseURL, version string) (string, error) {
+	triple, err := guardrailsTargetTriple()
+	if err != nil {
+		return "", err
+	}
+	artifact, ok := guardrailsArtifacts[triple]
+	if version != guardrailsPinnedVersion || !ok {
+		return "", &clierrors.CLIError{
+			Code:       "UNVERIFIED_RELEASE",
+			Message:    fmt.Sprintf("guardrails %s has no trusted artifact for %s", version, triple),
+			Suggestion: "Upgrade Konvu CLI to a release that supports this platform.",
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
+	return ensureGuardrailsBinaryForArtifact(baseURL, version, triple, artifact)
+}
+
+func ensureGuardrailsBinaryForArtifact(
+	baseURL, version, triple string,
+	artifact guardrailsArtifact,
+) (string, error) {
 	binPath, err := guardrailsBinaryPath(version)
 	if err != nil {
 		return "", err
@@ -129,14 +147,11 @@ func ensureGuardrailsBinary(baseURL, version string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if validExecutable(binPath) && validExecutable(scannerPath) {
+	if verifiedExecutable(binPath, artifact.mainSHA256) &&
+		verifiedExecutable(scannerPath, artifact.resourceScannerSHA256) {
 		return binPath, nil
 	}
 
-	triple, err := guardrailsTargetTriple()
-	if err != nil {
-		return "", err
-	}
 	archiveName := guardrailsArchiveName(triple)
 	base := strings.TrimRight(baseURL, "/") + "/guardrails/" + version
 
@@ -146,16 +161,22 @@ func ensureGuardrailsBinary(baseURL, version string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	checksums, err := guardrailsFetch(base + "/checksums.txt")
-	if err != nil {
-		return "", err
-	}
-	if err := verifyChecksum(archive, checksums, archiveName); err != nil {
+	if err := verifySHA256(archive, artifact.archiveSHA256, archiveName); err != nil {
 		return "", err
 	}
 
 	binaries, err := extractGuardrailsBinaries(archive)
 	if err != nil {
+		return "", err
+	}
+	if err := verifySHA256(binaries.main, artifact.mainSHA256, "guardrails"); err != nil {
+		return "", err
+	}
+	if err := verifySHA256(
+		binaries.resourceScanner,
+		artifact.resourceScannerSHA256,
+		"guardrails-resource-scan",
+	); err != nil {
 		return "", err
 	}
 
@@ -168,9 +189,31 @@ func ensureGuardrailsBinary(baseURL, version string) (string, error) {
 	return binPath, nil
 }
 
-func validExecutable(path string) bool {
+func verifiedExecutable(path, expectedSHA256 string) bool {
 	info, err := os.Stat(path)
-	return err == nil && info.Size() > 0 && info.Mode()&0o111 != 0
+	if err != nil || info.Size() == 0 || info.Mode()&0o111 == 0 {
+		return false
+	}
+	data, err := os.ReadFile(path)
+	return err == nil && sha256Hex(data) == expectedSHA256
+}
+
+func verifySHA256(data []byte, expected, name string) error {
+	actual := sha256Hex(data)
+	if actual == expected {
+		return nil
+	}
+	return &clierrors.CLIError{
+		Code:       "CHECKSUM_MISMATCH",
+		Message:    fmt.Sprintf("checksum verification failed for %s (expected %s, got %s)", name, expected, actual),
+		Suggestion: "The downloaded or cached Guardrails release is not trusted; try again later.",
+		ExitCode:   clierrors.ExitGeneralError,
+	}
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 type guardrailsBinaries struct {
@@ -290,25 +333,64 @@ func installGuardrailsBinary(destPath string, data []byte) error {
 	return nil
 }
 
-// guardrailsEnvironment adds explicitly supplied OpenAI credentials to the
-// child process only. Existing values are replaced to avoid duplicate env
-// entries with platform-dependent precedence.
+var guardrailsEnvironmentAllowlist = map[string]struct{}{
+	"ALL_PROXY":          {},
+	"CLICOLOR":           {},
+	"CLICOLOR_FORCE":     {},
+	"COLORTERM":          {},
+	"CURL_CA_BUNDLE":     {},
+	"FORCE_COLOR":        {},
+	"GUARDRAILS_VERBOSE": {},
+	"HOME":               {},
+	"HTTPS_PROXY":        {},
+	"HTTP_PROXY":         {},
+	"LANG":               {},
+	"LANGUAGE":           {},
+	"NO_COLOR":           {},
+	"NO_PROXY":           {},
+	"PATH":               {},
+	"PWD":                {},
+	"SSL_CERT_DIR":       {},
+	"SSL_CERT_FILE":      {},
+	"TEMP":               {},
+	"TERM":               {},
+	"TMP":                {},
+	"TMPDIR":             {},
+	"TZ":                 {},
+	"all_proxy":          {},
+	"http_proxy":         {},
+	"https_proxy":        {},
+	"no_proxy":           {},
+}
+
+// guardrailsEnvironment keeps only required runtime settings and credentials.
 func guardrailsEnvironment(base []string, apiKey, model string) []string {
 	apiKey = strings.TrimSpace(apiKey)
 	model = strings.TrimSpace(model)
-	if apiKey == "" && model == "" {
-		return base
-	}
+	ambientAPIKey := ""
 
 	env := make([]string, 0, len(base)+2)
 	for _, entry := range base {
-		if apiKey != "" && strings.HasPrefix(entry, "OPENAI_API_KEY=") {
+		name, value, ok := strings.Cut(entry, "=")
+		if !ok {
 			continue
 		}
-		if model != "" && strings.HasPrefix(entry, "OPENAI_MODEL=") {
+		if name == "OPENAI_API_KEY" {
+			if apiKey == "" && model != "" {
+				ambientAPIKey = strings.TrimSpace(value)
+			}
 			continue
 		}
-		env = append(env, entry)
+		if name == "OPENAI_MODEL" {
+			continue
+		}
+		_, explicitlyAllowed := guardrailsEnvironmentAllowlist[name]
+		if explicitlyAllowed || strings.HasPrefix(name, "LC_") {
+			env = append(env, entry)
+		}
+	}
+	if apiKey == "" {
+		apiKey = ambientAPIKey
 	}
 	if apiKey != "" {
 		env = append(env, "OPENAI_API_KEY="+apiKey)
@@ -319,10 +401,7 @@ func guardrailsEnvironment(base []string, apiKey, model string) []string {
 	return env
 }
 
-// runGuardrailsExec is the shared os/exec shim behind the guardrails commands:
-// ensure the release bundle is cached, run it with stdio wired straight
-// through, and propagate its exit code. Explicit OpenAI credentials are passed
-// to the child only; the user's credentials file is never changed.
+// runGuardrailsExec runs the verified bundle and propagates its exit code.
 func runGuardrailsExec(args []string, apiKey, model string) {
 	binPath, err := ensureGuardrailsBinary(guardrailsCloudFrontBase, guardrailsPinnedVersion)
 	if err != nil {
@@ -342,6 +421,10 @@ func runGuardrailsExec(args []string, apiKey, model string) {
 		}
 		reportGuardrailsError(clierrors.NewAPIError(fmt.Sprintf("could not run guardrails: %v", err)))
 	}
+}
+
+func runGuardrailsReadOnly(args []string) {
+	runGuardrailsExec(args, "", "")
 }
 
 func reportGuardrailsError(err error) {

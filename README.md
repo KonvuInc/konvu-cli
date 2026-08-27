@@ -129,7 +129,11 @@ konvu guardrails baseline scan --repo path/to/repo
 The scan always uses `gpt-5.6-luna`. Use `--yes` for non-interactive runs. The
 API key is passed only to the Guardrails process and is not stored by Konvu
 CLI. Prefer the environment variable so the key is not recorded in shell
-history. The final artifact is `protections.json` under
+history. The downloaded Guardrails runtime is pinned to exact hashes embedded
+in this public CLI; cached executables are verified before every run. The child
+process receives only the credentials and runtime environment it needs, not
+unrelated ambient cloud or developer credentials. The final artifact is
+`protections.json` under
 `~/.cache/guardrails/posture/`.
 
 ### Finding sources
