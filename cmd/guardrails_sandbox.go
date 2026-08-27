@@ -86,8 +86,8 @@ func prepareGuardrailsSandbox(
 		paths.addCanonicalReadOnly(root)
 		paths.addGitPaths(root, env)
 		if args[0] == "scan" {
-			outputDir := filepath.Join(root, ".konvu", "guardrails")
-			if err := os.MkdirAll(outputDir, 0o755); err != nil {
+			outputDir, err := prepareGuardrailsOutputDir(root)
+			if err != nil {
 				cleanup()
 				return guardrailsSandboxPaths{}, nil, func() {}, sandboxSetupError(err)
 			}
@@ -178,6 +178,45 @@ func guardrailsExplicitReadPaths(args []string) []string {
 		}
 	}
 	return nil
+}
+
+func prepareGuardrailsOutputDir(root string) (string, error) {
+	current := root
+	for _, name := range []string{".konvu", "guardrails"} {
+		current = filepath.Join(current, name)
+		info, err := os.Lstat(current)
+		if os.IsNotExist(err) {
+			if err := os.Mkdir(current, 0o755); err != nil {
+				return "", err
+			}
+			info, err = os.Lstat(current)
+		}
+		if err != nil {
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return "", fmt.Errorf("refusing non-directory or symlinked output path %s", current)
+		}
+		canonical, err := canonicalPath(current)
+		if err != nil {
+			return "", err
+		}
+		if !pathWithin(root, canonical) {
+			return "", fmt.Errorf("output path %s resolves outside repository %s", current, root)
+		}
+	}
+	return canonicalPath(current)
+}
+
+func pathWithin(root, path string) bool {
+	relative, err := filepath.Rel(root, path)
+	if err != nil || filepath.IsAbs(relative) {
+		return false
+	}
+	if relative == "." {
+		return true
+	}
+	return relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 func guardrailsNeedsWorkingDirectory(args []string) bool {

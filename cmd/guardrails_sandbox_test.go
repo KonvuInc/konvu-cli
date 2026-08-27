@@ -152,6 +152,45 @@ func TestPrepareGuardrailsSandboxOnlyMakesScanOutputWritable(t *testing.T) {
 	}
 }
 
+func TestPrepareGuardrailsSandboxRejectsSymlinkedScanOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Guardrails is not shipped for Windows")
+	}
+	for _, symlinkParent := range []bool{false, true} {
+		t.Run(fmt.Sprintf("parent=%v", symlinkParent), func(t *testing.T) {
+			repo := t.TempDir()
+			outside := t.TempDir()
+			home := t.TempDir()
+			binDir := t.TempDir()
+			binPath := filepath.Join(binDir, "guardrails")
+			if err := os.WriteFile(binPath, []byte("fixture"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			link := filepath.Join(repo, ".konvu")
+			if !symlinkParent {
+				if err := os.Mkdir(link, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				link = filepath.Join(link, "guardrails")
+			}
+			if err := os.Symlink(outside, link); err != nil {
+				t.Fatal(err)
+			}
+
+			_, _, cleanup, err := prepareGuardrailsSandbox(
+				binPath,
+				[]string{"scan", repo},
+				[]string{"HOME=" + home, "PATH=/usr/bin"},
+			)
+			cleanup()
+			if err == nil || !strings.Contains(err.Error(), "symlinked output") {
+				t.Fatalf("error = %v, want symlink rejection", err)
+			}
+		})
+	}
+}
+
 func TestPlatformGuardrailsSandboxConfinesFiles(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("Guardrails is not shipped for this platform")
