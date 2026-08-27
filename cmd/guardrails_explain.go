@@ -18,7 +18,7 @@ category, an asset, or a file.
 Exits 1 if name doesn't resolve to any of them.
 
 Thin wrapper over the cached guardrails-cli binary -- see 'konvu guardrails
-scan --help' for the shared bootstrap/credentials behavior.`,
+scan --help' for the shared bootstrap behavior.`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		runGuardrailsExec(append([]string{"explain"}, args...), guardrailsExplainAPIKey, guardrailsExplainModel)
@@ -26,7 +26,7 @@ scan --help' for the shared bootstrap/credentials behavior.`,
 }
 
 func init() {
-	guardrailsExplainCmd.Flags().StringVar(&guardrailsExplainAPIKey, "openai-api-key", "", "OpenAI API key; writes ~/.config/guardrails/credentials")
-	guardrailsExplainCmd.Flags().StringVar(&guardrailsExplainModel, "openai-model", "gpt-4o", "OpenAI model, written alongside --openai-api-key")
+	guardrailsExplainCmd.Flags().StringVar(&guardrailsExplainAPIKey, "openai-api-key", "", "OpenAI API key (prefer OPENAI_API_KEY to avoid shell history)")
+	guardrailsExplainCmd.Flags().StringVar(&guardrailsExplainModel, "openai-model", "gpt-4o", "OpenAI model used with --openai-api-key")
 	guardrailsCmd.AddCommand(guardrailsExplainCmd)
 }

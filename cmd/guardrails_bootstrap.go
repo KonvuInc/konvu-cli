@@ -15,34 +15,22 @@ import (
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 )
 
-// guardrailsCloudFrontBase is the CDN in front of the guardrails-downloads S3
-// bucket. No auth gate; archives and checksums.txt live under
-// <base>/guardrails/<version>/.
+// guardrailsCloudFrontBase hosts the public Guardrails release archives and
+// checksums under <base>/guardrails/<version>/.
 const guardrailsCloudFrontBase = "https://dneaqnz3vqe4a.cloudfront.net"
 
-// guardrailsPinnedVersion is the guardrails-cli release this build of konvu
-// fetches. It tracks the guardrails-cli release cadence, which is separate
-// from konvu-cli's own version -- the two must never share a mechanism.
-const guardrailsPinnedVersion = "v0.2.0"
+// guardrailsPinnedVersion is the Guardrails release installed by this version
+// of Konvu CLI.
+const guardrailsPinnedVersion = "v0.5.0"
 
-// guardrailsConfigDir returns ~/.config/guardrails, the fixed path the
-// guardrails binary itself reads its credentials from.
-// pkg/config.GetConfigDir() is the wrong helper here: it's hardcoded to
-// AppName "konvu" and branches to Application Support on macOS.
+// guardrailsConfigDir returns the fixed location shared with the Guardrails
+// binary on every supported platform.
 func guardrailsConfigDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", clierrors.NewAPIError(fmt.Sprintf("could not determine home directory: %v", err))
 	}
 	return filepath.Join(home, ".config", "guardrails"), nil
-}
-
-func guardrailsCredentialsPath() (string, error) {
-	dir, err := guardrailsConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "credentials"), nil
 }
 
 func guardrailsBinaryPath(version string) (string, error) {
@@ -53,16 +41,21 @@ func guardrailsBinaryPath(version string) (string, error) {
 	return filepath.Join(dir, "bin", version, "guardrails"), nil
 }
 
+func guardrailsResourceScannerPath(version string) (string, error) {
+	dir, err := guardrailsConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "bin", version, "guardrails-resource-scan"), nil
+}
+
 // guardrailsTargetTriple maps the running platform to guardrails-cli's
 // release target triple. Windows is not supported.
 func guardrailsTargetTriple() (string, error) {
 	return guardrailsTargetTripleFor(runtime.GOOS, runtime.GOARCH)
 }
 
-// guardrailsTargetTripleFor takes goos/goarch as parameters (rather than
-// reading runtime.GOOS/GOARCH directly) purely so the mapping can be unit
-// tested against every known combination, not just the one the test binary
-// happens to run on.
+// guardrailsTargetTripleFor maps Go platform names to release target triples.
 func guardrailsTargetTripleFor(goos, goarch string) (string, error) {
 	switch goos + "/" + goarch {
 	case "darwin/arm64":
@@ -84,16 +77,12 @@ func guardrailsTargetTripleFor(goos, goarch string) (string, error) {
 	}
 }
 
-// guardrailsArchiveName follows the release naming convention: the archive
-// is named after the package ("guardrails-cli"), not the binary it contains
-// ("guardrails").
+// guardrailsArchiveName follows the Guardrails release naming convention.
 func guardrailsArchiveName(triple string) string {
 	return fmt.Sprintf("guardrails-cli-%s.tar.xz", triple)
 }
 
-// guardrailsFetch is a minimal GET-into-memory helper, kept separate from
-// update.go's httpGet so a download failure here doesn't surface a
-// suggestion about konvu-cli's own GitHub releases.
+// guardrailsFetch downloads a Guardrails release asset.
 func guardrailsFetch(url string) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -136,7 +125,11 @@ func ensureGuardrailsBinary(baseURL, version string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if info, err := os.Stat(binPath); err == nil && info.Size() > 0 && info.Mode()&0o111 != 0 {
+	scannerPath, err := guardrailsResourceScannerPath(version)
+	if err != nil {
+		return "", err
+	}
+	if validExecutable(binPath) && validExecutable(scannerPath) {
 		return binPath, nil
 	}
 
@@ -161,23 +154,36 @@ func ensureGuardrailsBinary(baseURL, version string) (string, error) {
 		return "", err
 	}
 
-	binary, err := extractGuardrailsBinary(archive)
+	binaries, err := extractGuardrailsBinaries(archive)
 	if err != nil {
 		return "", err
 	}
 
-	if err := installGuardrailsBinary(binPath, binary); err != nil {
+	if err := installGuardrailsBinary(scannerPath, binaries.resourceScanner); err != nil {
+		return "", err
+	}
+	if err := installGuardrailsBinary(binPath, binaries.main); err != nil {
 		return "", err
 	}
 	return binPath, nil
 }
 
-// extractGuardrailsBinary pulls the "guardrails" file out of a tar.xz
-// archive. Go's stdlib has no xz decoder, so this shells out to the system
-// tar, which auto-detects xz on both Linux and macOS.
-func extractGuardrailsBinary(archive []byte) ([]byte, error) {
+func validExecutable(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Size() > 0 && info.Mode()&0o111 != 0
+}
+
+type guardrailsBinaries struct {
+	main            []byte
+	resourceScanner []byte
+}
+
+// extractGuardrailsBinaries pulls both runtime binaries out of a tar.xz archive.
+// Go's stdlib has no xz decoder, so this shells out to the system tar, which
+// auto-detects xz on Linux and macOS.
+func extractGuardrailsBinaries(archive []byte) (guardrailsBinaries, error) {
 	if _, err := exec.LookPath("tar"); err != nil {
-		return nil, &clierrors.CLIError{
+		return guardrailsBinaries{}, &clierrors.CLIError{
 			Code:       "MISSING_DEPENDENCY",
 			Message:    "tar is required to extract the guardrails archive but was not found",
 			Suggestion: "Install tar (present by default on macOS and Linux) and try again.",
@@ -187,44 +193,56 @@ func extractGuardrailsBinary(archive []byte) ([]byte, error) {
 
 	tmpDir, err := os.MkdirTemp("", "guardrails-extract-*")
 	if err != nil {
-		return nil, clierrors.NewAPIError(fmt.Sprintf("could not create temp dir: %v", err))
+		return guardrailsBinaries{}, clierrors.NewAPIError(fmt.Sprintf("could not create temp dir: %v", err))
 	}
 	defer os.RemoveAll(tmpDir)
 
 	archivePath := filepath.Join(tmpDir, "archive.tar.xz")
 	if err := os.WriteFile(archivePath, archive, 0o600); err != nil {
-		return nil, clierrors.NewAPIError(fmt.Sprintf("could not write archive: %v", err))
+		return guardrailsBinaries{}, clierrors.NewAPIError(fmt.Sprintf("could not write archive: %v", err))
 	}
 
 	destDir := filepath.Join(tmpDir, "extracted")
 	if err := os.Mkdir(destDir, 0o755); err != nil {
-		return nil, clierrors.NewAPIError(fmt.Sprintf("could not create extract dir: %v", err))
+		return guardrailsBinaries{}, clierrors.NewAPIError(fmt.Sprintf("could not create extract dir: %v", err))
 	}
 
 	if out, err := exec.Command("tar", "-xf", archivePath, "-C", destDir).CombinedOutput(); err != nil {
-		return nil, clierrors.NewAPIError(fmt.Sprintf("could not extract archive: %v: %s", err, strings.TrimSpace(string(out))))
+		return guardrailsBinaries{}, clierrors.NewAPIError(fmt.Sprintf("could not extract archive: %v: %s", err, strings.TrimSpace(string(out))))
 	}
 
 	// Basename match, not path match, so this is agnostic to whether the
 	// archive nests the binary in a subdirectory.
-	var found string
+	found := map[string]string{}
 	walkErr := filepath.WalkDir(destDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if !d.IsDir() && d.Name() == "guardrails" {
-			found = path
-			return filepath.SkipAll
+		if !d.IsDir() && (d.Name() == "guardrails" || d.Name() == "guardrails-resource-scan") {
+			found[d.Name()] = path
 		}
 		return nil
 	})
 	if walkErr != nil {
-		return nil, clierrors.NewAPIError(fmt.Sprintf("could not read extracted archive: %v", walkErr))
+		return guardrailsBinaries{}, clierrors.NewAPIError(fmt.Sprintf("could not read extracted archive: %v", walkErr))
 	}
-	if found == "" {
-		return nil, clierrors.NewAPIError("guardrails binary not found in release archive")
+	if found["guardrails"] == "" || found["guardrails-resource-scan"] == "" {
+		return guardrailsBinaries{}, &clierrors.CLIError{
+			Code:       "INVALID_ARCHIVE",
+			Message:    "guardrails release archive is missing a runtime binary",
+			Suggestion: "Try again later.",
+			ExitCode:   clierrors.ExitGeneralError,
+		}
 	}
-	return os.ReadFile(found)
+	main, err := os.ReadFile(found["guardrails"])
+	if err != nil {
+		return guardrailsBinaries{}, clierrors.NewAPIError(fmt.Sprintf("could not read guardrails binary: %v", err))
+	}
+	scanner, err := os.ReadFile(found["guardrails-resource-scan"])
+	if err != nil {
+		return guardrailsBinaries{}, clierrors.NewAPIError(fmt.Sprintf("could not read resource scanner: %v", err))
+	}
+	return guardrailsBinaries{main: main, resourceScanner: scanner}, nil
 }
 
 // installGuardrailsBinary atomically writes data to destPath via a sibling
@@ -272,118 +290,47 @@ func installGuardrailsBinary(destPath string, data []byte) error {
 	return nil
 }
 
-// atomicWriteFile writes data to path via a sibling temp-file-write + rename
-// in the same directory, so a failure partway through (e.g. disk full) never
-// leaves path itself truncated -- only ever the old content or the new
-// content, in full.
-func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".guardrails-*")
-	if err != nil {
-		return err
+// guardrailsEnvironment adds explicitly supplied OpenAI credentials to the
+// child process only. Existing values are replaced to avoid duplicate env
+// entries with platform-dependent precedence.
+func guardrailsEnvironment(base []string, apiKey, model string) []string {
+	apiKey = strings.TrimSpace(apiKey)
+	model = strings.TrimSpace(model)
+	if apiKey == "" && model == "" {
+		return base
 	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // no-op after a successful rename
 
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
+	env := make([]string, 0, len(base)+2)
+	for _, entry := range base {
+		if apiKey != "" && strings.HasPrefix(entry, "OPENAI_API_KEY=") {
+			continue
+		}
+		if model != "" && strings.HasPrefix(entry, "OPENAI_MODEL=") {
+			continue
+		}
+		env = append(env, entry)
 	}
-	if err := tmp.Close(); err != nil {
-		return err
+	if apiKey != "" {
+		env = append(env, "OPENAI_API_KEY="+apiKey)
 	}
-	if err := os.Chmod(tmpName, perm); err != nil {
-		return err
+	if model != "" {
+		env = append(env, "OPENAI_MODEL="+model)
 	}
-	return os.Rename(tmpName, path)
+	return env
 }
 
-// writeGuardrailsCredentials fully overwrites ~/.config/guardrails/credentials
-// with the plain-OpenAI shape guardrails expects ("key = value" lines). This
-// must overwrite rather than merge: guardrails picks Azure vs. plain OpenAI by
-// the mere presence of an "endpoint" line, so a stale leftover from an
-// earlier config would silently force Azure mode and ignore these flags.
-func writeGuardrailsCredentials(apiKey, model string) error {
-	path, err := guardrailsCredentialsPath()
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return &clierrors.CLIError{
-			Code:       "PERMISSION_DENIED",
-			Message:    fmt.Sprintf("cannot create %s: %v", filepath.Dir(path), err),
-			Suggestion: "Check permissions on ~/.config/guardrails.",
-			ExitCode:   clierrors.ExitGeneralError,
-		}
-	}
-	content := fmt.Sprintf("key = %s\nmodel = %s\n", apiKey, model)
-	if err := atomicWriteFile(path, []byte(content), 0o600); err != nil {
-		return clierrors.NewAPIError(fmt.Sprintf("could not write %s: %v", path, err))
-	}
-	return nil
-}
-
-// backupGuardrailsCredentials snapshots the credentials file before it's
-// overwritten and returns a restore func that puts the snapshot back (or
-// removes the file, if none existed). No cache-validity check on the
-// guardrails binary can ever be airtight -- a file can be nonempty and
-// executable-marked and still fail to actually start (a corrupt binary from
-// an interrupted write, say). Restoring on a genuine start failure is the
-// only way to guarantee a run that never happened never destroys real
-// credentials, regardless of why the binary didn't start.
-func backupGuardrailsCredentials() (restore func(), err error) {
-	path, err := guardrailsCredentialsPath()
-	if err != nil {
-		return nil, err
-	}
-	previous, readErr := os.ReadFile(path)
-	if readErr != nil && !os.IsNotExist(readErr) {
-		// Existed but couldn't be read for some other reason (permissions, a
-		// transient I/O error) -- we can't tell whether there's something
-		// real to preserve, so refuse rather than risk treating it as absent
-		// and having restore() delete it.
-		return nil, clierrors.NewAPIError(fmt.Sprintf("could not back up %s: %v", path, readErr))
-	}
-	return func() {
-		var restoreErr error
-		if readErr == nil {
-			restoreErr = atomicWriteFile(path, previous, 0o600)
-		} else {
-			restoreErr = os.Remove(path)
-		}
-		if restoreErr != nil && !os.IsNotExist(restoreErr) {
-			fmt.Fprintf(os.Stderr, "warning: could not restore prior credentials at %s: %v\n", path, restoreErr)
-		}
-	}, nil
-}
-
-// runGuardrailsExec is the shared os/exec shim behind all four guardrails
-// verbs: ensure the binary is cached, write credentials if given, run the
-// child with stdio wired straight through, and propagate its exit code.
-// The binary must be ensured before credentials are written: if the
-// download/checksum/extract step fails, we must not have already destroyed
-// the user's existing credentials for a run that's about to fail anyway. If
-// the binary is ensured but still fails to actually start (a corrupt cache
-// entry that passed ensureGuardrailsBinary's checks, say), whatever
-// credentials existed before this run are restored -- see
-// backupGuardrailsCredentials.
+// runGuardrailsExec is the shared os/exec shim behind the guardrails commands:
+// ensure the release bundle is cached, run it with stdio wired straight
+// through, and propagate its exit code. Explicit OpenAI credentials are passed
+// to the child only; the user's credentials file is never changed.
 func runGuardrailsExec(args []string, apiKey, model string) {
 	binPath, err := ensureGuardrailsBinary(guardrailsCloudFrontBase, guardrailsPinnedVersion)
 	if err != nil {
 		reportGuardrailsError(err)
 	}
 
-	var restoreCredentials func()
-	if apiKey != "" {
-		restoreCredentials, err = backupGuardrailsCredentials()
-		if err != nil {
-			reportGuardrailsError(err)
-		}
-		if err := writeGuardrailsCredentials(apiKey, model); err != nil {
-			reportGuardrailsError(err)
-		}
-	}
-
 	child := exec.Command(binPath, args...)
+	child.Env = guardrailsEnvironment(os.Environ(), apiKey, model)
 	child.Stdin = os.Stdin
 	child.Stdout = os.Stdout
 	child.Stderr = os.Stderr
@@ -392,9 +339,6 @@ func runGuardrailsExec(args []string, apiKey, model string) {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			os.Exit(exitErr.ExitCode())
-		}
-		if restoreCredentials != nil {
-			restoreCredentials()
 		}
 		reportGuardrailsError(clierrors.NewAPIError(fmt.Sprintf("could not run guardrails: %v", err)))
 	}

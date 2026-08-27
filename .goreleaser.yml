@@ -15,7 +15,7 @@ builds:
       - arm64
 
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
     name_template: "konvu-{{ .Os }}-{{ .Arch }}"
 
 checksum:

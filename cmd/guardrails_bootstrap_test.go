@@ -52,114 +52,77 @@ func TestGuardrailsArchiveName(t *testing.T) {
 	}
 }
 
-func TestWriteGuardrailsCredentials(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	path, err := guardrailsCredentialsPath()
-	if err != nil {
-		t.Fatalf("guardrailsCredentialsPath: %v", err)
+func TestGuardrailsEnvironmentReplacesOpenAIValues(t *testing.T) {
+	base := []string{
+		"PATH=/usr/bin",
+		"OPENAI_API_KEY=old-key",
+		"OPENAI_MODEL=old-model",
 	}
 
-	// Pre-seed a stale Azure-shaped file: guardrails picks Azure vs. plain
-	// OpenAI by presence of an "endpoint" line, so a leftover one here would
-	// silently force Azure mode unless writeGuardrailsCredentials overwrites.
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
+	got := guardrailsEnvironment(base, " new-key ", " gpt-5.6-luna ")
+	want := []string{
+		"PATH=/usr/bin",
+		"OPENAI_API_KEY=new-key",
+		"OPENAI_MODEL=gpt-5.6-luna",
 	}
-	if err := os.WriteFile(path, []byte("endpoint = https://stale.example.com\nkey = old\n"), 0o600); err != nil {
-		t.Fatalf("seed WriteFile: %v", err)
+	if len(got) != len(want) {
+		t.Fatalf("environment length = %d, want %d: %v", len(got), len(want), got)
 	}
-
-	if err := writeGuardrailsCredentials("sk-test", "gpt-4o"); err != nil {
-		t.Fatalf("writeGuardrailsCredentials: %v", err)
-	}
-
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	want := "key = sk-test\nmodel = gpt-4o\n"
-	if string(got) != want {
-		t.Errorf("credentials file = %q, want %q", got, want)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("environment[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 
-func TestBackupGuardrailsCredentialsRestoresPriorContent(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	path, err := guardrailsCredentialsPath()
-	if err != nil {
-		t.Fatalf("guardrailsCredentialsPath: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	want := "key = old\nmodel = gpt-4o\n"
-	if err := os.WriteFile(path, []byte(want), 0o600); err != nil {
-		t.Fatalf("seed WriteFile: %v", err)
+func TestGuardrailsEnvironmentModelOverridePreservesAmbientKey(t *testing.T) {
+	base := []string{
+		"PATH=/usr/bin",
+		"OPENAI_API_KEY=ambient-key",
+		"OPENAI_MODEL=ambient-model",
 	}
 
-	restore, err := backupGuardrailsCredentials()
-	if err != nil {
-		t.Fatalf("backupGuardrailsCredentials: %v", err)
+	got := guardrailsEnvironment(base, "", " gpt-5.6-luna ")
+	want := []string{
+		"PATH=/usr/bin",
+		"OPENAI_API_KEY=ambient-key",
+		"OPENAI_MODEL=gpt-5.6-luna",
 	}
-	if err := writeGuardrailsCredentials("new", "gpt-4o"); err != nil {
-		t.Fatalf("writeGuardrailsCredentials: %v", err)
+	if len(got) != len(want) {
+		t.Fatalf("environment length = %d, want %d: %v", len(got), len(want), got)
 	}
-
-	restore()
-
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	if string(got) != want {
-		t.Errorf("credentials after restore = %q, want %q", got, want)
-	}
-}
-
-func TestBackupGuardrailsCredentialsRemovesFileThatDidNotExistBefore(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	path, err := guardrailsCredentialsPath()
-	if err != nil {
-		t.Fatalf("guardrailsCredentialsPath: %v", err)
-	}
-
-	restore, err := backupGuardrailsCredentials()
-	if err != nil {
-		t.Fatalf("backupGuardrailsCredentials: %v", err)
-	}
-	if err := writeGuardrailsCredentials("new", "gpt-4o"); err != nil {
-		t.Fatalf("writeGuardrailsCredentials: %v", err)
-	}
-
-	restore()
-
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Errorf("expected no credentials file after restore, stat err = %v", err)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("environment[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 
 // buildFixtureArchive shells out to the system tar to produce a real
-// tar.xz containing a single "guardrails" file, since Go's stdlib has no xz
-// encoder either. Skips (not fails) if the local tar lacks xz support.
-func buildFixtureArchive(t *testing.T, contents []byte) []byte {
+// tar.xz containing the runtime binaries, since Go's stdlib has no xz encoder
+// either. A nil scanner omits the sidecar for invalid-archive tests. Skips (not
+// fails) if the local tar lacks xz support.
+func buildFixtureArchive(t *testing.T, main, scanner []byte) []byte {
 	t.Helper()
 	if _, err := exec.LookPath("tar"); err != nil {
 		t.Skip("tar not found on PATH")
 	}
 
 	src := t.TempDir()
-	if err := os.WriteFile(filepath.Join(src, "guardrails"), contents, 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(src, "guardrails"), main, 0o755); err != nil {
 		t.Fatalf("write fixture binary: %v", err)
+	}
+	files := []string{"guardrails"}
+	if scanner != nil {
+		if err := os.WriteFile(filepath.Join(src, "guardrails-resource-scan"), scanner, 0o755); err != nil {
+			t.Fatalf("write fixture resource scanner: %v", err)
+		}
+		files = append(files, "guardrails-resource-scan")
 	}
 
 	archivePath := filepath.Join(t.TempDir(), "fixture.tar.xz")
-	cmd := exec.Command("tar", "-cJf", archivePath, "-C", src, "guardrails")
+	tarArgs := append([]string{"-cJf", archivePath, "-C", src}, files...)
+	cmd := exec.Command("tar", tarArgs...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Skipf("local tar cannot create .tar.xz (%v): %s", err, out)
 	}
@@ -183,7 +146,8 @@ func TestEnsureGuardrailsBinary(t *testing.T) {
 	}
 	archiveName := guardrailsArchiveName(triple)
 	binaryContents := []byte("#!/bin/sh\necho fake-guardrails\n")
-	archive := buildFixtureArchive(t, binaryContents)
+	scannerContents := []byte("#!/bin/sh\necho fake-resource-scanner\n")
+	archive := buildFixtureArchive(t, binaryContents, scannerContents)
 	checksums := checksumsFile(archiveName, archive)
 
 	const version = "v0.1.0-test"
@@ -218,6 +182,20 @@ func TestEnsureGuardrailsBinary(t *testing.T) {
 	if info, err := os.Stat(binPath); err != nil || info.Mode()&0o111 == 0 {
 		t.Errorf("installed binary is not executable: %v", err)
 	}
+	scannerPath, err := guardrailsResourceScannerPath(version)
+	if err != nil {
+		t.Fatalf("guardrailsResourceScannerPath: %v", err)
+	}
+	gotScanner, err := os.ReadFile(scannerPath)
+	if err != nil {
+		t.Fatalf("read installed resource scanner: %v", err)
+	}
+	if string(gotScanner) != string(scannerContents) {
+		t.Errorf("installed resource scanner contents = %q, want %q", gotScanner, scannerContents)
+	}
+	if info, err := os.Stat(scannerPath); err != nil || info.Mode()&0o111 == 0 {
+		t.Errorf("installed resource scanner is not executable: %v", err)
+	}
 	if requests != 2 {
 		t.Fatalf("expected 2 requests (archive + checksums) on cache-miss, got %d", requests)
 	}
@@ -228,6 +206,17 @@ func TestEnsureGuardrailsBinary(t *testing.T) {
 	}
 	if requests != 2 {
 		t.Errorf("expected cache-hit to skip the fetch, but requests = %d", requests)
+	}
+
+	// Incomplete bundle: a missing sidecar invalidates the cached release.
+	if err := os.Remove(scannerPath); err != nil {
+		t.Fatalf("remove resource scanner: %v", err)
+	}
+	if _, err := ensureGuardrailsBinary(server.URL, version); err != nil {
+		t.Fatalf("ensureGuardrailsBinary (missing sidecar): %v", err)
+	}
+	if requests != 4 {
+		t.Errorf("expected a fresh fetch for an incomplete bundle, got %d requests", requests)
 	}
 
 	// Cache-miss-after-deletion: remove the cached dir, must re-fetch cleanly.
@@ -241,7 +230,7 @@ func TestEnsureGuardrailsBinary(t *testing.T) {
 	if _, err := ensureGuardrailsBinary(server.URL, version); err != nil {
 		t.Fatalf("ensureGuardrailsBinary (post-deletion): %v", err)
 	}
-	if requests != 4 {
+	if requests != 6 {
 		t.Errorf("expected a fresh fetch (2 more requests) after cache deletion, got %d total", requests)
 	}
 }
@@ -252,7 +241,7 @@ func TestEnsureGuardrailsBinaryChecksumMismatch(t *testing.T) {
 		t.Skipf("unsupported test platform: %v", err)
 	}
 	archiveName := guardrailsArchiveName(triple)
-	archive := buildFixtureArchive(t, []byte("irrelevant"))
+	archive := buildFixtureArchive(t, []byte("irrelevant"), []byte("scanner"))
 	badChecksums := []byte("0000000000000000000000000000000000000000000000000000000000000000  " + archiveName + "\n")
 
 	const version = "v0.1.0-badsum"
@@ -284,5 +273,36 @@ func TestEnsureGuardrailsBinaryChecksumMismatch(t *testing.T) {
 	}
 	if _, err := os.Stat(binPath); !os.IsNotExist(err) {
 		t.Errorf("expected no binary installed after checksum failure, stat err = %v", err)
+	}
+}
+
+func TestEnsureGuardrailsBinaryRejectsMissingResourceScanner(t *testing.T) {
+	triple, err := guardrailsTargetTriple()
+	if err != nil {
+		t.Skipf("unsupported test platform: %v", err)
+	}
+	archiveName := guardrailsArchiveName(triple)
+	archive := buildFixtureArchive(t, []byte("guardrails"), nil)
+	checksums := checksumsFile(archiveName, archive)
+
+	const version = "v0.1.0-missing-scanner"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/guardrails/"+version+"/"+archiveName, func(w http.ResponseWriter, r *http.Request) {
+		w.Write(archive)
+	})
+	mux.HandleFunc("/guardrails/"+version+"/checksums.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.Write(checksums)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	t.Setenv("HOME", t.TempDir())
+	_, err = ensureGuardrailsBinary(server.URL, version)
+	if err == nil {
+		t.Fatal("expected invalid archive error, got nil")
+	}
+	cliErr, ok := err.(*clierrors.CLIError)
+	if !ok || cliErr.Code != "INVALID_ARCHIVE" {
+		t.Errorf("expected INVALID_ARCHIVE, got %v", err)
 	}
 }

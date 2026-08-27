@@ -115,6 +115,23 @@ Create an API key at: https://app.konvu.com/configuration/api_keys
 
 ## Commands
 
+### Guardrails baseline scan
+
+Create a normalized security baseline using public OpenAI. The deterministic
+index runs first, then the CLI prints the estimated cost and duration and asks
+before starting the model-backed stages:
+
+```bash
+export OPENAI_API_KEY=sk-...
+konvu guardrails baseline scan --repo path/to/repo
+```
+
+The scan always uses `gpt-5.6-luna`. Use `--yes` for non-interactive runs. The
+API key is passed only to the Guardrails process and is not stored by Konvu
+CLI. Prefer the environment variable so the key is not recorded in shell
+history. The final artifact is `protections.json` under
+`~/.cache/guardrails/posture/`.
+
 ### Finding sources
 
 Findings come from four scanner categories, each with its own subcommand:

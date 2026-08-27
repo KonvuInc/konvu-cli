@@ -19,9 +19,9 @@ first use, then runs it directly. All scanning, profile generation, and
 output rendering happen in that binary -- konvu only streams its stdout/stderr
 through live and exits with its real exit code.
 
-Pass --openai-api-key to write ~/.config/guardrails/credentials before
-scanning (needed the first time, or to change credentials); omit it on later
-runs to reuse what's already on disk.`,
+Set OPENAI_API_KEY or pass --openai-api-key to provide public OpenAI
+credentials for this run. Explicit credentials are passed to the child process
+only and are not written to disk.`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		runGuardrailsExec(append([]string{"scan"}, args...), guardrailsScanAPIKey, guardrailsScanModel)
@@ -29,7 +29,7 @@ runs to reuse what's already on disk.`,
 }
 
 func init() {
-	guardrailsScanCmd.Flags().StringVar(&guardrailsScanAPIKey, "openai-api-key", "", "OpenAI API key; writes ~/.config/guardrails/credentials")
-	guardrailsScanCmd.Flags().StringVar(&guardrailsScanModel, "openai-model", "gpt-4o", "OpenAI model, written alongside --openai-api-key")
+	guardrailsScanCmd.Flags().StringVar(&guardrailsScanAPIKey, "openai-api-key", "", "OpenAI API key (prefer OPENAI_API_KEY to avoid shell history)")
+	guardrailsScanCmd.Flags().StringVar(&guardrailsScanModel, "openai-model", "gpt-4o", "OpenAI model used with --openai-api-key")
 	guardrailsCmd.AddCommand(guardrailsScanCmd)
 }
