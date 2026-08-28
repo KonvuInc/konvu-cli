@@ -8,20 +8,13 @@ var guardrailsNoSandbox bool
 
 var guardrailsCmd = &cobra.Command{
 	Use:   "guardrails",
-	Short: "Scan your repo and see what's protected, and what isn't",
-	Long: `Scan your repo and see what's protected, and what isn't.
+	Short: "Scan and explore codebase security baselines",
+	Long: `Scan and explore codebase security baselines.
 
-'scan' writes a profile to .konvu/guardrails/: what's worth protecting, what
-already protects it, and what doesn't. 'show', 'list', and 'explain' read
-that profile back.`,
+All Guardrails operations live under 'konvu guardrails baseline'. Scans are
+stored by run and can be listed or explored from any working directory.`,
 }
 
 func init() {
-	guardrailsCmd.PersistentFlags().BoolVar(
-		&guardrailsNoSandbox,
-		"no-sandbox",
-		false,
-		"run the Guardrails runtime without OS filesystem isolation",
-	)
 	rootCmd.AddCommand(guardrailsCmd)
 }

@@ -37,6 +37,7 @@ var queryCollections = []Collection{
 	CollectionRoutes,
 	CollectionResources,
 	CollectionRoles,
+	CollectionAssetObservations,
 	CollectionControlObservations,
 	CollectionAssets,
 	CollectionControls,

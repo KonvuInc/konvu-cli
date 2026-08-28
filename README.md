@@ -123,7 +123,7 @@ before starting the model-backed stages:
 
 ```bash
 export OPENAI_API_KEY=sk-...
-konvu guardrails baseline scan --repo path/to/repo
+konvu guardrails baseline scan path/to/repo
 ```
 
 The scan always uses `gpt-5.6-luna`. Use `--yes` for non-interactive runs. The
@@ -134,26 +134,30 @@ in this public CLI; cached executables are verified before every run. The child
 process receives only the credentials and runtime environment it needs, not
 unrelated ambient cloud or developer credentials. It also runs in an OS
 filesystem sandbox: the repository is read-only, with writes limited to
-Guardrails outputs, cache, and a private temporary directory. Linux requires
-`bubblewrap`; `--no-sandbox` explicitly disables isolation. The final artifact
-is `protections.json` under
-`~/.cache/guardrails/posture/`.
+the global baseline store and a private temporary directory. Linux requires
+`bubblewrap`; `--no-sandbox` explicitly disables isolation. Every attempt gets
+an immutable directory under `~/.konvu/guardrails/baselines/<run-id>/` with
+exactly `baseline.json` and `run.log`.
 
-### Guardrails assets browser
+### Explore Guardrails baselines
 
-Browse the assets and security controls in a completed stored baseline without
-rerunning the scan:
+List historical runs and query their Assets, Controls, and Implementations
+without rerunning a scan:
 
 ```bash
-konvu guardrails assets
-konvu guardrails assets --repo organization/service
-konvu guardrails assets --repo organization/service --output json
+konvu guardrails baseline list
+konvu guardrails baseline list assets --run <run-id>
+konvu guardrails baseline show <record-id> --run <run-id>
+konvu guardrails baseline explain <record-id> --run <run-id>
+konvu guardrails baseline tui
 ```
 
-Interactive use starts with the repositories recorded by prior baseline scans.
-For scripts, select a repository with `--repo`; it may be omitted when exactly
-one stored baseline exists. Use `--output table` for a static human-readable
-summary when output is redirected.
+Queries work from any directory. Select an exact historical run with `--run`,
+or use `--repo` to select the latest completed run for a stored repository.
+The TUI starts with a runs table; selecting a completed run opens its Asset and
+Control workspace, while failed or cancelled runs open diagnostics. Run
+`show <run-id> --output json` to retrieve the complete `baseline.json`; JSON
+from `list`, record-level `show`, and `explain` is scoped to that query.
 
 ### Finding sources
 

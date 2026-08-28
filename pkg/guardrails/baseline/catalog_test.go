@@ -11,8 +11,12 @@ func TestCatalogIndexesCollectionsAndRelationships(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if containsCollection(catalog.Collections(), CollectionAssetObservations) {
-		t.Fatal("raw Asset observations must not be a public query collection")
+	if !containsCollection(catalog.Collections(), CollectionAssetObservations) {
+		t.Fatal("Asset observations must remain listable")
+	}
+	assetObservations, err := catalog.Entities(CollectionAssetObservations)
+	if err != nil || len(assetObservations) != 1 || assetObservations[0].ID != "asset:user" {
+		t.Fatalf("asset observations = %#v, error = %v", assetObservations, err)
 	}
 	assets, err := catalog.Entities(CollectionAssets)
 	if err != nil {

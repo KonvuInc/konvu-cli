@@ -68,7 +68,10 @@ func NewCatalog(document *Document) (*Catalog, error) {
 			}
 			entity := Entity{Collection: collection, ID: id, Value: cloneMap(record)}
 			entities = append(entities, entity)
-			if collection != CollectionUnresolved && id != "" {
+			// Asset observations intentionally share asset: IDs with normalized
+			// Assets. They remain listable but never participate in global lookup.
+			if collection != CollectionUnresolved &&
+				collection != CollectionAssetObservations && id != "" {
 				catalog.byID[id] = entity
 				for _, field := range []string{"source_ids", "source_control_observation_ids"} {
 					sourceIDs, _, _ := optionalStringArray(record, field, "entity")
