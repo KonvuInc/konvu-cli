@@ -22,8 +22,9 @@ func newGuardrailsBaselineShowCmd() *cobra.Command {
 	var showLog bool
 	var explicitFormat string
 	command := &cobra.Command{
-		Use:   "show <run-or-record-id>",
-		Short: "Show one baseline run or record",
+		Use:    "show <run-or-record-id>",
+		Short:  "Show one baseline run or record",
+		Hidden: true,
 		Long: `Show a stored run summary or an exact record from a completed baseline.
 JSON output for a run is the complete baseline.json. Use --log with an exact
 run ID to read execution details for completed, failed, or cancelled runs.
@@ -162,9 +163,17 @@ func writeGuardrailsBaselineShowCollection(
 				return wrapGuardrailsBaselineError(selectErr)
 			}
 			if format == output.JSON {
+				raw := exactRun.Document.Raw()
+				if exactRun.Run.Status == baselinemodel.StatusCompleted {
+					catalog, catalogErr := baselinemodel.NewCatalog(exactRun.Document)
+					if catalogErr != nil {
+						return wrapGuardrailsBaselineError(catalogErr)
+					}
+					raw = catalog.Raw()
+				}
 				return writeGuardrailsBaselineOutput(
 					writer,
-					output.FormatJSON(exactRun.Document.Raw())+"\n",
+					output.FormatJSON(raw)+"\n",
 				)
 			}
 			return writeGuardrailsBaselineRunSummary(writer, *exactRun)

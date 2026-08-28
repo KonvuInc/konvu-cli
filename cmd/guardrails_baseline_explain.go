@@ -19,8 +19,9 @@ func newGuardrailsBaselineExplainCmd() *cobra.Command {
 	var collectionName string
 	var explicitFormat string
 	command := &cobra.Command{
-		Use:   "explain <record-id>",
-		Short: "Explain one baseline record and its relationships",
+		Use:    "explain <record-id>",
+		Short:  "Explain one baseline record and its relationships",
+		Hidden: true,
 		Long: `Explain one baseline record and its direct relationships.
 Use --collection when an ID is represented in more than one baseline section.`,
 		Args: cobra.ExactArgs(1),
@@ -63,6 +64,121 @@ Use --collection when an ID is represented in more than one baseline section.`,
 	command.Flags().StringVar(&collectionName, "collection", "", "resolve the record inside one exact baseline collection")
 	command.Flags().StringVarP(&explicitFormat, "output", "o", "", "Output format: table, json")
 	return command
+}
+
+type guardrailsBaselineRelatedRecord struct {
+	Depth  int
+	Entity baselinemodel.Entity
+}
+
+func writeGuardrailsBaselineExplainDepth(
+	writer io.Writer,
+	store baselinemodel.Store,
+	target string,
+	selector baselinemodel.Selector,
+	collectionName string,
+	depth int,
+	format output.OutputFormat,
+) error {
+	if depth < 1 || depth > 5 {
+		return guardrailsBaselineError(
+			"INVALID_ARGUMENTS",
+			"--depth must be between 1 and 5",
+			clierrors.ExitUsageError,
+		)
+	}
+	run, catalog, err := selectGuardrailsBaselineCatalog(store, selector)
+	if err != nil {
+		return err
+	}
+	collectionName = strings.ToLower(strings.TrimSpace(collectionName))
+	entity, ok, err := lookupGuardrailsBaselineEntity(catalog, target, collectionName)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return guardrailsBaselineError(
+			"GUARDRAILS_BASELINE_RECORD_NOT_FOUND",
+			fmt.Sprintf("baseline record %q was not found", target),
+			clierrors.ExitNotFound,
+		)
+	}
+	related := guardrailsBaselineTraverseRelationships(catalog, entity, depth)
+	if format == output.JSON {
+		values := make([]any, 0, len(related))
+		for _, item := range related {
+			values = append(values, map[string]any{
+				"depth":      item.Depth,
+				"collection": string(item.Entity.Collection),
+				"record":     item.Entity.Value,
+			})
+		}
+		return writeGuardrailsBaselineOutput(writer, output.FormatJSON(map[string]any{
+			"run": guardrailsBaselineRunValue(*run),
+			"record": map[string]any{
+				"collection": string(entity.Collection),
+				"data":       entity.Value,
+			},
+			"related": values,
+		})+"\n")
+	}
+	if err := writeGuardrailsBaselineOutput(
+		writer,
+		fmt.Sprintf("%s %s\n\n", guardrailsBaselineCollectionTitle(entity.Collection), sanitizeGuardrailsBaselineText(entity.ID)),
+	); err != nil {
+		return err
+	}
+	if err := writeGuardrailsBaselineEntity(writer, entity); err != nil {
+		return err
+	}
+	if err := writeGuardrailsBaselineOutput(writer, "\nRelated\n\n"); err != nil {
+		return err
+	}
+	rows := make([]any, 0, len(related))
+	for _, item := range related {
+		rows = append(rows, map[string]any{
+			"depth":      item.Depth,
+			"collection": string(item.Entity.Collection),
+			"id":         sanitizeGuardrailsBaselineText(item.Entity.ID),
+			"name":       guardrailsBaselineRelatedName(item.Entity.Value),
+			"location":   guardrailsBaselineLocation(item.Entity.Value),
+		})
+	}
+	return writeGuardrailsBaselineOutput(writer, output.FormatTable(
+		map[string]any{"related": rows},
+		[]string{"depth", "collection", "name", "location", "id"},
+		"related",
+		nil,
+	))
+}
+
+func guardrailsBaselineTraverseRelationships(
+	catalog *baselinemodel.Catalog,
+	root baselinemodel.Entity,
+	maxDepth int,
+) []guardrailsBaselineRelatedRecord {
+	key := func(entity baselinemodel.Entity) string {
+		return string(entity.Collection) + "\x00" + entity.ID
+	}
+	seen := map[string]bool{key(root): true}
+	frontier := []baselinemodel.Entity{root}
+	result := make([]guardrailsBaselineRelatedRecord, 0)
+	for currentDepth := 1; currentDepth <= maxDepth && len(frontier) > 0; currentDepth++ {
+		next := make([]baselinemodel.Entity, 0)
+		for _, current := range frontier {
+			for _, related := range catalog.RelatedIn(current.Collection, current.ID) {
+				relatedKey := key(related)
+				if seen[relatedKey] {
+					continue
+				}
+				seen[relatedKey] = true
+				result = append(result, guardrailsBaselineRelatedRecord{Depth: currentDepth, Entity: related})
+				next = append(next, related)
+			}
+		}
+		frontier = next
+	}
+	return result
 }
 
 func writeGuardrailsBaselineExplain(
