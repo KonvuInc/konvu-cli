@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	baselinemodel "github.com/KonvuInc/konvu-cli/pkg/guardrails/baseline"
 	"github.com/KonvuInc/konvu-cli/pkg/output"
 )
@@ -41,6 +42,21 @@ func TestWriteGuardrailsBaselineRunListSupportsFiltersPagingAndQuiet(t *testing.
 	}
 	if got := strings.TrimSpace(outputBuffer.String()); got != "payments--bbbbbbbb--000002" {
 		t.Fatalf("quiet run list = %q", got)
+	}
+}
+
+func TestLegacyCollectionListRejectsRunListFlags(t *testing.T) {
+	command := newGuardrailsBaselineListCmd()
+	if err := command.Flags().Set("limit", "5"); err != nil {
+		t.Fatal(err)
+	}
+	if err := command.Flags().Set("quiet", "true"); err != nil {
+		t.Fatal(err)
+	}
+	err := guardrailsBaselineValidateLegacyListFlags(command)
+	assertGuardrailsBaselineCLIError(t, err, "INVALID_ARGUMENTS", clierrors.ExitUsageError)
+	if !strings.Contains(err.Error(), "records list --collection <collection>") {
+		t.Fatalf("error does not direct users to records list: %v", err)
 	}
 }
 

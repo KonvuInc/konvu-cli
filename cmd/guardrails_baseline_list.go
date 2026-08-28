@@ -58,6 +58,11 @@ new scripts and interactive navigation.`,
 				if err != nil {
 					return err
 				}
+				if len(args) == 1 {
+					if err := guardrailsBaselineValidateLegacyListFlags(cmd); err != nil {
+						return err
+					}
+				}
 				store, err := defaultGuardrailsBaselineStore()
 				if err != nil {
 					return wrapGuardrailsBaselineError(err)
@@ -98,6 +103,23 @@ new scripts and interactive navigation.`,
 	command.Flags().StringVarP(&explicitFormat, "output", "o", "", "Output format: table, json")
 	command.Flags().BoolVarP(&quiet, "quiet", "q", false, "Print only run IDs")
 	return command
+}
+
+func guardrailsBaselineValidateLegacyListFlags(command *cobra.Command) error {
+	var flags []string
+	for _, name := range []string{"status", "limit", "offset", "sort", "order", "quiet"} {
+		if command.Flags().Changed(name) {
+			flags = append(flags, "--"+name)
+		}
+	}
+	if len(flags) == 0 {
+		return nil
+	}
+	return guardrailsBaselineError(
+		"INVALID_ARGUMENTS",
+		fmt.Sprintf("%s cannot be used with 'list <collection>'; use 'records list --collection <collection>'", strings.Join(flags, ", ")),
+		clierrors.ExitUsageError,
+	)
 }
 
 type guardrailsBaselineRunListOptions struct {
