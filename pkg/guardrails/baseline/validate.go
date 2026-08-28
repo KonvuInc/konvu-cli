@@ -47,13 +47,22 @@ var queryCollections = []Collection{
 
 func validateDocument(document *Document) error {
 	seen := make(map[string]string)
-	for _, collection := range []Collection{
-		CollectionClasses,
-		CollectionRoutes,
-		CollectionResources,
-		CollectionRoles,
+	for _, records := range []struct {
+		collection Collection
+		prefix     string
+	}{
+		{collection: CollectionClasses, prefix: "class:"},
+		{collection: CollectionRoutes, prefix: "route:"},
+		{collection: CollectionResources, prefix: "resource:"},
+		{collection: CollectionRoles, prefix: "role:"},
 	} {
-		if err := validateRecordIDs(document.sections[collection], collection, "", seen, true); err != nil {
+		if err := validateRecordIDs(
+			document.sections[records.collection],
+			records.collection,
+			records.prefix,
+			seen,
+			true,
+		); err != nil {
 			return err
 		}
 	}
@@ -102,32 +111,7 @@ func validateDocument(document *Document) error {
 	); err != nil {
 		return err
 	}
-	if err := validatePrefixedCollection(
-		document.sections[CollectionClasses],
-		CollectionClasses,
-		"class:",
-	); err != nil {
-		return err
-	}
-	if err := validatePrefixedCollection(
-		document.sections[CollectionRoutes],
-		CollectionRoutes,
-		"route:",
-	); err != nil {
-		return err
-	}
-	if err := validatePrefixedCollection(
-		document.sections[CollectionResources],
-		CollectionResources,
-		"resource:",
-	); err != nil {
-		return err
-	}
-	if err := validatePrefixedCollection(
-		document.sections[CollectionRoles],
-		CollectionRoles,
-		"role:",
-	); err != nil {
+	if err := validateRecordShapes(document); err != nil {
 		return err
 	}
 
@@ -155,7 +139,16 @@ func validateDocument(document *Document) error {
 			if !validRelationshipStatus(status) {
 				return artifactError(context+".status", "unsupported value %q", status)
 			}
+			if _, err := requiredText(link, "description", context); err != nil {
+				return err
+			}
 			if _, err := requiredPrefixedIDs(link, "implementation_ids", context, "implementation:"); err != nil {
+				return err
+			}
+			if err := validateEvidenceArray(link, "evidence", context); err != nil {
+				return err
+			}
+			if _, err := requiredStringArray(link, "checked", context); err != nil {
 				return err
 			}
 			if _, err := requiredPrefixedIDs(
@@ -175,13 +168,13 @@ func validateDocument(document *Document) error {
 		if err != nil {
 			return err
 		}
-		if !strings.HasPrefix(assetID, "asset:") && !strings.HasPrefix(assetID, "resource:") {
-			return artifactError(
-				context+".asset_id",
-				"must start with %q or %q",
-				"asset:",
-				"resource:",
-			)
+		if err := validateIDPrefixes(
+			assetID,
+			context+".asset_id",
+			"asset:",
+			"resource:",
+		); err != nil {
+			return err
 		}
 		status, err := requiredString(observation, "status", context)
 		if err != nil {
@@ -224,16 +217,26 @@ func validateDocument(document *Document) error {
 			return err
 		}
 	}
+	seenUnresolved := make(map[string]bool)
 	for index, unresolved := range document.sections[CollectionUnresolved] {
 		context := fmt.Sprintf("baseline.unresolved[%d]", index)
-		if _, err := prefixedID(
+		observationID, err := prefixedID(
 			unresolved,
 			"control_observation_id",
 			context,
 			"control-observation:",
-		); err != nil {
+		)
+		if err != nil {
 			return err
 		}
+		if seenUnresolved[observationID] {
+			return artifactError(
+				context+".control_observation_id",
+				"duplicates unresolved observation %q",
+				observationID,
+			)
+		}
+		seenUnresolved[observationID] = true
 		if _, err := requiredString(unresolved, "reason", context); err != nil {
 			return err
 		}
@@ -244,6 +247,214 @@ func validateDocument(document *Document) error {
 
 	if document.Run.Status == StatusCompleted {
 		return validateCompletedReferences(document)
+	}
+	return nil
+}
+
+func validateRecordShapes(document *Document) error {
+	for index, record := range document.sections[CollectionClasses] {
+		context := fmt.Sprintf("baseline.classes[%d]", index)
+		for _, field := range []string{"name", "module"} {
+			if _, err := requiredString(record, field, context); err != nil {
+				return err
+			}
+		}
+		if _, err := requiredStringArray(record, "bases", context); err != nil {
+			return err
+		}
+		if _, err := requiredNonNegativeInteger(record, "line", context); err != nil {
+			return err
+		}
+	}
+	for index, record := range document.sections[CollectionRoutes] {
+		context := fmt.Sprintf("baseline.routes[%d]", index)
+		for _, field := range []string{"module", "method", "path", "handler"} {
+			if _, err := requiredString(record, field, context); err != nil {
+				return err
+			}
+		}
+		if _, err := requiredNonNegativeInteger(record, "line", context); err != nil {
+			return err
+		}
+	}
+	for index, record := range document.sections[CollectionResources] {
+		context := fmt.Sprintf("baseline.resources[%d]", index)
+		for _, field := range []string{"name", "kind"} {
+			if _, err := requiredString(record, field, context); err != nil {
+				return err
+			}
+		}
+		if err := validateOptionalPrefixedID(record, "parent", context, "resource:"); err != nil {
+			return err
+		}
+	}
+	for index, record := range document.sections[CollectionRoles] {
+		context := fmt.Sprintf("baseline.roles[%d]", index)
+		for _, field := range []string{"name", "raw"} {
+			if _, err := requiredString(record, field, context); err != nil {
+				return err
+			}
+		}
+		if _, exists := record["location"]; !exists {
+			return artifactError(context+".location", "is required")
+		}
+	}
+	for index, record := range document.assetObservations {
+		context := fmt.Sprintf("baseline.observations.assets[%d]", index)
+		for _, field := range []string{"name", "description"} {
+			if _, err := requiredString(record, field, context); err != nil {
+				return err
+			}
+		}
+	}
+	for index, record := range document.controlObservations {
+		context := fmt.Sprintf("baseline.observations.controls[%d]", index)
+		for _, field := range []string{"property", "description", "decl", "quote"} {
+			if _, err := requiredText(record, field, context); err != nil {
+				return err
+			}
+		}
+		if _, err := requiredStringArray(record, "checked", context); err != nil {
+			return err
+		}
+		if _, err := requiredNullableString(record, "asvs", context); err != nil {
+			return err
+		}
+	}
+	for index, record := range document.sections[CollectionAssets] {
+		context := fmt.Sprintf("baseline.assets[%d]", index)
+		for _, field := range []string{"kind", "name", "description", "origin"} {
+			if _, err := requiredString(record, field, context); err != nil {
+				return err
+			}
+		}
+		if _, err := requiredIDsWithPrefixes(
+			record,
+			"source_ids",
+			context,
+			"asset:",
+			"resource:",
+		); err != nil {
+			return err
+		}
+		if err := validateOptionalPrefixedID(record, "parent", context, "asset:"); err != nil {
+			return err
+		}
+		if routes, exists := record["routes"]; exists {
+			values, ok := routes.([]any)
+			if !ok {
+				return artifactError(context+".routes", "must be an array")
+			}
+			if err := validateEmbeddedRouteIDs(values, context+".routes"); err != nil {
+				return err
+			}
+		}
+	}
+	for index, record := range document.sections[CollectionControls] {
+		context := fmt.Sprintf("baseline.controls[%d]", index)
+		for _, field := range []string{"name", "description", "property"} {
+			if _, err := requiredText(record, field, context); err != nil {
+				return err
+			}
+		}
+		if _, err := requiredStringArray(record, "asvs", context); err != nil {
+			return err
+		}
+	}
+	for index, record := range document.sections[CollectionImplementations] {
+		context := fmt.Sprintf("baseline.implementations[%d]", index)
+		for _, field := range []string{"name", "description", "kind"} {
+			if _, err := requiredText(record, field, context); err != nil {
+				return err
+			}
+		}
+		if err := validateEvidenceArray(record, "anchors", context); err != nil {
+			return err
+		}
+	}
+	return validateOptionalRelationshipIDs(document)
+}
+
+func validateEmbeddedRouteIDs(values []any, context string) error {
+	for index, value := range values {
+		itemContext := fmt.Sprintf("%s[%d]", context, index)
+		switch route := value.(type) {
+		case string:
+			if err := validateIDPrefix(strings.TrimSpace(route), itemContext, "route:"); err != nil {
+				return err
+			}
+		case map[string]any:
+			if _, exists := route["id"]; !exists {
+				continue
+			}
+			if _, err := prefixedID(route, "id", itemContext, "route:"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateOptionalRelationshipIDs(document *Document) error {
+	fields := []struct {
+		name   string
+		prefix string
+	}{
+		{name: "route_ids", prefix: "route:"},
+		{name: "resource_ids", prefix: "resource:"},
+		{name: "role_ids", prefix: "role:"},
+		{name: "class_ids", prefix: "class:"},
+	}
+	for _, collection := range queryCollections {
+		for index, record := range document.sections[collection] {
+			context := fmt.Sprintf("baseline.%s[%d]", collection, index)
+			for _, field := range fields {
+				if _, exists := record[field.name]; !exists {
+					continue
+				}
+				if _, err := requiredPrefixedIDs(
+					record,
+					field.name,
+					context,
+					field.prefix,
+				); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func validateEvidenceArray(record map[string]any, field, context string) error {
+	anchors, err := requiredRecords(record, field, context)
+	if err != nil {
+		return err
+	}
+	for index, anchor := range anchors {
+		anchorContext := fmt.Sprintf("%s.%s[%d]", context, field, index)
+		if _, err := requiredText(anchor, "quote", anchorContext); err != nil {
+			return err
+		}
+		if declaration, _ := anchor["decl"].(string); strings.TrimSpace(declaration) != "" {
+			continue
+		}
+		location, exists := anchor["location"]
+		if !exists {
+			return artifactError(anchorContext, "must contain decl or location")
+		}
+		switch typed := location.(type) {
+		case string:
+			if strings.TrimSpace(typed) == "" {
+				return artifactError(anchorContext+".location", "must not be empty")
+			}
+		case map[string]any:
+			if len(typed) == 0 {
+				return artifactError(anchorContext+".location", "must not be empty")
+			}
+		default:
+			return artifactError(anchorContext+".location", "must be a string or object")
+		}
 	}
 	return nil
 }
@@ -270,8 +481,10 @@ func validateRecordIDs(
 		if !ok || id == "" {
 			return artifactError(context+".id", "must be a non-empty string")
 		}
-		if prefix != "" && !strings.HasPrefix(id, prefix) {
-			return artifactError(context+".id", "must start with %q", prefix)
+		if prefix != "" {
+			if err := validateIDPrefix(id, context+".id", prefix); err != nil {
+				return err
+			}
 		}
 		if previous, duplicate := seen[id]; duplicate {
 			return artifactError(context+".id", "duplicates %q from %s", id, previous)
@@ -281,27 +494,38 @@ func validateRecordIDs(
 	return nil
 }
 
-func validatePrefixedCollection(records []map[string]any, collection Collection, prefix string) error {
-	for index, record := range records {
-		id, _ := record["id"].(string)
-		if !strings.HasPrefix(id, prefix) {
-			return artifactError(
-				fmt.Sprintf("baseline.%s[%d].id", collection, index),
-				"must start with %q",
-				prefix,
-			)
-		}
-	}
-	return nil
-}
-
 func validateCompletedReferences(document *Document) error {
 	assets := idSet(document.sections[CollectionAssets])
 	assetObservations := idSet(document.assetObservations)
 	resources := idSet(document.sections[CollectionResources])
+	sources := make(map[string]bool, len(assetObservations)+len(resources))
+	for sourceID := range assetObservations {
+		sources[sourceID] = true
+	}
+	for sourceID := range resources {
+		sources[sourceID] = true
+	}
 	controls := idSet(document.sections[CollectionControls])
 	implementations := idSet(document.sections[CollectionImplementations])
 	observations := idSet(document.controlObservations)
+
+	for index, resource := range document.sections[CollectionResources] {
+		parent, err := optionalString(
+			resource,
+			"parent",
+			fmt.Sprintf("baseline.resources[%d]", index),
+		)
+		if err != nil {
+			return err
+		}
+		if parent != "" && !resources[parent] {
+			return artifactError(
+				fmt.Sprintf("baseline.resources[%d].parent", index),
+				"references unknown resource %q",
+				parent,
+			)
+		}
+	}
 
 	for index, asset := range document.sections[CollectionAssets] {
 		assetID, _ := asset["id"].(string)
@@ -314,22 +538,18 @@ func validateCompletedReferences(document *Document) error {
 				parent,
 			)
 		}
-		if sourceIDs, exists, err := optionalStringArray(
+		sourceIDs, _ := requiredStringArray(
 			asset,
 			"source_ids",
 			fmt.Sprintf("baseline.assets[%d]", index),
+		)
+		if err := validateReferences(
+			sourceIDs,
+			sources,
+			fmt.Sprintf("baseline.assets[%d].source_ids", index),
+			"Asset observation or Resource",
 		); err != nil {
 			return err
-		} else if exists {
-			for _, sourceID := range sourceIDs {
-				if !assetObservations[sourceID] && !resources[sourceID] {
-					return artifactError(
-						fmt.Sprintf("baseline.assets[%d].source_ids", index),
-						"references unknown Asset observation or Resource %q",
-						sourceID,
-					)
-				}
-			}
 		}
 		for linkIndex, link := range document.assetControls[assetID] {
 			context := fmt.Sprintf("baseline.assets[%d].controls[%d]", index, linkIndex)
@@ -394,10 +614,10 @@ func validateCompletedReferences(document *Document) error {
 	}
 	for index, observation := range document.controlObservations {
 		assetID, _ := observation["asset_id"].(string)
-		if !assets[assetID] && !assetObservations[assetID] && !resources[assetID] {
+		if !assets[assetID] {
 			return artifactError(
 				fmt.Sprintf("baseline.observations.controls[%d].asset_id", index),
-				"references unknown Asset or Resource %q",
+				"references unknown normalized Asset %q",
 				assetID,
 			)
 		}
@@ -406,7 +626,12 @@ func validateCompletedReferences(document *Document) error {
 }
 
 func validateReferences(values []string, known map[string]bool, path, kind string) error {
+	seen := make(map[string]bool, len(values))
 	for _, value := range values {
+		if seen[value] {
+			return artifactError(path, "contains duplicate %s reference %q", kind, value)
+		}
+		seen[value] = true
 		if !known[value] {
 			return artifactError(path, "references unknown %s %q", kind, value)
 		}
@@ -429,10 +654,22 @@ func prefixedID(record map[string]any, field, context, prefix string) (string, e
 	if err != nil {
 		return "", err
 	}
-	if !strings.HasPrefix(id, prefix) {
-		return "", artifactError(context+"."+field, "must start with %q", prefix)
+	if err := validateIDPrefix(id, context+"."+field, prefix); err != nil {
+		return "", err
 	}
 	return id, nil
+}
+
+func validateOptionalPrefixedID(
+	record map[string]any,
+	field, context, prefix string,
+) error {
+	value, exists := record[field]
+	if !exists || value == nil {
+		return nil
+	}
+	_, err := prefixedID(record, field, context, prefix)
+	return err
 }
 
 func requiredPrefixedIDs(
@@ -445,8 +682,8 @@ func requiredPrefixedIDs(
 	}
 	seen := make(map[string]bool, len(values))
 	for _, value := range values {
-		if !strings.HasPrefix(value, prefix) {
-			return nil, artifactError(context+"."+field, "value %q must start with %q", value, prefix)
+		if err := validateIDPrefix(value, context+"."+field, prefix); err != nil {
+			return nil, err
 		}
 		if seen[value] {
 			return nil, artifactError(context+"."+field, "contains duplicate value %q", value)
@@ -454,6 +691,55 @@ func requiredPrefixedIDs(
 		seen[value] = true
 	}
 	return values, nil
+}
+
+func requiredIDsWithPrefixes(
+	record map[string]any,
+	field, context string,
+	prefixes ...string,
+) ([]string, error) {
+	values, err := requiredStringArray(record, field, context)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool, len(values))
+	for index, value := range values {
+		if err := validateIDPrefixes(
+			value,
+			fmt.Sprintf("%s.%s[%d]", context, field, index),
+			prefixes...,
+		); err != nil {
+			return nil, err
+		}
+		if seen[value] {
+			return nil, artifactError(context+"."+field, "contains duplicate value %q", value)
+		}
+		seen[value] = true
+	}
+	return values, nil
+}
+
+func validateIDPrefixes(id, context string, prefixes ...string) error {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(id, prefix) {
+			return validateIDPrefix(id, context, prefix)
+		}
+	}
+	quoted := make([]string, len(prefixes))
+	for index, prefix := range prefixes {
+		quoted[index] = fmt.Sprintf("%q", prefix)
+	}
+	return artifactError(context, "must start with one of %s", strings.Join(quoted, ", "))
+}
+
+func validateIDPrefix(id, context, prefix string) error {
+	if !strings.HasPrefix(id, prefix) {
+		return artifactError(context, "must start with %q", prefix)
+	}
+	if strings.TrimSpace(strings.TrimPrefix(id, prefix)) == "" {
+		return artifactError(context, "must have a non-empty suffix after %q", prefix)
+	}
+	return nil
 }
 
 func requiredStringArray(record map[string]any, field, context string) ([]string, error) {

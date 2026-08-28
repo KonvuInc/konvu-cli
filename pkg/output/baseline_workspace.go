@@ -50,11 +50,12 @@ type BaselineRepositoryOption struct {
 
 // BaselineWorkspace is a read-only terminal view over one normalized baseline.
 type BaselineWorkspace struct {
-	catalog      *BaselineCatalog
-	blueprint    map[string]any
-	repositoryID string
-	commit       string
-	color        bool
+	catalog                   *BaselineCatalog
+	blueprint                 map[string]any
+	repositoryID              string
+	commit                    string
+	color                     bool
+	includeUncontrolledAssets bool
 }
 
 // NewBaselineWorkspace validates and normalizes one repository's artifact.
@@ -794,6 +795,7 @@ var baselineAssetKindLabels = map[string]string{
 	"endpoint": "Endpoints",
 	"object":   "Objects",
 	"field":    "Fields",
+	"code":     "Code",
 }
 
 func baselineKindIndex(kind string) int {
@@ -808,7 +810,7 @@ func baselineKindIndex(kind string) int {
 func (w *BaselineWorkspace) filteredBaselineAssets(
 	kind, query string,
 ) ([]BaselineDiscovery, error) {
-	assets, err := w.catalog.ReviewableAssets(kind)
+	assets, err := w.baselineAssets(kind)
 	if err != nil || query == "" {
 		return assets, err
 	}
@@ -826,6 +828,22 @@ func (w *BaselineWorkspace) filteredBaselineAssets(
 		}
 	}
 	return filtered, nil
+}
+
+func (w *BaselineWorkspace) baselineAssets(kind string) ([]BaselineDiscovery, error) {
+	if w.includeUncontrolledAssets {
+		return w.catalog.Discoveries(kind)
+	}
+	return w.catalog.ReviewableAssets(kind)
+}
+
+func (w *BaselineWorkspace) baselineAssetCounts() map[string]int {
+	counts := make(map[string]int, len(baselineAssetKinds))
+	for _, kind := range baselineAssetKinds {
+		assets, _ := w.baselineAssets(kind)
+		counts[kind] = len(assets)
+	}
+	return counts
 }
 
 func (w *BaselineWorkspace) baselineDetailTargets(
@@ -877,6 +895,9 @@ func baselineProtectionTarget(
 
 func (w *BaselineWorkspace) controlledBaselineFields(parentID string) []BaselineAsset {
 	fields := w.catalog.FieldsForParent(parentID)
+	if w.includeUncontrolledAssets {
+		return fields
+	}
 	controlled := make([]BaselineAsset, 0, len(fields))
 	for _, field := range fields {
 		if len(w.catalog.ProtectionsForAsset(field.ID)) > 0 {
@@ -1039,7 +1060,7 @@ func (w *BaselineWorkspace) renderBaselineFrame(
 		state,
 		kind,
 		assets,
-		w.catalog.ReviewableAssetCounts(),
+		w.baselineAssetCounts(),
 		panelHeight-2,
 		leftWidth-4,
 	)
@@ -1107,7 +1128,7 @@ func (w *BaselineWorkspace) renderBaselineFrame(
 		case baselineFocusControl:
 			footer = "↑↓ switch control  Pg↑↓ scroll  ←/Esc asset details  Q exit"
 		case baselineFocusTypes:
-			footer = "↑↓ asset type  Enter/→ asset list  ←/Esc repositories  Q exit"
+			footer = "↑↓ asset type  Enter/→ asset list  ←/Esc runs  Q exit"
 		default:
 			footer = "↑↓ asset  Enter/→ details  ←/Esc types  / find  Pg↑↓ detail" + clear + "  Q exit"
 		}
@@ -1497,7 +1518,7 @@ func (w *BaselineWorkspace) baselineControlRows(
 			}
 		}
 	} else {
-		rows = append(rows, baselinePanelRow{text: "No endpoint, object, or field assets linked.", tone: "dim"})
+		rows = append(rows, baselinePanelRow{text: "No endpoint, object, field, or code Assets linked.", tone: "dim"})
 	}
 
 	rows = append(rows, baselinePanelRow{}, baselinePanelRow{text: "IMPLEMENTATION FORMS", tone: "label"})
@@ -1644,7 +1665,7 @@ func (w *BaselineWorkspace) repositoryHeader(
 	rows = append(rows, "")
 	summary := baselineString(repo["summary"])
 	if summary == "" {
-		summary = "See which security controls protect the repository's endpoints, objects, and fields."
+		summary = "See which security Controls apply to the repository's endpoint, object, field, and code Assets."
 	}
 	for _, row := range baselineWrapText(summary, width, "") {
 		rows = append(rows, style.dim(row))
@@ -1705,9 +1726,9 @@ func (w *BaselineWorkspace) baselineMetadataRows(detailed bool) []string {
 		}
 	}
 
-	counts := w.catalog.ReviewableAssetCounts()
+	counts := w.baselineAssetCounts()
 	routeCount := 0
-	endpoints, _ := w.catalog.ReviewableAssets("endpoint")
+	endpoints, _ := w.baselineAssets("endpoint")
 	for _, endpoint := range endpoints {
 		routeCount += len(w.catalog.EndpointDisplayRoutes(endpoint.ID))
 	}
@@ -1720,6 +1741,9 @@ func (w *BaselineWorkspace) baselineMetadataRows(detailed bool) []string {
 		),
 		baselineCountLabel(counts["object"], "object"),
 		baselineCountLabel(counts["field"], "field"),
+	}
+	if counts["code"] > 0 {
+		baselineParts = append(baselineParts, baselineCountLabel(counts["code"], "code Asset"))
 	}
 	rows = append(rows, "BASELINE\t"+strings.Join(baselineParts, " · "))
 	return rows

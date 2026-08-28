@@ -26,13 +26,18 @@ type ControlLink struct {
 type Catalog struct {
 	document              *Document
 	byID                  map[string]Entity
+	allByID               map[string][]Entity
 	byCollection          map[Collection][]Entity
 	linksByAsset          map[string][]ControlLink
 	linksByControl        map[string][]ControlLink
 	linksByImplementation map[string][]ControlLink
 	linksByObservation    map[string][]ControlLink
 	childrenByParent      map[string][]string
-	recordsBySource       map[string][]string
+	recordsBySource       map[string][]Entity
+	routesByAsset         map[string][]string
+	assetsByRoute         map[string][]string
+	resourcesByClass      map[string][]string
+	classesByResource     map[string][]string
 }
 
 // NewCatalog indexes a completed document. Running, failed, and cancelled runs
@@ -50,13 +55,18 @@ func NewCatalog(document *Document) (*Catalog, error) {
 	catalog := &Catalog{
 		document:              document,
 		byID:                  make(map[string]Entity),
+		allByID:               make(map[string][]Entity),
 		byCollection:          make(map[Collection][]Entity),
 		linksByAsset:          make(map[string][]ControlLink),
 		linksByControl:        make(map[string][]ControlLink),
 		linksByImplementation: make(map[string][]ControlLink),
 		linksByObservation:    make(map[string][]ControlLink),
 		childrenByParent:      make(map[string][]string),
-		recordsBySource:       make(map[string][]string),
+		recordsBySource:       make(map[string][]Entity),
+		routesByAsset:         make(map[string][]string),
+		assetsByRoute:         make(map[string][]string),
+		resourcesByClass:      make(map[string][]string),
+		classesByResource:     make(map[string][]string),
 	}
 	for _, collection := range queryCollections {
 		records := document.sections[collection]
@@ -68,15 +78,18 @@ func NewCatalog(document *Document) (*Catalog, error) {
 			}
 			entity := Entity{Collection: collection, ID: id, Value: cloneMap(record)}
 			entities = append(entities, entity)
+			if id != "" {
+				catalog.allByID[id] = append(catalog.allByID[id], entity)
+			}
 			// Asset observations intentionally share asset: IDs with normalized
 			// Assets. They remain listable but never participate in global lookup.
 			if collection != CollectionUnresolved &&
 				collection != CollectionAssetObservations && id != "" {
 				catalog.byID[id] = entity
-				for _, field := range []string{"source_ids", "source_control_observation_ids"} {
+				for _, field := range relationshipIDFields {
 					sourceIDs, _, _ := optionalStringArray(record, field, "entity")
 					for _, sourceID := range sourceIDs {
-						catalog.recordsBySource[sourceID] = append(catalog.recordsBySource[sourceID], id)
+						catalog.recordsBySource[sourceID] = append(catalog.recordsBySource[sourceID], entity)
 					}
 				}
 				if collection == CollectionAssets {
@@ -86,9 +99,12 @@ func NewCatalog(document *Document) (*Catalog, error) {
 				}
 				if collection == CollectionControlObservations {
 					if assetID, _ := record["asset_id"].(string); assetID != "" {
-						catalog.recordsBySource[assetID] = append(catalog.recordsBySource[assetID], id)
+						catalog.recordsBySource[assetID] = append(catalog.recordsBySource[assetID], entity)
 					}
 				}
+			}
+			if collection == CollectionUnresolved && id != "" {
+				catalog.recordsBySource[id] = append(catalog.recordsBySource[id], entity)
 			}
 		}
 		sort.SliceStable(entities, func(i, j int) bool { return entities[i].ID < entities[j].ID })
@@ -124,7 +140,18 @@ func NewCatalog(document *Document) (*Catalog, error) {
 			}
 		}
 	}
+	catalog.buildRouteIndexes()
+	catalog.buildClassIndexes()
 	return catalog, nil
+}
+
+var relationshipIDFields = []string{
+	"source_ids",
+	"source_control_observation_ids",
+	"route_ids",
+	"resource_ids",
+	"role_ids",
+	"class_ids",
 }
 
 // Document returns the immutable source document for run metadata and raw output.
@@ -154,6 +181,18 @@ func (c *Catalog) Lookup(id string) (Entity, bool) {
 	return entity, true
 }
 
+// LookupIn resolves an ID inside one explicit collection, including collections
+// whose IDs intentionally overlap the global public namespace.
+func (c *Catalog) LookupIn(collection Collection, id string) (Entity, bool) {
+	for _, entity := range c.byCollection[collection] {
+		if entity.ID == id {
+			entity.Value = cloneMap(entity.Value)
+			return entity, true
+		}
+	}
+	return Entity{}, false
+}
+
 // LinksForAsset returns the Controls attached directly to one Asset.
 func (c *Catalog) LinksForAsset(id string) []ControlLink {
 	return cloneLinks(c.linksByAsset[id])
@@ -177,56 +216,104 @@ func (c *Catalog) LinksForObservation(id string) []ControlLink {
 // Related returns the deduplicated records directly connected to a public ID.
 // This is the common primitive used by explain views.
 func (c *Catalog) Related(id string) []Entity {
+	entity, found := c.byID[id]
+	if !found {
+		return nil
+	}
+	return c.related(entity)
+}
+
+// RelatedIn returns direct relationships for a collection-qualified record.
+func (c *Catalog) RelatedIn(collection Collection, id string) []Entity {
+	entity, found := c.LookupIn(collection, id)
+	if !found {
+		return nil
+	}
+	return c.related(entity)
+}
+
+func (c *Catalog) related(entity Entity) []Entity {
 	related := make(map[string]Entity)
-	add := func(candidateID string) {
-		if candidateID == "" || candidateID == id {
+	primaryKey := entityKey(entity)
+	addEntity := func(candidate Entity) {
+		if candidate.ID == "" || entityKey(candidate) == primaryKey {
 			return
 		}
-		if entity, ok := c.byID[candidateID]; ok {
-			related[string(entity.Collection)+"\x00"+entity.ID] = entity
+		related[entityKey(candidate)] = candidate
+	}
+	add := func(candidateID string) {
+		if candidate, found := c.byID[candidateID]; found {
+			addEntity(candidate)
+			return
+		}
+		for _, candidate := range c.allByID[candidateID] {
+			addEntity(candidate)
 		}
 	}
 	addSources := func(record map[string]any) {
-		values, _, _ := optionalStringArray(record, "source_control_observation_ids", "entity")
-		for _, value := range values {
-			add(value)
-		}
-		values, _, _ = optionalStringArray(record, "source_ids", "entity")
-		for _, value := range values {
-			add(value)
+		for _, field := range relationshipIDFields {
+			values, _, _ := optionalStringArray(record, field, "entity")
+			for _, value := range values {
+				if field == "source_ids" {
+					for _, candidate := range c.allByID[value] {
+						if candidate.Collection == CollectionAssetObservations ||
+							candidate.Collection == CollectionResources {
+							addEntity(candidate)
+						}
+					}
+					continue
+				}
+				add(value)
+			}
 		}
 	}
 
-	entity, found := c.byID[id]
-	if found {
-		addSources(entity.Value)
-		for _, derivedID := range c.recordsBySource[id] {
-			add(derivedID)
+	add(entity.ID)
+	addSources(entity.Value)
+	for _, derived := range c.recordsBySource[entity.ID] {
+		addEntity(derived)
+	}
+	if entity.Collection == CollectionAssets {
+		if parent, _ := entity.Value["parent"].(string); parent != "" {
+			add(parent)
 		}
-		if entity.Collection == CollectionAssets {
-			if parent, _ := entity.Value["parent"].(string); parent != "" {
-				add(parent)
-			}
-			for _, childID := range c.childrenByParent[id] {
-				add(childID)
-			}
+		for _, childID := range c.childrenByParent[entity.ID] {
+			add(childID)
 		}
-		if entity.Collection == CollectionControlObservations {
-			if assetID, _ := entity.Value["asset_id"].(string); assetID != "" {
-				add(assetID)
-			}
+		for _, routeID := range c.routesByAsset[entity.ID] {
+			add(routeID)
+		}
+	}
+	if entity.Collection == CollectionRoutes {
+		for _, assetID := range c.assetsByRoute[entity.ID] {
+			add(assetID)
+		}
+	}
+	if entity.Collection == CollectionClasses {
+		for _, resourceID := range c.resourcesByClass[entity.ID] {
+			add(resourceID)
+		}
+	}
+	if entity.Collection == CollectionResources {
+		for _, classID := range c.classesByResource[entity.ID] {
+			add(classID)
+		}
+	}
+	if entity.Collection == CollectionControlObservations {
+		if assetID, _ := entity.Value["asset_id"].(string); assetID != "" {
+			add(assetID)
 		}
 	}
 	links := make([]ControlLink, 0)
 	switch entity.Collection {
 	case CollectionAssets:
-		links = c.linksByAsset[id]
+		links = c.linksByAsset[entity.ID]
 	case CollectionControls:
-		links = c.linksByControl[id]
+		links = c.linksByControl[entity.ID]
 	case CollectionImplementations:
-		links = c.linksByImplementation[id]
+		links = c.linksByImplementation[entity.ID]
 	case CollectionControlObservations:
-		links = c.linksByObservation[id]
+		links = c.linksByObservation[entity.ID]
 	}
 	for _, link := range links {
 		add(link.AssetID)
@@ -251,6 +338,83 @@ func (c *Catalog) Related(id string) []Entity {
 		return result[i].ID < result[j].ID
 	})
 	return result
+}
+
+func entityKey(entity Entity) string {
+	return string(entity.Collection) + "\x00" + entity.ID
+}
+
+func (c *Catalog) buildRouteIndexes() {
+	routes := c.byCollection[CollectionRoutes]
+	for _, asset := range c.byCollection[CollectionAssets] {
+		seen := make(map[string]bool)
+		add := func(routeID string) {
+			if routeID == "" || seen[routeID] {
+				return
+			}
+			seen[routeID] = true
+			c.routesByAsset[asset.ID] = append(c.routesByAsset[asset.ID], routeID)
+			c.assetsByRoute[routeID] = append(c.assetsByRoute[routeID], asset.ID)
+		}
+		if values, _, _ := optionalStringArray(asset.Value, "route_ids", "asset"); len(values) > 0 {
+			for _, value := range values {
+				add(value)
+			}
+		}
+		embedded, _ := asset.Value["routes"].([]any)
+		for _, value := range embedded {
+			switch route := value.(type) {
+			case string:
+				add(route)
+			case map[string]any:
+				if id, _ := route["id"].(string); id != "" {
+					add(id)
+					continue
+				}
+				for _, candidate := range routes {
+					if sameRouteRecord(candidate.Value, route) {
+						add(candidate.ID)
+						break
+					}
+				}
+			}
+		}
+		sort.Strings(c.routesByAsset[asset.ID])
+	}
+	for id := range c.assetsByRoute {
+		sort.Strings(c.assetsByRoute[id])
+	}
+}
+
+func sameRouteRecord(left, right map[string]any) bool {
+	for _, field := range []string{"method", "path", "line"} {
+		leftValue, leftOK := left[field]
+		rightValue, rightOK := right[field]
+		if !leftOK || !rightOK || fmt.Sprint(leftValue) != fmt.Sprint(rightValue) {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *Catalog) buildClassIndexes() {
+	classesByDeclaration := make(map[string]string)
+	for _, class := range c.byCollection[CollectionClasses] {
+		module, _ := class.Value["module"].(string)
+		name, _ := class.Value["name"].(string)
+		if module != "" && name != "" {
+			classesByDeclaration[module+"#"+name] = class.ID
+		}
+	}
+	for _, resource := range c.byCollection[CollectionResources] {
+		declaration, _ := resource.Value["decl"].(string)
+		classID := classesByDeclaration[declaration]
+		if classID == "" {
+			continue
+		}
+		c.resourcesByClass[classID] = append(c.resourcesByClass[classID], resource.ID)
+		c.classesByResource[resource.ID] = append(c.classesByResource[resource.ID], classID)
+	}
 }
 
 func cloneEntities(values []Entity) []Entity {

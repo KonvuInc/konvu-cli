@@ -99,11 +99,12 @@ func NewBaselineWorkspaceV1(document *baseline.Document) (*BaselineWorkspace, er
 	catalog.ApplyRepositoryBlueprint(blueprint, document.Codebase.Git.Commit)
 
 	return &BaselineWorkspace{
-		catalog:      catalog,
-		blueprint:    blueprint,
-		repositoryID: sanitizeBaselineText(document.Codebase.Path, false),
-		commit:       sanitizeBaselineText(document.Codebase.Git.Commit, false),
-		color:        false,
+		catalog:                   catalog,
+		blueprint:                 blueprint,
+		repositoryID:              sanitizeBaselineText(document.Codebase.Path, false),
+		commit:                    sanitizeBaselineText(document.Codebase.Git.Commit, false),
+		color:                     false,
+		includeUncontrolledAssets: true,
 	}, nil
 }
 

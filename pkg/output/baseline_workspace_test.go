@@ -481,6 +481,9 @@ func TestBaselineWorkspaceFramesUseTwoAndThreePanelDrilldown(t *testing.T) {
 	if strings.Contains(initial, "ENDPOINT GROUP") {
 		t.Fatal("initial type-focused frame rendered asset details")
 	}
+	if !strings.Contains(initial, "←/Esc runs") || strings.Contains(initial, "←/Esc repositories") {
+		t.Fatalf("initial frame has stale catalog navigation copy:\n%s", initial)
+	}
 
 	detail := baselineWorkspaceState{
 		assetIndex:   1,
@@ -534,12 +537,12 @@ func TestBaselineWorkspaceFrameGoldens(t *testing.T) {
 		color  bool
 		want   string
 	}{
-		{name: "minimum_no_color_initial", state: initialBaselineWorkspaceState(), width: 76, height: 22, color: false, want: "4cae9d9d05da7a395926b7116be99a167960d476ad04745c3808602767cfac12"},
-		{name: "standard_color_initial", state: initialBaselineWorkspaceState(), width: 120, height: 36, color: true, want: "f3da51234fb2beb5ab06ef4d131259d5c99abc1864fcabd2a3d4a73e034c47e8"},
-		{name: "short_no_color_detail", state: detail, width: 100, height: 22, color: false, want: "d9f1ba72e5300ff40f73586c1f8d89681ea1af23c8f34528d1e317d3ce683dd0"},
-		{name: "minimum_color_detail", state: detail, width: 76, height: 30, color: true, want: "b53fd5748342ab540e88e1aeacf4135489ce8e64595936f8b9dfbc5447ce3abe"},
-		{name: "standard_color_control", state: control, width: 132, height: 52, color: true, want: "19390d52c60f5f539e302c0aebdb78de9109d0ae8230d2a82d9e17aebbb2cf31"},
-		{name: "standard_no_color_control", state: control, width: 132, height: 52, color: false, want: "be385819361ce1a6a09fc6e3df0001f2d6bbfa4a841b0c32547a9d39f20a2c68"},
+		{name: "minimum_no_color_initial", state: initialBaselineWorkspaceState(), width: 76, height: 22, color: false, want: "2261966ff977be07f3bacc0d1ec4a343d820e9b2f8a0edb7f88440d995c9f5d7"},
+		{name: "standard_color_initial", state: initialBaselineWorkspaceState(), width: 120, height: 36, color: true, want: "32dbcec6bd711b36fa9ca1d5341aef286173b407c50744c2b0444d0bf6cb46cf"},
+		{name: "short_no_color_detail", state: detail, width: 100, height: 22, color: false, want: "52007928ef4e1ce1bb83b5ffab8985ea85132c7a7fafeca5e4ec00b8f3f88245"},
+		{name: "minimum_color_detail", state: detail, width: 76, height: 30, color: true, want: "5b1dd0476818bb6026cf32fb61d67b6bd0b4828bc84bf5ddfb7b772953f86ae1"},
+		{name: "standard_color_control", state: control, width: 132, height: 52, color: true, want: "bb8bce79ced0f3c53f88b565b2500b65d5260c7d0629ec2413b1af22e946ebe5"},
+		{name: "standard_no_color_control", state: control, width: 132, height: 52, color: false, want: "1852d94c49bb85ca16cdb1f3d9cb1aae953bc681782eff21d3c4d2bb5fcf74a0"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -553,7 +556,7 @@ func TestBaselineWorkspaceFrameGoldens(t *testing.T) {
 	}
 }
 
-func TestBaselineWorkspaceMatchesApprovedPythonFrames(t *testing.T) {
+func TestBaselineWorkspaceCompatibilityFrameGoldens(t *testing.T) {
 	workspace := mustPythonOracleBaselineWorkspace(t)
 	tests := []struct {
 		name   string
@@ -563,13 +566,13 @@ func TestBaselineWorkspaceMatchesApprovedPythonFrames(t *testing.T) {
 		color  bool
 		want   string
 	}{
-		{name: "initial", state: initialBaselineWorkspaceState(), width: 120, height: 36, want: "467612139a9c8637e7e8303c874c862da4f26edeac7783b04c18f7f8a127bddc"},
-		{name: "endpoint", state: baselineWorkspaceState{focus: baselineFocusDetail, detailTarget: baselineDetailTarget{kind: baselineTargetControl, id: "ctrl:auth"}}, width: 120, height: 36, want: "0a3d61bb30ca89884932d3dadf38a0c31babd7205ff98789c6f57bf3179869b4"},
-		{name: "object", state: baselineWorkspaceState{kindIndex: 1, focus: baselineFocusDetail, detailTarget: baselineDetailTarget{kind: baselineTargetControl, id: "ctrl:tenant"}}, width: 120, height: 36, want: "b595be403accf9fa32b3b292b24fd0113f821c4d9e8b82d131375d3b2ce7731b"},
-		{name: "object_color", state: baselineWorkspaceState{kindIndex: 1, focus: baselineFocusDetail, detailTarget: baselineDetailTarget{kind: baselineTargetControl, id: "ctrl:tenant"}}, width: 120, height: 36, color: true, want: "c7015a82aa84e131079f6ef021f9d34e6d8f9801c459e3ca8766bbdef74041d9"},
-		{name: "field", state: baselineWorkspaceState{kindIndex: 2, focus: baselineFocusDetail, detailTarget: baselineDetailTarget{kind: baselineTargetControl, id: "ctrl:minimize"}}, width: 120, height: 36, want: "973a10a0c5b43f1e6d8b8c0ff3c75eac8d6eb855358a71aec13afd5f7779c13c"},
-		{name: "field_color", state: baselineWorkspaceState{kindIndex: 2, focus: baselineFocusDetail, detailTarget: baselineDetailTarget{kind: baselineTargetControl, id: "ctrl:minimize"}}, width: 120, height: 36, color: true, want: "c48fa4eee58b45036324f22e54b631ef9b6392d873edb79fea7ad46724250703"},
-		{name: "control", state: baselineWorkspaceState{focus: baselineFocusControl, detailTarget: baselineDetailTarget{kind: baselineTargetControl, id: "ctrl:auth"}, openedControlID: "ctrl:auth"}, width: 132, height: 52, color: true, want: "27fda4812472a866bd92bdc4bb41fb16256360c93455600ef8f0a193044ab4fc"},
+		{name: "initial", state: initialBaselineWorkspaceState(), width: 120, height: 36, want: "56dede43ef53216860bc38a011d41c393f9846aab9af0fad82f3fabf210a6e12"},
+		{name: "endpoint", state: baselineWorkspaceState{focus: baselineFocusDetail, detailTarget: baselineDetailTarget{kind: baselineTargetControl, id: "ctrl:auth"}}, width: 120, height: 36, want: "3e551ca17ec7c52be76be4baee68daeff8f9f721fcbfcc3e297aceef1c49e3b2"},
+		{name: "object", state: baselineWorkspaceState{kindIndex: 1, focus: baselineFocusDetail, detailTarget: baselineDetailTarget{kind: baselineTargetControl, id: "ctrl:tenant"}}, width: 120, height: 36, want: "18c79b43e11e6808f15c69dc9972ab8013bad22f81c5e329060dcdbf6e9a0ac0"},
+		{name: "object_color", state: baselineWorkspaceState{kindIndex: 1, focus: baselineFocusDetail, detailTarget: baselineDetailTarget{kind: baselineTargetControl, id: "ctrl:tenant"}}, width: 120, height: 36, color: true, want: "5ce2066e7b4fd1af05c11f7f03450300073c859aaf87f7b2fd9d918b8e331448"},
+		{name: "field", state: baselineWorkspaceState{kindIndex: 2, focus: baselineFocusDetail, detailTarget: baselineDetailTarget{kind: baselineTargetControl, id: "ctrl:minimize"}}, width: 120, height: 36, want: "4a0f062dd3d11ef19912a7585aca212f7204b1d22b9b94b3cc7ed50abd04e185"},
+		{name: "field_color", state: baselineWorkspaceState{kindIndex: 2, focus: baselineFocusDetail, detailTarget: baselineDetailTarget{kind: baselineTargetControl, id: "ctrl:minimize"}}, width: 120, height: 36, color: true, want: "406652702896aa1325eca01d843db420641046e82039fc1eadb59090a5e0cad0"},
+		{name: "control", state: baselineWorkspaceState{focus: baselineFocusControl, detailTarget: baselineDetailTarget{kind: baselineTargetControl, id: "ctrl:auth"}, openedControlID: "ctrl:auth"}, width: 132, height: 52, color: true, want: "19d04ca7ce4967769c49d53143ba9f40dda079de6995dbe2d5bd30a04e3823f9"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -585,7 +588,7 @@ func TestBaselineWorkspaceMatchesApprovedPythonFrames(t *testing.T) {
 			}
 			got := fmt.Sprintf("%x", sha256.Sum256([]byte(comparisonFrame)))
 			if got != test.want {
-				t.Fatalf("Go frame digest = %s, approved Python digest = %s\nframe:\n%s", got, test.want, frame)
+				t.Fatalf("Go frame digest = %s, golden digest = %s\nframe:\n%s", got, test.want, frame)
 			}
 		})
 	}
@@ -610,13 +613,13 @@ func TestBaselineWorkspacePluralParentStateGolden(t *testing.T) {
 		t.Fatalf("plural-parent frame has incorrect copy:\n%s", frame)
 	}
 	got := fmt.Sprintf("%x", sha256.Sum256([]byte(frame)))
-	const want = "c2025a9ef642ec411655ad6ccf155c007e2522488a1a16e0a7141f13a0921cbc"
+	const want = "5e394b139ebdbd780a842209c27090424effb3c9900e34062d2bdc49290d5fa1"
 	if got != want {
 		t.Fatalf("plural-parent frame digest = %s, want %s\nframe:\n%s", got, want, frame)
 	}
 }
 
-func TestBaselineWorkspaceLongObjectMatchesApprovedPythonFrame(t *testing.T) {
+func TestBaselineWorkspaceLongObjectFrameGolden(t *testing.T) {
 	raw := mustPythonOracleBaselineResult(t)
 	for _, value := range raw["assets"].([]any) {
 		asset := value.(map[string]any)
@@ -648,9 +651,9 @@ func TestBaselineWorkspaceLongObjectMatchesApprovedPythonFrame(t *testing.T) {
 		t.Fatalf("long-object frame lost truncation or Partial styling:\n%s", frame)
 	}
 	got := fmt.Sprintf("%x", sha256.Sum256([]byte(frame)))
-	const want = "610d478d90d063ef85b9a691c05b80167a9577691a34d152ec4d4e76c815735b"
+	const want = "c6936efaa1f02c3423bfd56d36e7a21f8263938609a7ac670d9d2855e0b1cbc2"
 	if got != want {
-		t.Fatalf("long-object Go digest = %s, approved Python digest = %s\nframe:\n%s", got, want, frame)
+		t.Fatalf("long-object Go digest = %s, golden digest = %s\nframe:\n%s", got, want, frame)
 	}
 }
 
@@ -952,7 +955,7 @@ func TestBaselineAssetListAlignsOneTwoAndThreeDigitCounts(t *testing.T) {
 	)
 	text := baselineRowsText(rows)
 	got := fmt.Sprintf("%x", sha256.Sum256([]byte(text)))
-	const want = "147d5720e6d488a7be9680abc3cad85914f43745b5d45dd4e7c5d28c5bdf5381"
+	const want = "176c1e806b86c82b6c538a1570cc7cb5a33b7b08e74545ab283177fa7e4b2dc3"
 	if got != want {
 		t.Fatalf("count-alignment rows digest = %s, want %s\nrows:\n%s", got, want, text)
 	}

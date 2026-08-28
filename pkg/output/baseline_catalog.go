@@ -13,7 +13,7 @@ import (
 
 const baselineCatalogFormatVersion = 1
 
-var baselineAssetKinds = [...]string{"endpoint", "object", "field"}
+var baselineAssetKinds = [...]string{"endpoint", "object", "field", "code"}
 
 // BaselineCatalogError reports an invalid or unsupported protections result.
 type BaselineCatalogError struct {
@@ -37,7 +37,7 @@ type BaselineEndpointRoute struct {
 	Line    int
 }
 
-// BaselineAsset is an endpoint group, object, or field in a protections result.
+// BaselineAsset is an endpoint group, object, field, or code Asset.
 type BaselineAsset struct {
 	ID          string
 	Kind        string
@@ -492,7 +492,7 @@ func (c *BaselineCatalog) ReviewableAssets(kind string) ([]BaselineDiscovery, er
 	return reviewable, nil
 }
 
-// ReviewableAssetCounts returns only the endpoint, object, and field counts shown in review.
+// ReviewableAssetCounts returns every Asset kind shown in the workspace.
 func (c *BaselineCatalog) ReviewableAssetCounts() map[string]int {
 	counts := make(map[string]int, len(baselineAssetKinds))
 	for _, kind := range baselineAssetKinds {
@@ -628,7 +628,7 @@ func (c *BaselineCatalog) ControlApplications(controlID string) []BaselineContro
 			Presence: presence,
 		})
 	}
-	kindRank := map[string]int{"endpoint": 0, "object": 1, "field": 2}
+	kindRank := map[string]int{"endpoint": 0, "object": 1, "field": 2, "code": 3}
 	sort.Slice(applications, func(i, j int) bool {
 		leftRank, leftKnown := kindRank[applications[i].Kind]
 		rightRank, rightKnown := kindRank[applications[j].Kind]

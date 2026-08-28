@@ -163,7 +163,7 @@ func parseDocument(raw map[string]any) (*Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	codebase, err := parseCodebase(codebaseObject)
+	codebase, err := parseCodebase(codebaseObject, run.Status)
 	if err != nil {
 		return nil, err
 	}
@@ -221,12 +221,12 @@ func parseDocument(raw map[string]any) (*Document, error) {
 }
 
 func parseRun(raw map[string]any) (RunMetadata, error) {
-	id, err := requiredString(raw, "id", "baseline.run")
+	id, err := requiredExactString(raw, "id", "baseline.run")
 	if err != nil {
 		return RunMetadata{}, err
 	}
 	if !safeRunID(id) {
-		return RunMetadata{}, artifactError("baseline.run.id", "must be a single safe path component")
+		return RunMetadata{}, artifactError("baseline.run.id", "%s", invalidRunIDMessage(id))
 	}
 	statusValue, err := requiredString(raw, "status", "baseline.run")
 	if err != nil {
@@ -240,16 +240,48 @@ func parseRun(raw map[string]any) (RunMetadata, error) {
 	if err != nil {
 		return RunMetadata{}, err
 	}
-	completedAt, err := optionalTimestamp(raw, "completed_at", "baseline.run")
+	completedAt, err := requiredNullableTimestamp(raw, "completed_at", "baseline.run")
 	if err != nil {
 		return RunMetadata{}, err
 	}
-	if status == StatusCompleted && completedAt == "" {
-		return RunMetadata{}, artifactError("baseline.run.completed_at", "is required for a completed run")
+	if status == StatusRunning && completedAt != "" {
+		return RunMetadata{}, artifactError("baseline.run.completed_at", "must be null for a running run")
+	}
+	if status != StatusRunning && completedAt == "" {
+		return RunMetadata{}, artifactError(
+			"baseline.run.completed_at",
+			"is required for a %s run",
+			status,
+		)
 	}
 	duration, err := requiredNonNegativeNumber(raw, "duration_seconds", "baseline.run")
 	if err != nil {
 		return RunMetadata{}, err
+	}
+	if _, err := requiredString(raw, "model", "baseline.run"); err != nil {
+		return RunMetadata{}, err
+	}
+	if _, err := requiredObject(raw, "estimate", "baseline.run"); err != nil {
+		return RunMetadata{}, err
+	}
+	if err := validateRunCost(raw); err != nil {
+		return RunMetadata{}, err
+	}
+	if err := validateRunStages(raw); err != nil {
+		return RunMetadata{}, err
+	}
+	if err := validateRunUsage(raw); err != nil {
+		return RunMetadata{}, err
+	}
+	runError, err := requiredNullableString(raw, "error", "baseline.run")
+	if err != nil {
+		return RunMetadata{}, err
+	}
+	if status == StatusCompleted && runError != "" {
+		return RunMetadata{}, artifactError("baseline.run.error", "must be null for a completed run")
+	}
+	if status == StatusFailed && runError == "" {
+		return RunMetadata{}, artifactError("baseline.run.error", "is required for a failed run")
 	}
 	return RunMetadata{
 		ID:              id,
@@ -260,7 +292,73 @@ func parseRun(raw map[string]any) (RunMetadata, error) {
 	}, nil
 }
 
-func parseCodebase(raw map[string]any) (CodebaseMetadata, error) {
+func validateRunCost(raw map[string]any) error {
+	cost, err := requiredObject(raw, "cost", "baseline.run")
+	if err != nil {
+		return err
+	}
+	if _, err := requiredNonNegativeInteger(cost, "nanodollars", "baseline.run.cost"); err != nil {
+		return err
+	}
+	if _, err := requiredString(cost, "display", "baseline.run.cost"); err != nil {
+		return err
+	}
+	_, err = requiredNonNegativeInteger(cost, "unpriced_calls", "baseline.run.cost")
+	return err
+}
+
+func validateRunStages(raw map[string]any) error {
+	stages, err := requiredRecords(raw, "stages", "baseline.run")
+	if err != nil {
+		return err
+	}
+	for index, stage := range stages {
+		context := fmt.Sprintf("baseline.run.stages[%d]", index)
+		for _, field := range []string{"name", "status", "summary"} {
+			if _, err := requiredString(stage, field, context); err != nil {
+				return err
+			}
+		}
+		if _, err := requiredNonNegativeNumber(stage, "duration_seconds", context); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var runUsageFields = []string{
+	"calls",
+	"attempts",
+	"retries",
+	"failed_attempts",
+	"rate_limited_attempts",
+	"input_tokens",
+	"cached_input_tokens",
+	"cache_write_input_tokens",
+	"output_tokens",
+	"reasoning_tokens",
+	"request_bytes",
+	"response_bytes",
+	"api_duration_milliseconds",
+	"backoff_milliseconds",
+	"priced_calls",
+	"unpriced_calls",
+}
+
+func validateRunUsage(raw map[string]any) error {
+	usage, err := requiredObject(raw, "usage", "baseline.run")
+	if err != nil {
+		return err
+	}
+	for _, field := range runUsageFields {
+		if _, err := requiredNonNegativeInteger(usage, field, "baseline.run.usage"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parseCodebase(raw map[string]any, status Status) (CodebaseMetadata, error) {
 	name, err := requiredString(raw, "name", "baseline.codebase")
 	if err != nil {
 		return CodebaseMetadata{}, err
@@ -272,27 +370,57 @@ func parseCodebase(raw map[string]any) (CodebaseMetadata, error) {
 	if !filepath.IsAbs(path) {
 		return CodebaseMetadata{}, artifactError("baseline.codebase.path", "must be absolute")
 	}
+	for _, field := range []string{"summary", "layout"} {
+		if _, err := requiredText(raw, field, "baseline.codebase"); err != nil {
+			return CodebaseMetadata{}, err
+		}
+	}
+	for _, field := range []string{"metrics"} {
+		if _, err := requiredObject(raw, field, "baseline.codebase"); err != nil {
+			return CodebaseMetadata{}, err
+		}
+	}
+	for _, field := range []string{
+		"languages", "components", "frameworks", "databases", "orms", "unknowns",
+	} {
+		if _, err := requiredArray(raw, field, "baseline.codebase"); err != nil {
+			return CodebaseMetadata{}, err
+		}
+	}
+	fingerprint, err := requiredNullableString(raw, "source_fingerprint", "baseline.codebase")
+	if err != nil {
+		return CodebaseMetadata{}, err
+	}
+	gitObject, err := requiredObject(raw, "git", "baseline.codebase")
+	if err != nil {
+		return CodebaseMetadata{}, err
+	}
 	git := GitMetadata{}
-	if value, exists := raw["git"]; exists {
-		gitObject, ok := value.(map[string]any)
-		if !ok {
-			return CodebaseMetadata{}, artifactError("baseline.codebase.git", "must be an object")
-		}
-		git.Commit, err = optionalString(gitObject, "commit", "baseline.codebase.git")
-		if err != nil {
-			return CodebaseMetadata{}, err
-		}
-		git.Branch, err = optionalString(gitObject, "branch", "baseline.codebase.git")
-		if err != nil {
-			return CodebaseMetadata{}, err
-		}
-		if dirty, exists := gitObject["dirty"]; exists {
-			var ok bool
-			git.Dirty, ok = dirty.(bool)
-			if !ok {
-				return CodebaseMetadata{}, artifactError("baseline.codebase.git.dirty", "must be a boolean")
-			}
-		}
+	git.Commit, err = requiredNullableString(gitObject, "commit", "baseline.codebase.git")
+	if err != nil {
+		return CodebaseMetadata{}, err
+	}
+	git.Branch, err = requiredNullableString(gitObject, "branch", "baseline.codebase.git")
+	if err != nil {
+		return CodebaseMetadata{}, err
+	}
+	if _, err := requiredString(gitObject, "short_commit", "baseline.codebase.git"); err != nil {
+		return CodebaseMetadata{}, err
+	}
+	dirty, exists := gitObject["dirty"]
+	if !exists {
+		return CodebaseMetadata{}, artifactError("baseline.codebase.git.dirty", "is required")
+	}
+	var ok bool
+	git.Dirty, ok = dirty.(bool)
+	if !ok {
+		return CodebaseMetadata{}, artifactError("baseline.codebase.git.dirty", "must be a boolean")
+	}
+	if status == StatusCompleted && fingerprint == "" {
+		return CodebaseMetadata{}, artifactError(
+			"baseline.codebase.source_fingerprint",
+			"is required for a completed run",
+		)
 	}
 	return CodebaseMetadata{Name: name, Path: filepath.Clean(path), Git: git}, nil
 }
@@ -363,6 +491,57 @@ func requiredString(record map[string]any, field, context string) (string, error
 	return strings.TrimSpace(text), nil
 }
 
+func requiredExactString(record map[string]any, field, context string) (string, error) {
+	value, exists := record[field]
+	if !exists {
+		return "", artifactError(context+"."+field, "is required")
+	}
+	text, ok := value.(string)
+	if !ok || text == "" {
+		return "", artifactError(context+"."+field, "must be a non-empty string")
+	}
+	return text, nil
+}
+
+func requiredText(record map[string]any, field, context string) (string, error) {
+	value, exists := record[field]
+	if !exists {
+		return "", artifactError(context+"."+field, "is required")
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", artifactError(context+"."+field, "must be a string")
+	}
+	return strings.TrimSpace(text), nil
+}
+
+func requiredNullableString(record map[string]any, field, context string) (string, error) {
+	value, exists := record[field]
+	if !exists {
+		return "", artifactError(context+"."+field, "is required")
+	}
+	if value == nil {
+		return "", nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", artifactError(context+"."+field, "must be a string or null")
+	}
+	return strings.TrimSpace(text), nil
+}
+
+func requiredArray(record map[string]any, field, context string) ([]any, error) {
+	value, exists := record[field]
+	if !exists {
+		return nil, artifactError(context+"."+field, "is required")
+	}
+	array, ok := value.([]any)
+	if !ok {
+		return nil, artifactError(context+"."+field, "must be an array")
+	}
+	return array, nil
+}
+
 func optionalString(record map[string]any, field, context string) (string, error) {
 	value, exists := record[field]
 	if !exists || value == nil {
@@ -407,6 +586,25 @@ func requiredNonNegativeNumber(record map[string]any, field, context string) (fl
 	return numeric, nil
 }
 
+func requiredNonNegativeInteger(
+	record map[string]any,
+	field, context string,
+) (uint64, error) {
+	value, exists := record[field]
+	if !exists {
+		return 0, artifactError(context+"."+field, "is required")
+	}
+	number, ok := value.(json.Number)
+	if !ok {
+		return 0, artifactError(context+"."+field, "must be a non-negative integer")
+	}
+	integer, err := strconv.ParseUint(number.String(), 10, 64)
+	if err != nil {
+		return 0, artifactError(context+"."+field, "must be a non-negative integer")
+	}
+	return integer, nil
+}
+
 func requiredTimestamp(record map[string]any, field, context string) (string, error) {
 	value, err := requiredString(record, field, context)
 	if err != nil {
@@ -425,6 +623,17 @@ func optionalTimestamp(record map[string]any, field, context string) (string, er
 	}
 	if _, err := time.Parse(time.RFC3339Nano, value); err != nil {
 		return "", artifactError(context+"."+field, "must be an RFC3339 timestamp")
+	}
+	return value, nil
+}
+
+func requiredNullableTimestamp(record map[string]any, field, context string) (string, error) {
+	value, err := requiredNullableString(record, field, context)
+	if err != nil || value == "" {
+		return value, err
+	}
+	if _, err := time.Parse(time.RFC3339Nano, value); err != nil {
+		return "", artifactError(context+"."+field, "must be an RFC3339 timestamp or null")
 	}
 	return value, nil
 }

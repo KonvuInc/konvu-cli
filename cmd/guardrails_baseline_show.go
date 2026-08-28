@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strings"
 
@@ -19,6 +18,7 @@ var guardrailsBaselineShowCmd = newGuardrailsBaselineShowCmd()
 func newGuardrailsBaselineShowCmd() *cobra.Command {
 	var runID string
 	var repository string
+	var collectionName string
 	var showLog bool
 	var explicitFormat string
 	command := &cobra.Command{
@@ -26,10 +26,20 @@ func newGuardrailsBaselineShowCmd() *cobra.Command {
 		Short: "Show one baseline run or record",
 		Long: `Show a stored run summary or an exact record from a completed baseline.
 JSON output for a run is the complete baseline.json. Use --log with an exact
-run ID to read execution details for completed, failed, or cancelled runs.`,
+run ID to read execution details for completed, failed, or cancelled runs.
+Use --collection when an ID is represented in more than one baseline section.`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			runGuardrailsBaselineCommand(cmd, func() error {
+				for _, flag := range []struct{ name, value string }{
+					{name: "run", value: runID},
+					{name: "repo", value: repository},
+					{name: "collection", value: collectionName},
+				} {
+					if err := guardrailsBaselineValidateOptionalFlag(cmd, flag.name, flag.value); err != nil {
+						return err
+					}
+				}
 				format, err := guardrailsBaselineOutputFormat(explicitFormat)
 				if err != nil {
 					return err
@@ -42,12 +52,13 @@ run ID to read execution details for completed, failed, or cancelled runs.`,
 				if err != nil {
 					return wrapGuardrailsBaselineError(err)
 				}
-				return writeGuardrailsBaselineShow(
+				return writeGuardrailsBaselineShowCollection(
 					cmd.OutOrStdout(),
 					store,
 					args[0],
 					selector,
 					showLog,
+					collectionName,
 					format,
 				)
 			})
@@ -55,6 +66,7 @@ run ID to read execution details for completed, failed, or cancelled runs.`,
 	}
 	command.Flags().StringVar(&runID, "run", "", "select an exact stored run ID for record lookup")
 	command.Flags().StringVar(&repository, "repo", "", "select the latest completed run for a codebase name or absolute path")
+	command.Flags().StringVar(&collectionName, "collection", "", "resolve the record inside one exact baseline collection")
 	command.Flags().BoolVar(&showLog, "log", false, "show run.log for an exact run ID")
 	command.Flags().StringVarP(&explicitFormat, "output", "o", "", "Output format: table, json")
 	return command
@@ -68,12 +80,33 @@ func writeGuardrailsBaselineShow(
 	showLog bool,
 	format output.OutputFormat,
 ) error {
+	return writeGuardrailsBaselineShowCollection(
+		writer,
+		store,
+		target,
+		selector,
+		showLog,
+		"",
+		format,
+	)
+}
+
+func writeGuardrailsBaselineShowCollection(
+	writer io.Writer,
+	store baselinemodel.Store,
+	target string,
+	selector baselinemodel.Selector,
+	showLog bool,
+	collectionName string,
+	format output.OutputFormat,
+) error {
 	target = strings.TrimSpace(target)
+	collectionName = strings.ToLower(strings.TrimSpace(collectionName))
 	if showLog {
-		if selector.RunID != "" || selector.Repository != "" {
+		if selector.RunID != "" || selector.Repository != "" || collectionName != "" {
 			return guardrailsBaselineError(
 				"INVALID_ARGUMENTS",
-				"--log accepts an exact run ID and cannot be combined with --run or --repo",
+				"--log accepts an exact run ID and cannot be combined with --run, --repo, or --collection",
 				clierrors.ExitUsageError,
 			)
 		}
@@ -108,32 +141,44 @@ func writeGuardrailsBaselineShow(
 		return writeGuardrailsBaselineOutput(writer, log)
 	}
 
-	exactRun, found, err := findGuardrailsBaselineRun(store, target)
-	if err != nil {
-		return err
-	}
-	if found {
-		if !exactRun.Valid {
-			if format == output.Table {
-				return writeGuardrailsBaselineRunSummary(writer, *exactRun)
+	if collectionName == "" {
+		exactRun, found, err := findGuardrailsBaselineRun(store, target)
+		if err != nil {
+			return err
+		}
+		if found {
+			if selector.RunID != "" || selector.Repository != "" {
+				return guardrailsBaselineError(
+					"INVALID_ARGUMENTS",
+					"a run ID target cannot be combined with --run or --repo",
+					clierrors.ExitUsageError,
+				)
 			}
-			_, selectErr := store.Select(baselinemodel.Selector{RunID: target})
-			return wrapGuardrailsBaselineError(selectErr)
+			if !exactRun.Valid {
+				if format == output.Table {
+					return writeGuardrailsBaselineRunSummary(writer, *exactRun)
+				}
+				_, selectErr := store.Select(baselinemodel.Selector{RunID: target})
+				return wrapGuardrailsBaselineError(selectErr)
+			}
+			if format == output.JSON {
+				return writeGuardrailsBaselineOutput(
+					writer,
+					output.FormatJSON(exactRun.Document.Raw())+"\n",
+				)
+			}
+			return writeGuardrailsBaselineRunSummary(writer, *exactRun)
 		}
-		if format == output.JSON {
-			return writeGuardrailsBaselineOutput(
-				writer,
-				output.FormatJSON(exactRun.Document.Raw())+"\n",
-			)
-		}
-		return writeGuardrailsBaselineRunSummary(writer, *exactRun)
 	}
 
 	_, catalog, err := selectGuardrailsBaselineCatalog(store, selector)
 	if err != nil {
 		return err
 	}
-	entity, ok := catalog.Lookup(target)
+	entity, ok, err := lookupGuardrailsBaselineEntity(catalog, target, collectionName)
+	if err != nil {
+		return err
+	}
 	if !ok {
 		return guardrailsBaselineError(
 			"GUARDRAILS_BASELINE_RECORD_NOT_FOUND",
@@ -145,6 +190,26 @@ func writeGuardrailsBaselineShow(
 		return writeGuardrailsBaselineOutput(writer, output.FormatJSON(entity.Value)+"\n")
 	}
 	return writeGuardrailsBaselineEntity(writer, entity)
+}
+
+func lookupGuardrailsBaselineEntity(
+	catalog *baselinemodel.Catalog,
+	target, collectionName string,
+) (baselinemodel.Entity, bool, error) {
+	if collectionName == "" {
+		entity, ok := catalog.Lookup(target)
+		return entity, ok, nil
+	}
+	collection, ok := guardrailsBaselineCollection(collectionName)
+	if !ok {
+		return baselinemodel.Entity{}, false, guardrailsBaselineError(
+			"INVALID_ARGUMENTS",
+			fmt.Sprintf("unknown baseline collection %q", collectionName),
+			clierrors.ExitUsageError,
+		)
+	}
+	entity, found := catalog.LookupIn(collection, target)
+	return entity, found, nil
 }
 
 func findGuardrailsBaselineRun(
@@ -164,21 +229,7 @@ func findGuardrailsBaselineRun(
 }
 
 func readGuardrailsBaselineLog(run baselinemodel.RunEntry) (string, error) {
-	directoryInfo, err := os.Lstat(run.Dir)
-	if err != nil {
-		return "", err
-	}
-	if directoryInfo.Mode()&os.ModeSymlink != 0 || !directoryInfo.IsDir() {
-		return "", fmt.Errorf("run directory must be a non-symlinked directory")
-	}
-	info, err := os.Lstat(run.LogPath)
-	if err != nil {
-		return "", err
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return "", fmt.Errorf("run.log must be a regular, non-symlinked file")
-	}
-	value, err := os.ReadFile(run.LogPath)
+	value, err := run.ReadLog()
 	if err != nil {
 		return "", err
 	}
@@ -215,7 +266,7 @@ func writeGuardrailsBaselineFields(
 	rows := make([]any, 0, len(fields))
 	for _, field := range fields {
 		rows = append(rows, map[string]any{
-			"field": field,
+			"field": sanitizeGuardrailsBaselineText(field),
 			"value": guardrailsBaselineDisplayValue(value[field]),
 		})
 	}

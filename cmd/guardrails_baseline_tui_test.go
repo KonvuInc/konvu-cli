@@ -32,7 +32,7 @@ func TestGuardrailsBaselineTUINonInteractiveStartsWithRuns(t *testing.T) {
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
 	runs := []baseline.RunEntry{{
-		ID:    "payments--a17c2e9--000042",
+		ID:    "payments--a17c2e99--000042",
 		Valid: true,
 		Run: baseline.RunMetadata{
 			Status:          baseline.StatusCompleted,

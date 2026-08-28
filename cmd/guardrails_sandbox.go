@@ -14,6 +14,7 @@ type guardrailsSandboxPaths struct {
 	readOnly []string
 	writable []string
 	workDir  string
+	repoRoot string
 }
 
 func sandboxedGuardrailsCommand(
@@ -25,7 +26,11 @@ func sandboxedGuardrailsCommand(
 	if err != nil {
 		return nil, func() {}, err
 	}
-	child, err := platformGuardrailsSandboxCommand(binPath, args, paths)
+	child, err := platformGuardrailsSandboxCommand(
+		binPath,
+		guardrailsSandboxArguments(args, paths.repoRoot),
+		paths,
+	)
 	if err != nil {
 		cleanup()
 		return nil, func() {}, err
@@ -76,12 +81,13 @@ func prepareGuardrailsSandbox(
 			cleanup()
 			return guardrailsSandboxPaths{}, nil, func() {}, sandboxSetupError(err)
 		}
-		root, err := canonicalPath(repo)
+		root, err := canonicalPathFrom(workDir, repo)
 		if err != nil {
 			cleanup()
 			return guardrailsSandboxPaths{}, nil, func() {}, sandboxSetupError(err)
 		}
 		paths.workDir = root
+		paths.repoRoot = root
 		paths.addCanonicalReadOnly(root)
 		paths.addGitPaths(root, env)
 		if environmentValue(env, "OPENAI_API_KEY") == "" {
@@ -111,6 +117,14 @@ func prepareGuardrailsSandbox(
 		"TMPDIR": tempDir,
 	})
 	return paths, childEnv, cleanup, nil
+}
+
+func guardrailsSandboxArguments(args []string, repoRoot string) []string {
+	result := append([]string(nil), args...)
+	if repoRoot != "" && len(result) >= 3 && result[0] == "baseline" && result[1] == "scan" {
+		result[2] = repoRoot
+	}
+	return result
 }
 
 func guardrailsHome(env []string) (string, error) {
@@ -146,7 +160,7 @@ func prepareGuardrailsStoreRoot(env []string) (string, error) {
 		current = filepath.Join(current, name)
 		info, err := os.Lstat(current)
 		if os.IsNotExist(err) {
-			if err := os.Mkdir(current, 0o700); err != nil {
+			if err := os.Mkdir(current, 0o700); err != nil && !os.IsExist(err) {
 				return "", err
 			}
 			info, err = os.Lstat(current)
@@ -228,6 +242,13 @@ func canonicalPath(path string) (string, error) {
 		return "", err
 	}
 	return filepath.EvalSymlinks(abs)
+}
+
+func canonicalPathFrom(workDir, path string) (string, error) {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(workDir, path)
+	}
+	return canonicalPath(path)
 }
 
 func appendUnique(paths []string, path string) []string {

@@ -146,14 +146,21 @@ without rerunning a scan:
 
 ```bash
 konvu guardrails baseline list
+konvu guardrails baseline list --repo <name-or-absolute-path>
 konvu guardrails baseline list assets --run <run-id>
 konvu guardrails baseline show <record-id> --run <run-id>
+konvu guardrails baseline show <record-id> --collection <collection> --run <run-id>
 konvu guardrails baseline explain <record-id> --run <run-id>
 konvu guardrails baseline tui
 ```
 
 Queries work from any directory. Select an exact historical run with `--run`,
-or use `--repo` to select the latest completed run for a stored repository.
+or use `--repo` to select the latest completed run for an unambiguous stored
+repository. The explicit history exception is `list runs --repo`: it filters
+the repository's complete run history, including failed and cancelled runs,
+instead of selecting only its latest completed run. Use `--collection` on
+`show` or `explain` when an ID is represented in more than one section, such
+as a normalized Asset and its raw Asset observation.
 The TUI starts with a runs table; selecting a completed run opens its Asset and
 Control workspace, while failed or cancelled runs open diagnostics. Run
 `show <run-id> --output json` to retrieve the complete `baseline.json`; JSON

@@ -1,161 +1,529 @@
 {
   "schema_version": 1,
   "run": {
-    "id": "payments-api--a17c2e9--000042",
+    "id": "payments--01234567--000001",
     "status": "completed",
     "started_at": "2026-08-27T10:00:00Z",
-    "completed_at": "2026-08-27T10:00:12.500Z",
-    "duration_seconds": 12.5,
+    "completed_at": "2026-08-27T10:02:03Z",
+    "duration_seconds": 123.4,
     "model": "gpt-5.6-luna",
-    "extension": {"kept": true}
+    "cost": {
+      "nanodollars": 125000000,
+      "display": "$0.1250",
+      "unpriced_calls": 0
+    },
+    "estimate": {
+      "version": 1,
+      "repo": "/work/payments",
+      "calibration": "strapi-luna-2026-08-26-v1",
+      "index": {
+        "duration_seconds": 1.2,
+        "files": 4,
+        "symbols": 4
+      },
+      "work": {
+        "candidates": 1,
+        "modules": 1,
+        "control_shards": 1,
+        "concurrent_lanes": 3,
+        "modules_per_shard": 40
+      },
+      "estimate": {
+        "cost_cents": {
+          "low": 50,
+          "high": 70
+        },
+        "duration_minutes": {
+          "low": 15,
+          "high": 21
+        }
+      },
+      "model": "gpt-5.6-luna",
+      "assumptions": [
+        "normal prompt-cache behavior",
+        "no retries or rate-limit backoff",
+        "overview-stage variance included in the range"
+      ]
+    },
+    "stages": [
+      {
+        "name": "index",
+        "status": "completed",
+        "duration_seconds": 1.2,
+        "summary": "4 files, 4 symbols"
+      },
+      {
+        "name": "structure",
+        "status": "completed",
+        "duration_seconds": 0.2,
+        "summary": "class and route records indexed"
+      },
+      {
+        "name": "overview",
+        "status": "completed",
+        "duration_seconds": 25.0,
+        "summary": "1 component(s), 1 language(s), 1 framework(s), 0 database(s), 0 ORM(s)"
+      },
+      {
+        "name": "resources",
+        "status": "completed",
+        "duration_seconds": 30.0,
+        "summary": "3 resource(s)"
+      },
+      {
+        "name": "controls",
+        "status": "completed",
+        "duration_seconds": 60.0,
+        "summary": "2 control observation(s)"
+      },
+      {
+        "name": "graph",
+        "status": "completed",
+        "duration_seconds": 6.0,
+        "summary": "4 asset(s), 1 control(s), 1 implementation(s), 1 asset-control relation(s)"
+      }
+    ],
+    "usage": {
+      "calls": 6,
+      "attempts": 7,
+      "retries": 1,
+      "failed_attempts": 0,
+      "rate_limited_attempts": 1,
+      "input_tokens": 12000,
+      "cached_input_tokens": 4000,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 3000,
+      "reasoning_tokens": 900,
+      "request_bytes": 48000,
+      "response_bytes": 16000,
+      "api_duration_milliseconds": 110000,
+      "backoff_milliseconds": 900,
+      "priced_calls": 6,
+      "unpriced_calls": 0
+    },
+    "error": null
   },
   "codebase": {
-    "name": "payments-api",
-    "path": "/workspace/payments-api",
-    "summary": "Payment service",
+    "name": "payments",
+    "path": "/work/payments",
+    "summary": "Python service for account ownership and payment operations.",
+    "layout": "single_component",
     "git": {
-      "commit": "a17c2e9987654321",
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "short_commit": "01234567",
       "branch": "main",
       "dirty": false
     },
-    "metrics": {"files": 12, "lines": 900},
-    "languages": [{"name": "Go", "files": 12}],
-    "components": [],
-    "frameworks": [],
+    "source_fingerprint": "fnv1a64:bab282b479455f3c",
+    "metrics": {
+      "source_files": 4,
+      "source_lines": 23
+    },
+    "languages": [
+      {
+        "name": "Python",
+        "files": 4,
+        "lines": 23
+      }
+    ],
+    "components": [
+      {
+        "id": "component:payments-api",
+        "name": "Payments API",
+        "kind": "service",
+        "root": ".",
+        "entrypoints": [
+          "app/routes.py"
+        ],
+        "languages": [
+          "Python"
+        ],
+        "evidence": [
+          {
+            "path": "app/routes.py",
+            "quote": "router = APIRouter()"
+          }
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "FastAPI",
+        "component_ids": [
+          "component:payments-api"
+        ],
+        "evidence": [
+          {
+            "path": "app/routes.py",
+            "quote": "from fastapi import APIRouter"
+          }
+        ]
+      }
+    ],
     "databases": [],
     "orms": [],
     "unknowns": []
   },
   "index": {
-    "version": 1,
-    "files": [{"path": "internal/users.go"}]
+    "root": "payments",
+    "walk": {
+      "files": 4,
+      "functions": 3,
+      "files_without_guard_evidence": [
+        "app/audit.py"
+      ]
+    },
+    "symbols": {
+      "Account": {
+        "module": "app/models.py",
+        "line": 3,
+        "end_line": 5,
+        "lang": "py",
+        "kind": "class",
+        "denies": false,
+        "sinks": [],
+        "definitions": 0
+      },
+      "is_account_owner": {
+        "module": "app/auth.py",
+        "line": 3,
+        "end_line": 4,
+        "lang": "py",
+        "kind": "function",
+        "denies": false,
+        "sinks": [],
+        "definitions": 1
+      },
+      "list_accounts": {
+        "module": "app/routes.py",
+        "line": 6,
+        "end_line": 10,
+        "lang": "py",
+        "kind": "function",
+        "denies": true,
+        "sinks": [],
+        "definitions": 1
+      },
+      "record_event": {
+        "module": "app/audit.py",
+        "line": 3,
+        "end_line": 4,
+        "lang": "py",
+        "kind": "function",
+        "denies": false,
+        "sinks": [],
+        "definitions": 1
+      }
+    },
+    "tested_in_deny": {
+      "account": 1,
+      "is_account_owner": 1,
+      "user": 1
+    },
+    "applied": {
+      "account": 2,
+      "event": 1,
+      "get": 1,
+      "router": 1,
+      "user": 2
+    },
+    "decorated": {
+      "get": 1
+    },
+    "middleware": {},
+    "called": {
+      "HTTPException": 1,
+      "append": 1,
+      "is_account_owner": 1,
+      "record_event": 1
+    },
+    "pairs": [],
+    "bindings": [
+      {
+        "module": "app/routes.py",
+        "name": "router",
+        "references": [
+          "APIRouter"
+        ]
+      }
+    ],
+    "surface": {
+      "routes": 1
+    },
+    "vocabulary": []
   },
   "classes": [
     {
-      "id": "class:user-service",
-      "name": "UserService",
-      "location": "internal/users.go:20"
+      "id": "class:app/models.py-3-account",
+      "name": "Account",
+      "bases": [
+        "BaseModel"
+      ],
+      "module": "app/models.py",
+      "line": 3
     }
   ],
   "routes": [
     {
-      "id": "route:get-user",
+      "id": "route:app/routes.py-5-get-/accounts-list_accounts",
       "method": "GET",
-      "path": "/users/{id}",
-      "handler": "getUser",
-      "location": "internal/users.go:42"
+      "path": "/accounts",
+      "handler": "list_accounts",
+      "module": "app/routes.py",
+      "line": 5
     }
   ],
   "resources": [
     {
-      "id": "resource:user",
-      "name": "User",
+      "id": "resource:endpoint:accounts",
+      "kind": "endpoint",
+      "name": "Accounts API",
+      "decl": "app/routes.py#list_accounts",
+      "tokens": [
+        "account",
+        "accounts"
+      ],
+      "paths": [
+        "app/routes.py"
+      ],
+      "parent": null,
+      "ambiguous": false,
+      "sub_fields": [],
+      "must_list_at": null
+    },
+    {
+      "id": "resource:object:account",
       "kind": "object",
-      "description": "A customer account"
+      "name": "Account",
+      "decl": "app/models.py#Account",
+      "tokens": [
+        "account"
+      ],
+      "paths": [],
+      "parent": null,
+      "ambiguous": false,
+      "sub_fields": [
+        "owner_id"
+      ],
+      "must_list_at": null
+    },
+    {
+      "id": "resource:field:account.owner_id",
+      "kind": "field",
+      "name": "Account.owner_id",
+      "decl": "app/models.py#Account.owner_id",
+      "tokens": [
+        "owner",
+        "owner_id"
+      ],
+      "paths": [],
+      "parent": "resource:object:account",
+      "ambiguous": false,
+      "sub_fields": [],
+      "must_list_at": null
     }
   ],
   "roles": [
     {
-      "id": "role:admin",
-      "name": "Admin",
-      "raw": "administrator",
-      "location": "internal/auth.go:8"
+      "id": "role:account-owner",
+      "name": "Account owner",
+      "raw": "Account owner (app/auth.py:3)",
+      "location": {
+        "path": "app/auth.py",
+        "line": 3
+      }
     }
   ],
   "observations": {
     "assets": [
       {
-        "id": "asset:user",
-        "name": "User",
-        "description": "User records are security-relevant",
-        "location": "internal/users.go:20"
+        "id": "asset:code:audit-log",
+        "name": "Audit log",
+        "description": "Audit events are retained for accountability.",
+        "decl": "app/audit.py#record_event",
+        "quote": "audit_events.append(event)"
       }
     ],
     "controls": [
       {
-        "id": "control-observation:authorize-user-read",
-        "asset_id": "asset:user",
+        "id": "control-observation:account-owner",
+        "asset_id": "asset:endpoint:accounts",
         "property": "authorization",
         "status": "present",
-        "description": "Checks the caller can read the requested user",
-        "location": "internal/users.go:45"
+        "decl": "app/auth.py#is_account_owner",
+        "quote": "return account.owner_id == user.id",
+        "description": "Checks that the active user owns the account.",
+        "checked": [
+          "app/routes.py#list_accounts"
+        ],
+        "asvs": "V8.2.1"
       },
       {
-        "id": "control-observation:rate-limit-user-read",
-        "asset_id": "resource:user",
-        "property": "availability",
-        "status": "absent",
-        "description": "No route-specific rate limit was found",
-        "location": "internal/users.go:42"
+        "id": "control-observation:audit-retention",
+        "asset_id": "asset:code:audit-log",
+        "property": "non_repudiation",
+        "status": "partial",
+        "decl": "app/audit.py#record_event",
+        "quote": "audit_events.append(event)",
+        "description": "Records audit events, but retention ownership is ambiguous.",
+        "checked": [
+          "app/audit.py#record_event",
+          "app/routes.py#list_accounts"
+        ],
+        "asvs": null
       }
     ]
   },
   "assets": [
     {
-      "id": "asset:user",
-      "kind": "object",
-      "name": "User",
-      "description": "A customer account",
-      "location": "internal/users.go:20",
-      "source_ids": ["resource:user"],
+      "id": "asset:code:audit-log",
+      "name": "Audit log",
+      "description": "Audit events are retained for accountability.",
+      "decl": "app/audit.py#record_event",
+      "quote": "audit_events.append(event)",
+      "kind": "code",
+      "origin": "controls",
+      "source_ids": [
+        "asset:code:audit-log"
+      ],
+      "controls": []
+    },
+    {
+      "id": "asset:endpoint:accounts",
+      "kind": "endpoint",
+      "name": "Accounts API",
+      "decl": "app/routes.py#list_accounts",
+      "tokens": [
+        "account",
+        "accounts"
+      ],
+      "paths": [
+        "app/routes.py"
+      ],
+      "parent": null,
+      "ambiguous": false,
+      "sub_fields": [],
+      "must_list_at": null,
+      "origin": "resources",
+      "source_ids": [
+        "resource:endpoint:accounts"
+      ],
+      "description": "Accounts API (endpoint) identified in the codebase.",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/accounts",
+          "handler": "list_accounts",
+          "decl": "app/routes.py#list_accounts",
+          "line": 5
+        }
+      ],
       "controls": [
         {
-          "control_id": "control:authorize-user-read",
+          "control_id": "control:account-owner",
           "status": "present",
-          "description": "Caller authorization is enforced",
-          "implementation_ids": ["implementation:authorize-user-read"],
-          "evidence": [
-            {"location": "internal/users.go:45", "quote": "authorize(userID)"}
+          "description": "The account route requires a matching owner.",
+          "implementation_ids": [
+            "implementation:account-owner"
           ],
-          "checked": ["internal/users.go"],
+          "evidence": [
+            {
+              "decl": "app/auth.py#is_account_owner",
+              "quote": "return account.owner_id == user.id"
+            }
+          ],
+          "checked": [
+            "app/routes.py#list_accounts"
+          ],
           "source_control_observation_ids": [
-            "control-observation:authorize-user-read"
+            "control-observation:account-owner"
           ]
         }
       ]
     },
     {
-      "id": "asset:user-email",
+      "id": "asset:field:account.owner_id",
       "kind": "field",
-      "name": "email",
-      "description": "Customer email address",
-      "parent": "asset:user",
-      "location": "internal/users.go:24",
-      "source_ids": ["resource:user"],
+      "name": "Account.owner_id",
+      "decl": "app/models.py#Account.owner_id",
+      "tokens": [
+        "owner",
+        "owner_id"
+      ],
+      "paths": [],
+      "parent": "asset:object:account",
+      "ambiguous": false,
+      "sub_fields": [],
+      "must_list_at": null,
+      "origin": "resources",
+      "source_ids": [
+        "resource:field:account.owner_id"
+      ],
+      "description": "Account.owner_id (field) identified in the codebase.",
+      "controls": []
+    },
+    {
+      "id": "asset:object:account",
+      "kind": "object",
+      "name": "Account",
+      "decl": "app/models.py#Account",
+      "tokens": [
+        "account"
+      ],
+      "paths": [],
+      "parent": null,
+      "ambiguous": false,
+      "sub_fields": [
+        "owner_id"
+      ],
+      "must_list_at": null,
+      "origin": "resources",
+      "source_ids": [
+        "resource:object:account"
+      ],
+      "description": "Account (object) identified in the codebase.",
       "controls": []
     }
   ],
   "controls": [
     {
-      "id": "control:authorize-user-read",
-      "name": "Authorize user reads",
-      "description": "Only permitted callers may read user records",
+      "id": "control:account-owner",
+      "name": "Account ownership",
       "property": "authorization",
+      "description": "Verify that the active user owns the requested account.",
+      "asvs": [
+        "V8.2.1"
+      ],
       "source_control_observation_ids": [
-        "control-observation:authorize-user-read"
+        "control-observation:account-owner"
       ]
     }
   ],
   "implementations": [
     {
-      "id": "implementation:authorize-user-read",
-      "name": "authorize(userID)",
-      "description": "Shared authorization helper",
-      "kind": "code",
-      "locations": ["internal/users.go:45"],
+      "id": "implementation:account-owner",
+      "name": "is_account_owner",
+      "kind": "predicate",
+      "description": "Compares the account owner identifier with the active user identifier.",
+      "anchors": [
+        {
+          "decl": "app/auth.py#is_account_owner",
+          "quote": "return account.owner_id == user.id"
+        }
+      ],
       "source_control_observation_ids": [
-        "control-observation:authorize-user-read"
+        "control-observation:account-owner"
       ]
     }
   ],
   "unresolved": [
     {
-      "control_observation_id": "control-observation:rate-limit-user-read",
-      "reason": "No reusable Control was inferred",
-      "checked": ["internal/users.go"]
+      "control_observation_id": "control-observation:audit-retention",
+      "reason": "Repository inspection could not identify the owner of audit retention.",
+      "checked": [
+        "app/audit.py#record_event",
+        "app/routes.py#list_accounts"
+      ]
     }
-  ],
-  "extension": {
-    "kept": true
-  }
+  ]
 }

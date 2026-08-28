@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -88,6 +89,59 @@ func TestPrepareGuardrailsSandboxUsesPrivateTempAndNarrowPaths(t *testing.T) {
 	cleanup()
 	if _, err := os.Stat(tempDir); !os.IsNotExist(err) {
 		t.Errorf("private temp directory still exists after cleanup: %v", err)
+	}
+}
+
+func TestGuardrailsSandboxCanonicalizesCodebaseArgument(t *testing.T) {
+	base := t.TempDir()
+	working := filepath.Join(base, "work", "current")
+	nested := filepath.Join(working, "nested", "repo")
+	parent := filepath.Join(base, "work", "parent")
+	for _, directory := range []string{working, nested, parent} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "nested", path: filepath.Join("nested", "repo"), want: nested},
+		{name: "parent", path: filepath.Join("..", "parent"), want: parent},
+	}
+
+	link := filepath.Join(working, "linked-repo")
+	if err := os.Symlink(nested, link); err == nil {
+		tests = append(tests, struct {
+			name string
+			path string
+			want string
+		}{name: "symlink", path: "linked-repo", want: nested})
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root, err := canonicalPathFrom(working, test.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := canonicalPath(test.want)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if root != want {
+				t.Fatalf("canonical root = %q, want %q", root, want)
+			}
+			got := guardrailsSandboxArguments(
+				[]string{"baseline", "scan", test.path, "--yes"},
+				root,
+			)
+			if got[2] != want {
+				t.Fatalf("sandbox args = %v, want canonical codebase %q", got, want)
+			}
+		})
 	}
 }
 
@@ -173,6 +227,35 @@ func TestPrepareGuardrailsSandboxRejectsSymlinkedBaselineStore(t *testing.T) {
 				t.Fatalf("error = %v, want symlink rejection", err)
 			}
 		})
+	}
+}
+
+func TestPrepareGuardrailsStoreRootSupportsConcurrentFirstUse(t *testing.T) {
+	home := t.TempDir()
+	const workers = 32
+	start := make(chan struct{})
+	errors := make(chan error, workers)
+	var wait sync.WaitGroup
+	for range workers {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			<-start
+			_, err := prepareGuardrailsStoreRoot([]string{"HOME=" + home})
+			errors <- err
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			t.Fatalf("concurrent store initialization failed: %v", err)
+		}
+	}
+	root := filepath.Join(home, ".konvu", "guardrails")
+	if info, err := os.Lstat(root); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("store root = %#v, error = %v", info, err)
 	}
 }
 

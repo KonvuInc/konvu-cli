@@ -13,6 +13,10 @@ var guardrailsCmd = &cobra.Command{
 
 All Guardrails operations live under 'konvu guardrails baseline'. Scans are
 stored by run and can be listed or explored from any working directory.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return cmd.Help()
+	},
 }
 
 func init() {
