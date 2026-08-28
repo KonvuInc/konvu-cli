@@ -12,3 +12,9 @@ func TestProductionGuardrailsPinUsesBaselineV1Release(t *testing.T) {
 		)
 	}
 }
+
+func TestProductionRuntimeKeepsLauncherSandbox(t *testing.T) {
+	if guardrailsRuntimeOwnsSandbox() {
+		t.Fatal("pinned production runtime has not declared sandbox ownership")
+	}
+}

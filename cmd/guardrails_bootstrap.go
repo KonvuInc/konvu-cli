@@ -412,7 +412,7 @@ func runGuardrailsExec(args []string, apiKey, model string) {
 	child := exec.Command(binPath, args...)
 	child.Env = env
 	cleanup := func() {}
-	if !guardrailsNoSandbox {
+	if shouldUseGuardrailsOuterSandbox(guardrailsNoSandbox, guardrailsRuntimeOwnsSandbox()) {
 		child, cleanup, err = sandboxedGuardrailsCommand(binPath, args, env)
 		if err != nil {
 			reportGuardrailsError(err)
@@ -430,6 +430,13 @@ func runGuardrailsExec(args []string, apiKey, model string) {
 		}
 		reportGuardrailsError(clierrors.NewAPIError(fmt.Sprintf("could not run guardrails: %v", err)))
 	}
+}
+
+// A runtime that owns its agent sandbox must not itself be launched under an OS sandbox. macOS
+// rejects a nested sandbox-exec, which leaves the runtime unable to query its seeded scratch
+// artifacts. Release runtimes keep the launcher sandbox until they explicitly declare ownership.
+func shouldUseGuardrailsOuterSandbox(noSandbox, runtimeOwnsSandbox bool) bool {
+	return !noSandbox && !runtimeOwnsSandbox
 }
 
 func reportGuardrailsError(err error) {

@@ -39,3 +39,9 @@ func TestResolveGuardrailsBinaryRejectsIncompletePair(t *testing.T) {
 		t.Fatal("incomplete local runtime was accepted")
 	}
 }
+
+func TestDevelopmentRuntimeOwnsItsSandbox(t *testing.T) {
+	if !guardrailsRuntimeOwnsSandbox() {
+		t.Fatal("development runtime must own its agent sandbox")
+	}
+}

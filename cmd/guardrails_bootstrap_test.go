@@ -127,6 +127,33 @@ func TestGuardrailsEnvironmentWithoutModelGetsNoOpenAICredentials(t *testing.T) 
 	}
 }
 
+func TestGuardrailsOuterSandboxSelection(t *testing.T) {
+	tests := []struct {
+		name               string
+		noSandbox          bool
+		runtimeOwnsSandbox bool
+		want               bool
+	}{
+		{name: "launcher owns sandbox", want: true},
+		{name: "runtime owns sandbox", runtimeOwnsSandbox: true, want: false},
+		{name: "explicitly disabled", noSandbox: true, want: false},
+		{
+			name:               "runtime owns sandbox and explicitly disabled",
+			noSandbox:          true,
+			runtimeOwnsSandbox: true,
+			want:               false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := shouldUseGuardrailsOuterSandbox(test.noSandbox, test.runtimeOwnsSandbox)
+			if got != test.want {
+				t.Fatalf("outer sandbox = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestGuardrailsReadOnlyCommandsHaveNoOpenAIFlags(t *testing.T) {
 	for _, commandName := range []string{"list", "show", "explain"} {
 		command, _, err := guardrailsCmd.Find([]string{"baseline", commandName})

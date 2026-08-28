@@ -46,6 +46,13 @@ func resolveGuardrailsBinary() (string, error) {
 	return mainPath, nil
 }
 
+// The local Rust runtime confines every model-controlled command to its own read-only repository
+// and writable scratch sandbox. Wrapping the whole runtime would prevent that nested sandbox from
+// starting on macOS.
+func guardrailsRuntimeOwnsSandbox() bool {
+	return true
+}
+
 func guardrailsDevRuntimeError(path string, err error) error {
 	return &clierrors.CLIError{
 		Code:       "INVALID_GUARDRAILS_DEV_RUNTIME",
