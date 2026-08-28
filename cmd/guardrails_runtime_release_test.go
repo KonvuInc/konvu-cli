@@ -4,12 +4,10 @@ package cmd
 
 import "testing"
 
-func TestProductionGuardrailsPinRemainsOnSignedReleasePendingCutover(t *testing.T) {
-	// The baseline v1 producer is not published yet. Keep production on the
-	// signed release until that cutover is made deliberately in its own slice.
-	if guardrailsPinnedVersion != "v0.5.3" {
+func TestProductionGuardrailsPinUsesBaselineV1Release(t *testing.T) {
+	if guardrailsPinnedVersion != "v0.6.0" {
 		t.Fatalf(
-			"production Guardrails pin = %q; update this pending-cutover assertion with the signed release",
+			"production Guardrails pin = %q, want v0.6.0",
 			guardrailsPinnedVersion,
 		)
 	}
