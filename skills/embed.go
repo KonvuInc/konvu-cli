@@ -43,10 +43,9 @@ var skillDirs = []SkillDir{
 		EmbedName:   "guardrails-onboarding",
 		InstallName: "konvu-guardrails-onboarding",
 		Pitch: []string{
-			"  Guardrails Onboarding — set up access-control checks on a repository:",
-			"  read the rules your code already enforces, approve them, and have every",
-			"  pull request checked against them. Run it in Claude Code with:",
-			"  /konvu-guardrails-onboarding, or just ask it to set up guardrails.",
+			"  Guardrails Baselines — scan a codebase and explore its Assets, Controls,",
+			"  and Implementations across historical runs. Run it in Claude Code with:",
+			"  /konvu-guardrails-onboarding, or ask it to explore a Guardrails baseline.",
 		},
 	},
 }
