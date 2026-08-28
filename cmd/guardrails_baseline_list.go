@@ -21,13 +21,24 @@ func newGuardrailsBaselineListCmd() *cobra.Command {
 	var runID string
 	var repository string
 	var explicitFormat string
+	var statuses []string
+	var limit int
+	var offset int
+	var sortBy string
+	var order string
+	var quiet bool
 	command := &cobra.Command{
-		Use:   "list [collection]",
-		Short: "List stored baseline runs or records",
-		Long: `List stored baseline runs from any working directory. Pass a collection to
-list records in one completed run: assets, asset-observations, controls,
-implementations, resources, routes, classes, roles, control-observations, or
-unresolved.`,
+		Use:   "list",
+		Short: "List baseline runs",
+		Long: `List locally stored baseline runs from any working directory.
+
+Use --repo to filter by repository name or absolute path. The legacy
+'list <collection>' form remains available; use 'baseline records list' for
+new scripts and interactive navigation.`,
+		Example: `  konvu guardrails baseline list
+  konvu guardrails baseline list --repo <repository>
+  konvu guardrails baseline list --status completed --limit 20
+  konvu guardrails baseline list --repo <repository> -q`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			runGuardrailsBaselineCommand(cmd, func() error {
@@ -47,28 +58,221 @@ unresolved.`,
 				if err != nil {
 					return err
 				}
+				if len(args) == 1 {
+					if err := guardrailsBaselineValidateLegacyListFlags(cmd); err != nil {
+						return err
+					}
+				}
 				store, err := defaultGuardrailsBaselineStore()
 				if err != nil {
 					return wrapGuardrailsBaselineError(err)
 				}
-				collection := guardrailsBaselineRunsCollection
 				if len(args) == 1 {
-					collection = strings.ToLower(strings.TrimSpace(args[0]))
+					return writeGuardrailsBaselineList(
+						cmd.OutOrStdout(),
+						store,
+						strings.ToLower(strings.TrimSpace(args[0])),
+						selector,
+						format,
+					)
 				}
-				return writeGuardrailsBaselineList(
+				return writeGuardrailsBaselineRunList(
 					cmd.OutOrStdout(),
 					store,
-					collection,
 					selector,
+					guardrailsBaselineRunListOptions{
+						Statuses: statuses,
+						Limit:    limit,
+						Offset:   offset,
+						Sort:     sortBy,
+						Order:    order,
+						Quiet:    quiet,
+					},
 					format,
 				)
 			})
 		},
 	}
-	command.Flags().StringVar(&runID, "run", "", "select an exact stored run ID")
+	command.Flags().StringVar(&runID, "run", "", "filter by exact run ID")
 	command.Flags().StringVar(&repository, "repo", "", "filter runs or select a codebase by name or absolute path")
+	command.Flags().StringSliceVar(&statuses, "status", nil, "Filter by status: running,completed,failed,cancelled,invalid")
+	command.Flags().IntVarP(&limit, "limit", "n", 50, "Maximum runs to return")
+	command.Flags().IntVar(&offset, "offset", 0, "Skip N runs")
+	command.Flags().StringVar(&sortBy, "sort", "scanned", "Sort by: scanned,repository,status,duration")
+	command.Flags().StringVar(&order, "order", "desc", "Order: asc,desc")
 	command.Flags().StringVarP(&explicitFormat, "output", "o", "", "Output format: table, json")
+	command.Flags().BoolVarP(&quiet, "quiet", "q", false, "Print only run IDs")
 	return command
+}
+
+func guardrailsBaselineValidateLegacyListFlags(command *cobra.Command) error {
+	var flags []string
+	for _, name := range []string{"status", "limit", "offset", "sort", "order", "quiet"} {
+		if command.Flags().Changed(name) {
+			flags = append(flags, "--"+name)
+		}
+	}
+	if len(flags) == 0 {
+		return nil
+	}
+	return guardrailsBaselineError(
+		"INVALID_ARGUMENTS",
+		fmt.Sprintf("%s cannot be used with 'list <collection>'; use 'records list --collection <collection>'", strings.Join(flags, ", ")),
+		clierrors.ExitUsageError,
+	)
+}
+
+type guardrailsBaselineRunListOptions struct {
+	Statuses []string
+	Limit    int
+	Offset   int
+	Sort     string
+	Order    string
+	Quiet    bool
+}
+
+func writeGuardrailsBaselineRunList(
+	writer io.Writer,
+	store baselinemodel.Store,
+	selector baselinemodel.Selector,
+	options guardrailsBaselineRunListOptions,
+	format output.OutputFormat,
+) error {
+	runs, err := store.List()
+	if err != nil {
+		return wrapGuardrailsBaselineError(err)
+	}
+	runs, err = filterGuardrailsBaselineRuns(runs, selector)
+	if err != nil {
+		return err
+	}
+	runs, err = filterAndPageGuardrailsBaselineRuns(runs, options)
+	if err != nil {
+		return err
+	}
+	if options.Quiet {
+		ids := make([]string, 0, len(runs))
+		for _, run := range runs {
+			ids = append(ids, sanitizeGuardrailsBaselineText(run.ID))
+		}
+		value := strings.Join(ids, "\n")
+		if value != "" {
+			value += "\n"
+		}
+		return writeGuardrailsBaselineOutput(writer, value)
+	}
+	return writeGuardrailsBaselineRunsValue(writer, runs, format)
+}
+
+func filterAndPageGuardrailsBaselineRuns(
+	runs []baselinemodel.RunEntry,
+	options guardrailsBaselineRunListOptions,
+) ([]baselinemodel.RunEntry, error) {
+	if options.Limit < 1 || options.Limit > 1000 {
+		return nil, guardrailsBaselineError(
+			"INVALID_ARGUMENTS",
+			"--limit must be between 1 and 1000",
+			clierrors.ExitUsageError,
+		)
+	}
+	if options.Offset < 0 {
+		return nil, guardrailsBaselineError(
+			"INVALID_ARGUMENTS",
+			"--offset must be zero or greater",
+			clierrors.ExitUsageError,
+		)
+	}
+	statusSet := make(map[string]bool)
+	for _, value := range options.Statuses {
+		for _, status := range strings.Split(value, ",") {
+			status = strings.ToLower(strings.TrimSpace(status))
+			switch status {
+			case "running", "completed", "failed", "cancelled", "invalid":
+				statusSet[status] = true
+			default:
+				return nil, guardrailsBaselineError(
+					"INVALID_ARGUMENTS",
+					fmt.Sprintf("unsupported status %q; use running, completed, failed, cancelled, or invalid", status),
+					clierrors.ExitUsageError,
+				)
+			}
+		}
+	}
+	if len(statusSet) > 0 {
+		filtered := make([]baselinemodel.RunEntry, 0, len(runs))
+		for _, run := range runs {
+			status := string(run.Run.Status)
+			if !run.Valid {
+				status = "invalid"
+			}
+			if statusSet[status] {
+				filtered = append(filtered, run)
+			}
+		}
+		runs = filtered
+	}
+	sortBy := strings.ToLower(strings.TrimSpace(options.Sort))
+	if sortBy == "" {
+		sortBy = "scanned"
+	}
+	switch sortBy {
+	case "scanned", "repository", "status", "duration":
+	default:
+		return nil, guardrailsBaselineError(
+			"INVALID_ARGUMENTS",
+			fmt.Sprintf("unsupported sort %q; use scanned, repository, status, or duration", options.Sort),
+			clierrors.ExitUsageError,
+		)
+	}
+	order := strings.ToLower(strings.TrimSpace(options.Order))
+	if order != "asc" && order != "desc" {
+		return nil, guardrailsBaselineError(
+			"INVALID_ARGUMENTS",
+			fmt.Sprintf("unsupported order %q; use asc or desc", options.Order),
+			clierrors.ExitUsageError,
+		)
+	}
+	sort.SliceStable(runs, func(i, j int) bool {
+		if sortBy == "duration" && runs[i].Run.DurationSeconds != runs[j].Run.DurationSeconds {
+			if order == "asc" {
+				return runs[i].Run.DurationSeconds < runs[j].Run.DurationSeconds
+			}
+			return runs[i].Run.DurationSeconds > runs[j].Run.DurationSeconds
+		}
+		left, right := guardrailsBaselineRunSortValue(runs[i], sortBy), guardrailsBaselineRunSortValue(runs[j], sortBy)
+		if left == right {
+			left, right = runs[i].ID, runs[j].ID
+		}
+		if order == "asc" {
+			return left < right
+		}
+		return left > right
+	})
+	if options.Offset >= len(runs) {
+		return []baselinemodel.RunEntry{}, nil
+	}
+	runs = runs[options.Offset:]
+	if len(runs) > options.Limit {
+		runs = runs[:options.Limit]
+	}
+	return runs, nil
+}
+
+func guardrailsBaselineRunSortValue(run baselinemodel.RunEntry, sortBy string) string {
+	switch sortBy {
+	case "repository":
+		return strings.ToLower(run.Codebase.Name)
+	case "status":
+		if !run.Valid {
+			return "invalid"
+		}
+		return string(run.Run.Status)
+	default:
+		if run.Run.CompletedAt != "" {
+			return run.Run.CompletedAt
+		}
+		return run.Run.StartedAt
+	}
 }
 
 func writeGuardrailsBaselineList(
@@ -136,6 +340,14 @@ func writeGuardrailsBaselineRuns(
 	if err != nil {
 		return err
 	}
+	return writeGuardrailsBaselineRunsValue(writer, runs, format)
+}
+
+func writeGuardrailsBaselineRunsValue(
+	writer io.Writer,
+	runs []baselinemodel.RunEntry,
+	format output.OutputFormat,
+) error {
 	values := make([]any, 0, len(runs))
 	for _, run := range runs {
 		if format == output.JSON {

@@ -61,12 +61,27 @@ func TestGuardrailsCommandTreeOnlyExposesBaselineExperience(t *testing.T) {
 		t.Fatalf("guardrails children = %v, want baseline only", guardrailsChildren)
 	}
 	baselineChildren := direct(guardrailsBaselineCmd)
-	if len(baselineChildren) != 5 {
-		t.Fatalf("baseline children = %v, want exactly five commands", baselineChildren)
-	}
-	for _, name := range []string{"scan", "list", "show", "explain", "tui"} {
+	for _, name := range []string{"scan", "list", "get", "counts", "diff", "records"} {
 		if !baselineChildren[name] {
 			t.Errorf("baseline command missing %q: %v", name, baselineChildren)
+		}
+	}
+	for _, command := range []*cobra.Command{
+		guardrailsBaselineShowCmd,
+		guardrailsBaselineExplainCmd,
+		guardrailsBaselineTUICmd,
+	} {
+		if !command.Hidden {
+			t.Errorf("legacy command %q should be hidden", command.Name())
+		}
+	}
+	recordChildren := direct(guardrailsBaselineRecordsCmd)
+	if len(recordChildren) != 4 {
+		t.Fatalf("record children = %v, want exactly four commands", recordChildren)
+	}
+	for _, name := range []string{"list", "search", "get", "explain"} {
+		if !recordChildren[name] {
+			t.Errorf("records command missing %q: %v", name, recordChildren)
 		}
 	}
 }

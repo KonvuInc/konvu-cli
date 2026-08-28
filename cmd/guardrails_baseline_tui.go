@@ -28,9 +28,10 @@ type guardrailsBaselineTUIDependencies struct {
 }
 
 var guardrailsBaselineTUICmd = &cobra.Command{
-	Use:   "tui",
-	Short: "Explore historical baselines interactively",
-	Args:  cobra.NoArgs,
+	Use:    "tui",
+	Short:  "Explore historical baselines interactively",
+	Hidden: true,
+	Args:   cobra.NoArgs,
 	Run: func(cmd *cobra.Command, _ []string) {
 		runGuardrailsBaselineCommand(cmd, func() error {
 			if err := guardrailsBaselineValidateOptionalFlag(
@@ -186,15 +187,21 @@ func guardrailsBaselineTUIOption(run baseline.RunEntry) output.BaselineRunOption
 	if scanned == "" {
 		scanned = run.Run.StartedAt
 	}
+	counts := run.Counts
+	if run.Valid && run.Run.Status == baseline.StatusCompleted {
+		if catalog, err := baseline.NewCatalog(run.Document); err == nil {
+			counts = catalog.Counts()
+		}
+	}
 	return output.BaselineRunOption{
 		ID:              run.ID,
 		Repository:      repository,
 		Commit:          commit,
 		Scanned:         formatGuardrailsBaselineScanned(scanned),
 		Duration:        formatGuardrailsBaselineDuration(run.Run.DurationSeconds),
-		Assets:          run.Counts.Assets,
-		Controls:        run.Counts.Controls,
-		Implementations: run.Counts.Implementations,
+		Assets:          counts.Assets,
+		Controls:        counts.Controls,
+		Implementations: counts.Implementations,
 		Status:          status,
 		Problem:         problem,
 	}

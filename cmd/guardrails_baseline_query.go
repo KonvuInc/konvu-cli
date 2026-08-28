@@ -79,15 +79,15 @@ func guardrailsBaselineError(code, message string, exitCode int) *clierrors.CLIE
 	case "GUARDRAILS_BASELINE_NOT_FOUND":
 		suggestion = "Run 'konvu guardrails baseline list' to see stored runs."
 	case "GUARDRAILS_BASELINE_RECORD_NOT_FOUND":
-		suggestion = "Run 'konvu guardrails baseline list <collection>' to see records in the selected run."
+		suggestion = "Run 'konvu guardrails baseline records search <query> --run <run-id>' to find matching records."
 	case "GUARDRAILS_BASELINE_AMBIGUOUS":
 		suggestion = "Select an exact run with --run, or an unambiguous codebase with --repo."
 	case "GUARDRAILS_BASELINE_INCOMPLETE":
-		suggestion = "Show the run summary or log for diagnostics, or select a completed run."
+		suggestion = "Get the run with '--include log', or select a completed run."
 	case "GUARDRAILS_BASELINE_OUTPUT_FAILED":
 		suggestion = "Check that the output destination is writable, then try again."
 	case "GUARDRAILS_BASELINE_INVALID":
-		suggestion = "Inspect the run log, then scan the codebase again."
+		suggestion = "Run 'konvu guardrails baseline get <run-id> --include log' for diagnostics."
 	}
 	return &clierrors.CLIError{
 		Code:       code,
@@ -198,6 +198,12 @@ func guardrailsBaselineRunValue(run baseline.RunEntry) map[string]any {
 	if !run.Valid {
 		status = "invalid"
 	}
+	counts := run.Counts
+	if run.Valid && run.Run.Status == baseline.StatusCompleted && run.Document != nil {
+		if catalog, err := baseline.NewCatalog(run.Document); err == nil {
+			counts = catalog.Counts()
+		}
+	}
 	return map[string]any{
 		"id":                   run.ID,
 		"status":               status,
@@ -211,15 +217,15 @@ func guardrailsBaselineRunValue(run baseline.RunEntry) map[string]any {
 		"started_at":           run.Run.StartedAt,
 		"completed_at":         run.Run.CompletedAt,
 		"duration_seconds":     run.Run.DurationSeconds,
-		"assets":               run.Counts.Assets,
-		"controls":             run.Counts.Controls,
-		"implementations":      run.Counts.Implementations,
-		"resources":            run.Counts.Resources,
-		"routes":               run.Counts.Routes,
-		"classes":              run.Counts.Classes,
-		"roles":                run.Counts.Roles,
-		"control_observations": run.Counts.ControlObservations,
-		"unresolved":           run.Counts.Unresolved,
+		"assets":               counts.Assets,
+		"controls":             counts.Controls,
+		"implementations":      counts.Implementations,
+		"resources":            counts.Resources,
+		"routes":               counts.Routes,
+		"classes":              counts.Classes,
+		"roles":                counts.Roles,
+		"control_observations": counts.ControlObservations,
+		"unresolved":           counts.Unresolved,
 	}
 }
 

@@ -1,6 +1,7 @@
 package baseline
 
 import (
+	"encoding/json"
 	"reflect"
 	"sort"
 	"testing"
@@ -201,6 +202,59 @@ func TestCatalogResultsAreIndependentCopies(t *testing.T) {
 	if againLinks[0].ImplementationIDs[0] == "implementation:changed" ||
 		againLinks[0].Value["status"] == "absent" {
 		t.Fatal("link accessor exposed mutable catalog state")
+	}
+}
+
+func TestCatalogExcludesAbsentControlsWithoutMutatingDocument(t *testing.T) {
+	document := canonicalDocument(t)
+	raw := document.Raw()
+	assets := raw["assets"].([]any)
+	endpoint := assets[1].(map[string]any)
+	links := endpoint["controls"].([]any)
+	links[0].(map[string]any)["status"] = "absent"
+	observations := raw["observations"].(map[string]any)["controls"].([]any)
+	observations[0].(map[string]any)["status"] = "absent"
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err = Parse(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	catalog, err := NewCatalog(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := catalog.Counts(); got.Controls != 0 || got.Implementations != 0 || got.ControlObservations != 1 {
+		t.Fatalf("visible counts = %#v", got)
+	}
+	if links := catalog.LinksForAsset("asset:endpoint:accounts"); len(links) != 0 {
+		t.Fatalf("absent links remained queryable: %#v", links)
+	}
+	for _, target := range []struct {
+		collection Collection
+		id         string
+	}{
+		{CollectionControls, "control:account-owner"},
+		{CollectionImplementations, "implementation:account-owner"},
+		{CollectionControlObservations, "control-observation:account-owner"},
+	} {
+		if _, found := catalog.LookupIn(target.collection, target.id); found {
+			t.Errorf("absent %s remained queryable in %s", target.id, target.collection)
+		}
+	}
+	visibleRaw := catalog.Raw()
+	visibleAssets := visibleRaw["assets"].([]any)
+	visibleLinks := visibleAssets[1].(map[string]any)["controls"].([]any)
+	if len(visibleLinks) != 0 {
+		t.Fatalf("query view retained absent links: %#v", visibleLinks)
+	}
+	originalAssets := document.Raw()["assets"].([]any)
+	originalLinks := originalAssets[1].(map[string]any)["controls"].([]any)
+	if len(originalLinks) != 1 || originalLinks[0].(map[string]any)["status"] != "absent" {
+		t.Fatalf("stored document projection was mutated: %#v", originalLinks)
 	}
 }
 

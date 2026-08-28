@@ -1,6 +1,7 @@
 package output
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,6 +110,45 @@ func TestBaselineWorkspaceV1UsesCanonicalIDsAndDocument(t *testing.T) {
 	}
 	if workspace.catalog.Raw()["schema_version"] == nil {
 		t.Fatal("workspace did not retain the canonical document")
+	}
+}
+
+func TestBaselineWorkspaceV1ExcludesAbsentControls(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(
+		"..", "guardrails", "baseline", "testdata", "baseline-v1.json",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	assets := raw["assets"].([]any)
+	links := assets[1].(map[string]any)["controls"].([]any)
+	links[0].(map[string]any)["status"] = "absent"
+	observations := raw["observations"].(map[string]any)["controls"].([]any)
+	observations[0].(map[string]any)["status"] = "absent"
+	data, err = json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := baseline.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := NewBaselineWorkspaceV1(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found := workspace.catalog.Control("control:account-owner"); found {
+		t.Fatal("TUI catalog retained an absent-only control")
+	}
+	if _, found := workspace.catalog.Implementation("implementation:account-owner"); found {
+		t.Fatal("TUI catalog retained an absent-only implementation")
+	}
+	if links := workspace.catalog.ProtectionsForAsset("asset:endpoint:accounts"); len(links) != 0 {
+		t.Fatalf("TUI catalog retained absent links: %#v", links)
 	}
 }
 

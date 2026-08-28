@@ -16,27 +16,28 @@ func NewBaselineWorkspaceV1(document *baseline.Document) (*BaselineWorkspace, er
 	if document == nil {
 		return nil, baselineCatalogErrorf("baseline document is nil")
 	}
-	if _, err := baseline.NewCatalog(document); err != nil {
+	queryCatalog, err := baseline.NewCatalog(document)
+	if err != nil {
 		return nil, err
 	}
 
-	raw := document.Raw()
-	assets, err := document.Section(baseline.CollectionAssets)
+	raw := queryCatalog.Raw()
+	assets, err := baselineV1Collection(queryCatalog, baseline.CollectionAssets)
 	if err != nil {
 		return nil, err
 	}
-	controls, err := document.Section(baseline.CollectionControls)
+	controls, err := baselineV1Collection(queryCatalog, baseline.CollectionControls)
 	if err != nil {
 		return nil, err
 	}
-	implementations, err := document.Section(baseline.CollectionImplementations)
+	implementations, err := baselineV1Collection(queryCatalog, baseline.CollectionImplementations)
 	if err != nil {
 		return nil, err
 	}
 
 	catalog := &BaselineCatalog{
 		Repo:          document.Codebase.Path,
-		Source:        map[string]any{"kind": "baseline", "observation_count": document.Counts.ControlObservations},
+		Source:        map[string]any{"kind": "baseline", "observation_count": queryCatalog.Counts().ControlObservations},
 		FormatVersion: baselineCatalogFormatVersion,
 		raw:           cloneBaselineMap(raw),
 		assets:        make(map[string]BaselineAsset, len(assets)),
@@ -106,6 +107,21 @@ func NewBaselineWorkspaceV1(document *baseline.Document) (*BaselineWorkspace, er
 		color:                     false,
 		includeUncontrolledAssets: true,
 	}, nil
+}
+
+func baselineV1Collection(
+	catalog *baseline.Catalog,
+	collection baseline.Collection,
+) ([]map[string]any, error) {
+	entities, err := catalog.Entities(collection)
+	if err != nil {
+		return nil, err
+	}
+	values := make([]map[string]any, 0, len(entities))
+	for _, entity := range entities {
+		values = append(values, entity.Value)
+	}
+	return values, nil
 }
 
 func parseBaselineV1Asset(record map[string]any, index int) (BaselineAsset, error) {

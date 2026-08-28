@@ -52,6 +52,7 @@ func NewCatalog(document *Document) (*Catalog, error) {
 			Message: fmt.Sprintf("run %q has status %q; only completed runs can be explored", document.Run.ID, document.Run.Status),
 		}
 	}
+	visibility := baselineControlVisibility(document)
 	catalog := &Catalog{
 		document:              document,
 		byID:                  make(map[string]Entity),
@@ -72,6 +73,10 @@ func NewCatalog(document *Document) (*Catalog, error) {
 		records := document.sections[collection]
 		entities := make([]Entity, 0, len(records))
 		for _, record := range records {
+			if !visibility.includeRecord(collection, record) {
+				continue
+			}
+			record = visibility.filterRecord(collection, record)
 			id, _ := record["id"].(string)
 			if collection == CollectionUnresolved {
 				id, _ = record["control_observation_id"].(string)
@@ -112,8 +117,12 @@ func NewCatalog(document *Document) (*Catalog, error) {
 	}
 	for assetID, records := range document.assetControls {
 		for _, record := range records {
-			controlID, _ := record["control_id"].(string)
 			status, _ := record["status"].(string)
+			if status == "absent" {
+				continue
+			}
+			record = visibility.filterLink(record)
+			controlID, _ := record["control_id"].(string)
 			implementationIDs, _ := requiredStringArray(record, "implementation_ids", "control link")
 			sourceIDs, _ := requiredStringArray(record, "source_control_observation_ids", "control link")
 			link := ControlLink{
@@ -145,6 +154,126 @@ func NewCatalog(document *Document) (*Catalog, error) {
 	return catalog, nil
 }
 
+type controlVisibility struct {
+	referencedControls        map[string]bool
+	visibleControls           map[string]bool
+	referencedImplementations map[string]bool
+	visibleImplementations    map[string]bool
+	absentObservations        map[string]bool
+}
+
+func baselineControlVisibility(document *Document) controlVisibility {
+	visibility := controlVisibility{
+		referencedControls:        make(map[string]bool),
+		visibleControls:           make(map[string]bool),
+		referencedImplementations: make(map[string]bool),
+		visibleImplementations:    make(map[string]bool),
+		absentObservations:        make(map[string]bool),
+	}
+	for _, observation := range document.controlObservations {
+		status, _ := observation["status"].(string)
+		id, _ := observation["id"].(string)
+		if status == "absent" && id != "" {
+			visibility.absentObservations[id] = true
+		}
+	}
+	for _, records := range document.assetControls {
+		for _, record := range records {
+			controlID, _ := record["control_id"].(string)
+			status, _ := record["status"].(string)
+			if controlID != "" {
+				visibility.referencedControls[controlID] = true
+				if status != "absent" {
+					visibility.visibleControls[controlID] = true
+				}
+			}
+			implementationIDs, _, _ := optionalStringArray(record, "implementation_ids", "control link")
+			for _, implementationID := range implementationIDs {
+				visibility.referencedImplementations[implementationID] = true
+				if status != "absent" {
+					visibility.visibleImplementations[implementationID] = true
+				}
+			}
+		}
+	}
+	return visibility
+}
+
+func (v controlVisibility) includeRecord(collection Collection, record map[string]any) bool {
+	id, _ := record["id"].(string)
+	switch collection {
+	case CollectionControls:
+		if v.referencedControls[id] {
+			return v.visibleControls[id]
+		}
+		return !v.onlyAbsentObservations(record)
+	case CollectionImplementations:
+		if v.referencedImplementations[id] {
+			return v.visibleImplementations[id]
+		}
+		return !v.onlyAbsentObservations(record)
+	case CollectionControlObservations:
+		status, _ := record["status"].(string)
+		return status != "absent"
+	case CollectionUnresolved:
+		observationID, _ := record["control_observation_id"].(string)
+		return !v.absentObservations[observationID]
+	default:
+		return true
+	}
+}
+
+func (v controlVisibility) onlyAbsentObservations(record map[string]any) bool {
+	values, _, _ := optionalStringArray(record, "source_control_observation_ids", "record")
+	if len(values) == 0 {
+		return false
+	}
+	for _, id := range values {
+		if !v.absentObservations[id] {
+			return false
+		}
+	}
+	return true
+}
+
+func (v controlVisibility) filterRecord(collection Collection, record map[string]any) map[string]any {
+	filtered := cloneMap(record)
+	if collection == CollectionAssets {
+		controls, _ := filtered["controls"].([]any)
+		visible := make([]any, 0, len(controls))
+		for _, value := range controls {
+			link, _ := value.(map[string]any)
+			status, _ := link["status"].(string)
+			if status != "absent" {
+				visible = append(visible, v.filterLink(link))
+			}
+		}
+		filtered["controls"] = visible
+	}
+	if collection == CollectionControls || collection == CollectionImplementations {
+		filtered["source_control_observation_ids"] = v.visibleObservationIDs(filtered["source_control_observation_ids"])
+	}
+	return filtered
+}
+
+func (v controlVisibility) filterLink(record map[string]any) map[string]any {
+	filtered := cloneMap(record)
+	filtered["source_control_observation_ids"] = v.visibleObservationIDs(filtered["source_control_observation_ids"])
+	return filtered
+}
+
+func (v controlVisibility) visibleObservationIDs(value any) []any {
+	values, _ := value.([]any)
+	visible := make([]any, 0, len(values))
+	for _, value := range values {
+		id, _ := value.(string)
+		if id != "" && !v.absentObservations[id] {
+			visible = append(visible, id)
+		}
+	}
+	return visible
+}
+
 var relationshipIDFields = []string{
 	"source_ids",
 	"source_control_observation_ids",
@@ -156,6 +285,56 @@ var relationshipIDFields = []string{
 
 // Document returns the immutable source document for run metadata and raw output.
 func (c *Catalog) Document() *Document { return c.document }
+
+// Raw returns the query-visible baseline document. Absent control observations,
+// absent Asset-to-Control links, and records referenced only by those links are
+// omitted without mutating the stored artifact.
+func (c *Catalog) Raw() map[string]any {
+	if c == nil || c.document == nil {
+		return nil
+	}
+	raw := c.document.Raw()
+	for _, collection := range topLevelCollections {
+		raw[string(collection)] = c.collectionValues(collection)
+	}
+	observations, _ := raw["observations"].(map[string]any)
+	if observations == nil {
+		observations = make(map[string]any)
+	}
+	observations["assets"] = c.collectionValues(CollectionAssetObservations)
+	observations["controls"] = c.collectionValues(CollectionControlObservations)
+	raw["observations"] = observations
+	return raw
+}
+
+// Counts returns counts for the query-visible catalog rather than the lossless
+// artifact. This keeps summaries consistent with list, search, and explain.
+func (c *Catalog) Counts() Counts {
+	if c == nil {
+		return Counts{}
+	}
+	return Counts{
+		Classes:             len(c.byCollection[CollectionClasses]),
+		Routes:              len(c.byCollection[CollectionRoutes]),
+		Resources:           len(c.byCollection[CollectionResources]),
+		Roles:               len(c.byCollection[CollectionRoles]),
+		AssetObservations:   len(c.byCollection[CollectionAssetObservations]),
+		ControlObservations: len(c.byCollection[CollectionControlObservations]),
+		Assets:              len(c.byCollection[CollectionAssets]),
+		Controls:            len(c.byCollection[CollectionControls]),
+		Implementations:     len(c.byCollection[CollectionImplementations]),
+		Unresolved:          len(c.byCollection[CollectionUnresolved]),
+	}
+}
+
+func (c *Catalog) collectionValues(collection Collection) []any {
+	entities := c.byCollection[collection]
+	values := make([]any, 0, len(entities))
+	for _, entity := range entities {
+		values = append(values, cloneMap(entity.Value))
+	}
+	return values
+}
 
 // Collections returns every collection accepted by Entities.
 func (c *Catalog) Collections() []Collection {

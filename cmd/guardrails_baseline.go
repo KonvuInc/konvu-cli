@@ -18,8 +18,26 @@ type guardrailsRunner func(args []string, apiKey, model string)
 
 var guardrailsBaselineCmd = &cobra.Command{
 	Use:   "baseline",
-	Short: "Scan and explore codebase security baselines",
-	Args:  cobra.NoArgs,
+	Short: "Codebase security baselines",
+	Long: `Codebase security baselines
+
+A baseline is a run-scoped graph of assets, controls, implementations,
+resources, routes, classes, roles, and supporting observations.`,
+	Example: `  # List recent baseline runs
+  konvu guardrails baseline list
+
+  # Filter runs by repository name or path
+  konvu guardrails baseline list --repo <repository>
+
+  # Get a run with selected details
+  konvu guardrails baseline get <run-id> --include architecture,counts,stages
+
+  # Search records within a run
+  konvu guardrails baseline records search "manual override" --run <run-id>
+
+  # Explain a record and its relationships
+  konvu guardrails baseline records explain <record-id> --run <run-id> --depth 2`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()
 	},
@@ -27,7 +45,7 @@ var guardrailsBaselineCmd = &cobra.Command{
 
 var guardrailsBaselineScanCmd = &cobra.Command{
 	Use:   "scan <codebase>",
-	Short: "Index, estimate, and run a baseline scan",
+	Short: "Scan a codebase and create a baseline",
 	Long: `Index a repository, estimate the remaining scan, and ask whether to
 continue. The Guardrails runtime owns the complete workflow and records the run
 as baseline.json and run.log under ~/.konvu/guardrails/baselines.
