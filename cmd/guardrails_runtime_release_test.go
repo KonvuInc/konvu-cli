@@ -12,3 +12,17 @@ func TestProductionGuardrailsPinUsesBaselineV1Release(t *testing.T) {
 		)
 	}
 }
+
+func TestProductionRuntimeKeepsLauncherSandbox(t *testing.T) {
+	path, ownsSandbox, cleanup, err := prepareGuardrailsRuntime("/unused/guardrails")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanup()
+	if path != "/unused/guardrails" {
+		t.Fatalf("prepared production runtime path = %q", path)
+	}
+	if ownsSandbox {
+		t.Fatal("pinned production runtime has not declared sandbox ownership")
+	}
+}
