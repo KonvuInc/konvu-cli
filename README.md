@@ -1,18 +1,24 @@
 # Konvu CLI
 
-Command-line interface for [Konvu](https://konvu.com) — manage security vulnerabilities from your terminal.
+Give agents a security model of your codebase.
 
-The Konvu CLI connects to the Konvu API to let you browse, triage, and act on SCA findings without leaving your workflow. It's designed for security engineers who need to answer questions like:
+Guardrails turns a repository into a source-linked security map: its sensitive
+endpoints, objects, and fields; the roles associated with them; and the
+controls that protect them. Build this agent-ready context without creating a
+Konvu account. Connect an account later to browse findings, track posture, or
+trigger remediation from the CLI.
 
-- What are my exploitable critical findings right now?
-- Which repositories have the most open vulnerabilities?
-- Are we making progress — how does this week compare to last week?
-- What's the evidence behind this assessment?
-- Do I agree with this recommendation?
+| I want to… | Konvu account | Credential | Start here |
+|---|---:|---|---|
+| Give agents a security model of my repository | Not required | Your OpenAI API key (usage billed by OpenAI) | [Build a security map](#build-an-agent-ready-security-map-no-konvu-account) |
+| Work with findings managed by Konvu | Required | Konvu login or API key | [Connect to Konvu](#connect-to-konvu-optional) |
 
 ## Installation
 
-### Build from source
+Choose any installation method below. Installing the CLI does not create or
+require a Konvu account.
+
+### Install with Go
 
 Requires [Go 1.25+](https://go.dev/dl/) and git access to the repository.
 
@@ -31,7 +37,9 @@ konvu version
 > **Note:** Make sure `$GOBIN` is in your `$PATH`.
 > For example, add `export PATH="$(go env GOPATH)/bin:$PATH"` to your shell profile.
 
-### Shell script (requires public repo access)
+### Shell script
+
+The installer downloads the matching GitHub release and verifies its checksum.
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/KonvuInc/konvu-cli/main/scripts/install.sh | sh
@@ -45,63 +53,136 @@ curl -sSL https://raw.githubusercontent.com/KonvuInc/konvu-cli/main/scripts/inst
 
 ### Manual download
 
-Download the binary for your platform from [GitHub Releases](https://github.com/KonvuInc/konvu-cli/releases) (requires repository access).
+Download the binary for your platform from [GitHub Releases](https://github.com/KonvuInc/konvu-cli/releases).
 
 ### Docker
 
+Run the account-free baseline with your repository mounted read-only. The two
+named volumes preserve the downloaded Guardrails runtime and completed
+baselines. The container boundary and read-only repository mount provide the
+isolation here, so the command disables the nested OS sandbox:
+
 ```bash
-docker run --rm -v konvu-config:/root/.config/konvu ghcr.io/konvuinc/konvu-cli <command>
+docker run --rm -it \
+  -e OPENAI_API_KEY \
+  -v "$PWD:/repo:ro" \
+  -v guardrails-config:/root/.config/guardrails \
+  -v guardrails-store:/root/.konvu/guardrails \
+  ghcr.io/konvuinc/konvu-cli guardrails baseline scan /repo --no-sandbox
 ```
 
-The `konvu-config` volume persists credentials between runs.
+Review the stored result without rerunning the scan:
 
 ```bash
-# Interactive login (OAuth — requires -it for TTY, skills prompt installs to host)
+docker run --rm -it \
+  -v guardrails-store:/root/.konvu/guardrails \
+  ghcr.io/konvuinc/konvu-cli guardrails baseline tui
+```
+
+For account-backed commands, persist Konvu credentials in a separate volume:
+
+```bash
 docker run --rm -it \
   -v konvu-config:/root/.config/konvu \
-  -v ~/.claude/skills:/root/.claude/skills \
   ghcr.io/konvuinc/konvu-cli login
-
-# Non-interactive login with API key
-docker run --rm -v konvu-config:/root/.config/konvu ghcr.io/konvuinc/konvu-cli login --api-key api_...
-
-# Subsequent commands reuse the credentials
-docker run --rm -v konvu-config:/root/.config/konvu ghcr.io/konvuinc/konvu-cli finding list
-
-# Install skills to your host so Claude Code can find them
-docker run --rm -v ~/.claude/skills:/root/.claude/skills ghcr.io/konvuinc/konvu-cli skills install
-```
-
-Or pass an API key via environment variable to skip login entirely:
-
-```bash
-docker run --rm -e KONVU_ACCESS_TOKEN=api_... ghcr.io/konvuinc/konvu-cli finding list
 ```
 
 ### Homebrew (macOS / Linux) — Coming soon
 
-## Quick start
+## Build an agent-ready security map (no Konvu account)
+
+Before asking an agent to review or modify security-sensitive code, give it a
+reliable representation of what the application protects. A Guardrails
+baseline captures:
+
+- sensitive endpoints, objects, and fields;
+- the roles and actors associated with them;
+- the controls intended to protect each asset;
+- detected implementations and supporting source evidence; and
+- protections that are present, partial, or absent.
+
+The result is structured security context that agents can use to review
+changes, investigate authorization boundaries, and preserve important
+protections without reconstructing the application's security model from
+scratch. Creating it does not require `konvu login` or a
+`KONVU_ACCESS_TOKEN`.
+
+**Coming soon:** the same baseline will feed agent hooks and CI checks, applying
+this security context automatically as agents edit code and changes move
+through the delivery pipeline.
+
+You need an OpenAI API key and a supported machine: macOS or Linux on arm64 or
+amd64 (glibc Linux). Linux also requires `bubblewrap` for the default filesystem
+sandbox. Windows is not currently supported.
 
 ```bash
-# Authenticate (opens browser for OAuth)
-konvu login
-
-# See your assessment summary
-konvu finding counts
-
-# List exploitable findings
-konvu finding list --assessment exploitable
-
-# Deep dive into a specific finding
-konvu finding get <finding-id> --include evidence
+export OPENAI_API_KEY=sk-...
+konvu guardrails baseline scan path/to/repo
 ```
 
-## Authentication
+The command deliberately separates inspection from model-backed work:
 
-Konvu CLI supports two authentication methods:
+1. It downloads and verifies the pinned Guardrails runtime on first use.
+2. It builds a deterministic index, then prints the estimated OpenAI cost and
+   duration for the remaining stages.
+3. It asks whether to continue, with **No** as the default. No model-backed
+   stage runs if you decline.
+4. If you continue, it uses `gpt-5.6-luna` inside an OS filesystem sandbox that
+   keeps the repository read-only.
+5. It records the attempt under
+   `~/.konvu/guardrails/baselines/<run-id>/` as `baseline.json` and `run.log`.
 
-1. **Browser login (OAuth)** — interactive, opens your browser
-2. **API key** — non-interactive, ideal for CI/CD and scripts
+Once the scan completes, list historical runs or open the terminal explorer:
+
+```bash
+konvu guardrails baseline list
+konvu guardrails baseline tui
+```
+
+Use a run ID to query the assets, roles, controls, implementations, and source
+evidence without rerunning the scan:
+
+```bash
+konvu guardrails baseline records list --run <run-id> --collection assets
+konvu guardrails baseline records list --run <run-id> --collection roles
+konvu guardrails baseline records list --run <run-id> --collection controls
+konvu guardrails baseline records get <record-id> --run <run-id>
+konvu guardrails baseline records explain <record-id> --run <run-id>
+```
+
+### Use the baseline as agent context
+
+Export the complete structured result and give it to an agent alongside a code
+review or implementation task:
+
+```bash
+konvu guardrails baseline get <run-id> --output json \
+  > ~/guardrails-context.json
+```
+
+The exported context may contain sensitive details about the repository. Store
+and share it with the same care as the source code.
+
+### Cost, privacy, and side effects
+
+| Question | Answer |
+|---|---|
+| Do I need a Konvu account? | No. The Guardrails baseline commands do not authenticate with Konvu. |
+| Can the scan cost money? | Yes. The model-backed stages use your OpenAI API account. Review the estimate and decline if you do not want to incur that cost. |
+| Does repository data leave my machine? | The accepted model-backed stages send relevant repository content to your OpenAI API. Only scan code you are authorized to share under your organization's OpenAI data policy. |
+| Is my OpenAI key stored? | Not by Konvu CLI. It is passed to the Guardrails child process for the run. Prefer `OPENAI_API_KEY` so the key does not enter shell history. |
+| What is installed? | On first use, the CLI caches the pinned, verified Guardrails binaries under `~/.config/guardrails/bin/`. |
+| What is written to my repository? | Nothing by default. The sandbox keeps the repository read-only and writes each attempt under `~/.konvu/guardrails/baselines/<run-id>/`. |
+
+To print a static run summary, use `konvu guardrails baseline get <run-id>`.
+Add `--output json` for the complete structured baseline; neither form reruns
+the scan.
+
+## Connect to Konvu (optional)
+
+The finding, vulnerability, metrics, coverage, inventory, and remediation
+commands connect to the Konvu API and require a Konvu account. Authenticate with
+either a browser login or a Konvu API key:
 
 ```bash
 konvu login                      # interactive picker (OAuth or API key)
@@ -111,65 +192,26 @@ konvu whoami                     # check current user and company
 konvu logout                     # clear stored credentials
 ```
 
-Create an API key at: https://app.konvu.com/configuration/api_keys
+Create a Konvu API key in the [Konvu dashboard](https://app.konvu.com/configuration/api_keys).
 
-## Commands
-
-### Guardrails baseline scan
-
-Create a normalized security baseline using public OpenAI. The deterministic
-index runs first, then the CLI prints the estimated cost and duration and asks
-before starting the model-backed stages:
+Then try the account-backed workflow:
 
 ```bash
-export OPENAI_API_KEY=sk-...
-konvu guardrails baseline scan path/to/repo
+# See your assessment summary
+konvu finding counts
+
+# List exploitable findings
+konvu finding list --assessment exploitable
+
+# Inspect the evidence for a finding
+konvu finding get <finding-id> --include evidence
 ```
 
-The scan always uses `gpt-5.6-luna`. Use `--yes` for non-interactive runs. The
-API key is passed only to the Guardrails process and is not stored by Konvu
-CLI. Prefer the environment variable so the key is not recorded in shell
-history. The downloaded Guardrails runtime is pinned to exact hashes embedded
-in this public CLI; cached executables are verified before every run. The child
-process receives only the credentials and runtime environment it needs, not
-unrelated ambient cloud or developer credentials. It also runs in an OS
-filesystem sandbox: the repository is read-only, with writes limited to
-the global baseline store and a private temporary directory. Linux requires
-`bubblewrap`; `--no-sandbox` explicitly disables isolation. Every attempt gets
-an immutable directory under `~/.konvu/guardrails/baselines/<run-id>/` with
-exactly `baseline.json` and `run.log`.
-
-### Explore Guardrails baselines
-
-List historical runs and query their Assets, Controls, and Implementations
-without rerunning a scan:
-
-```bash
-konvu guardrails baseline list
-konvu guardrails baseline list --repo <name-or-absolute-path>
-konvu guardrails baseline list assets --run <run-id>
-konvu guardrails baseline show <record-id> --run <run-id>
-konvu guardrails baseline show <record-id> --collection <collection> --run <run-id>
-konvu guardrails baseline explain <record-id> --run <run-id>
-konvu guardrails baseline tui
-```
-
-Queries work from any directory. Select an exact historical run with `--run`,
-or use `--repo` to select the latest completed run for an unambiguous stored
-repository. The explicit history exception is `list runs --repo`: it filters
-the repository's complete run history, including failed and cancelled runs,
-instead of selecting only its latest completed run. Use `--collection` on
-`show` or `explain` when an ID is represented in more than one section, such
-as a normalized Asset and its raw Asset observation.
-The TUI starts with a runs table; selecting a completed run opens its Asset and
-Control workspace, while failed or cancelled runs open diagnostics. Run
-`show <run-id> --output json` to retrieve the complete `baseline.json`; JSON
-from `list`, record-level `show`, and `explain` is scoped to that query.
+## Command reference
 
 ### Finding sources
 
 Findings come from four scanner categories, each with its own subcommand:
-
 - `konvu finding sca <op>` — dependency (SCA) findings — the historical default
 - `konvu finding sast <op>` — application-code (SAST) findings from Semgrep, Arnica, etc.
 - `konvu finding container <op>` — container image findings from AWS Inspector and other scanners
@@ -182,18 +224,14 @@ Common ops are `list`, `get`, and `counts`. `sca`, `sast`, and `secrets` also su
 **SAST identity note**: `konvu finding sast list` emits the *investigation ID* as the row's `id` field. Both `get` and `rate` expect that investigation ID (not the raw scanner detection ID). The raw detection ID is available as `detection_id` in the list rows. Detections without a Konvu investigation are included in the output with an empty `id` and `triage_status: "pending"`; `konvu finding sast list -q` skips them so `xargs`-style pipes stay safe. To restrict output to triaged rows only, filter with `jq '.[] | select(.id != "")'`.
 
 **Secrets bulk rating**: `konvu finding secrets rate <id> <assessment>` handles single findings. For batches, pipe IDs into `--stdin`:
-
 ```bash
 konvu finding secrets list --assessment unknown -q \
   | konvu finding secrets rate --stdin applicable
 ```
-
 The bulk endpoint applies to whole `(provider, secret_hash)` groups, so a rating on one location propagates to every finding of the same secret.
 
 ### `konvu finding list` — Browse findings
-
 List and filter findings across your repositories.
-
 ```bash
 # This week's exploitable findings
 konvu finding list --since 7d --assessment exploitable
@@ -226,7 +264,6 @@ konvu finding list --assessment exploitable -q | xargs -I {} konvu finding get {
 ### `konvu finding get` — Inspect a finding
 
 Get full details on a finding, structured into three sections: **Assessment** (Konvu's analysis), **Finding** (this specific instance), and **Vulnerability** (CVE details).
-
 ```bash
 # Basic detail
 konvu finding get <id>
@@ -247,7 +284,6 @@ konvu finding get <id> --include evidence --include logs --output json
 ### `konvu finding rate` — Rate an assessment
 
 Provide feedback on Konvu's assessment to improve future recommendations.
-
 ```bash
 # Agree with the assessment
 konvu finding rate <id> agree
@@ -260,13 +296,11 @@ konvu finding rate <id> agree --recommendation-id <rec-id>
 ```
 
 ### `konvu finding submit` — Ingest findings from another scanner
-
 Push SCA findings you already have (e.g. a Snyk or Dependabot export) into Konvu
 for triage. Reads a JSON array of findings from `--file` (or stdin with `-`) and
 submits them against `--repo`. Re-submitting a finding updates it rather than
 duplicating; on a Konvu-connected, scanned repo the findings flow into AI triage
 automatically.
-
 ```bash
 # Submit an export against a repo's default branch
 konvu finding submit --repo github:acme/web --file snyk-findings.json
@@ -277,7 +311,6 @@ konvu finding submit --repo github:acme/web --ref release-2.3 --file findings.js
 # Pipe findings in and preview without submitting
 cat findings.json | konvu finding submit --repo github:acme/web --file - --dry-run
 ```
-
 Each finding object accepts `vulnerability_id`, `manifest_location`, and
 `dependency_name` (required), plus optional `dependency_version`,
 `dependency_ecosystem`, `source`, `state`, and `transitivity`. `source` is kept
@@ -291,7 +324,6 @@ where every item is rejected exits `1`.
 ### `konvu finding counts` — Assessment metrics
 
 Get accurate counts across your entire dataset, with optional breakdowns.
-
 ```bash
 # Overall assessment summary
 konvu finding counts
@@ -308,28 +340,20 @@ konvu finding counts --group-by month --since 180d
 # Scoped to a repo
 konvu finding counts --repo github:org/repo --group-by severity
 ```
-
 ### `konvu vuln` — Look up a vulnerability
-
 Shows vulnerability details and Konvu's assessment across your repositories, with color-coded exploitability status.
-
 ```bash
 konvu vuln CVE-2021-44228
 konvu vuln GHSA-xxxx-yyyy --include remediation --output json
 ```
-
 ### `konvu metrics` — Security posture
-
 Dashboard-style overview with summary, trends, top CVEs, and new vs closed counts.
-
 ```bash
 konvu metrics
 konvu metrics --include top_cves,new_vs_closed
 konvu metrics --since 90d --interval month --output json
 ```
-
 ### `konvu dismiss` — Bulk dismiss
-
 ```bash
 # Preview what would be dismissed
 konvu dismiss --assessment false-positive --severity low --dry-run
@@ -337,9 +361,7 @@ konvu dismiss --assessment false-positive --severity low --dry-run
 # Dismiss with reason
 konvu dismiss --assessment false-positive --severity low --reason "Accepted risk"
 ```
-
 ### `konvu remediate` — Trigger an auto-fix PR
-
 Asks Konvu to open a remediation pull request for a finding. The job runs
 asynchronously inside the on-prem controller (patcheus engine); poll status
 with `--wait` or `konvu remediate status`.
