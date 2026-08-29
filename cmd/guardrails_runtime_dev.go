@@ -50,35 +50,102 @@ func resolveGuardrailsBinary() (string, error) {
 	return mainPath, nil
 }
 
-// A development runtime owns sandboxing only when its package explicitly declares the capability
-// for the exact resolved executable. This keeps replaced or stale local builds under the
-// launcher's sandbox while allowing self-sandboxing builds to avoid macOS's unsupported nested
-// sandbox-exec configuration.
-func guardrailsRuntimeOwnsSandbox(binaryPath string) bool {
+// prepareGuardrailsRuntime snapshots a self-sandboxing development runtime before declaring
+// sandbox ownership. The marker binds both binaries to their content, and the private snapshot
+// keeps a concurrent local rebuild from changing the executable after validation.
+func prepareGuardrailsRuntime(binaryPath string) (string, bool, func(), error) {
+	noop := func() {}
 	resolved, err := filepath.EvalSymlinks(binaryPath)
 	if err != nil {
-		return false
+		return binaryPath, false, noop, nil
 	}
-	expected, err := guardrailsSandboxCapabilityMarker(resolved)
+	markerPath := filepath.Join(filepath.Dir(resolved), guardrailsAgentSandboxCapability)
+	marker, err := os.ReadFile(markerPath)
+	if err != nil || !strings.HasPrefix(
+		strings.TrimSpace(string(marker)),
+		guardrailsAgentSandboxCapability+"\n",
+	) {
+		return binaryPath, false, noop, nil
+	}
+
+	snapshotDir, err := os.MkdirTemp("", "konvu-guardrails-runtime-")
 	if err != nil {
-		return false
+		return "", false, noop, guardrailsDevRuntimeError(binaryPath, err)
 	}
-	data, err := os.ReadFile(filepath.Join(filepath.Dir(resolved), guardrailsAgentSandboxCapability))
-	return err == nil && strings.TrimSpace(string(data)) == expected
+	cleanup := func() { _ = os.RemoveAll(snapshotDir) }
+	snapshotMain := filepath.Join(snapshotDir, "guardrails")
+	sourceScanner := filepath.Join(filepath.Dir(resolved), "guardrails-resource-scan")
+	snapshotScanner := filepath.Join(snapshotDir, "guardrails-resource-scan")
+	for _, pair := range [][2]string{
+		{resolved, snapshotMain},
+		{sourceScanner, snapshotScanner},
+	} {
+		if err := copyGuardrailsExecutable(pair[0], pair[1]); err != nil {
+			cleanup()
+			return "", false, noop, guardrailsDevRuntimeError(pair[0], err)
+		}
+	}
+
+	expected, err := guardrailsSandboxCapabilityMarker(snapshotMain)
+	if err != nil {
+		cleanup()
+		return "", false, noop, guardrailsDevRuntimeError(binaryPath, err)
+	}
+	if strings.TrimSpace(string(marker)) != expected {
+		cleanup()
+		return binaryPath, false, noop, nil
+	}
+	return snapshotMain, true, cleanup, nil
 }
 
 func guardrailsSandboxCapabilityMarker(binaryPath string) (string, error) {
-	binary, err := os.Open(binaryPath)
+	mainDigest, err := guardrailsExecutableDigest(binaryPath)
+	if err != nil {
+		return "", err
+	}
+	scannerDigest, err := guardrailsExecutableDigest(
+		filepath.Join(filepath.Dir(binaryPath), "guardrails-resource-scan"),
+	)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(
+		"%s\nguardrails-sha256:%s\nguardrails-resource-scan-sha256:%s",
+		guardrailsAgentSandboxCapability,
+		mainDigest,
+		scannerDigest,
+	), nil
+}
+
+func guardrailsExecutableDigest(path string) (string, error) {
+	binary, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
 	defer binary.Close()
-
 	digest := sha256.New()
 	if _, err := io.Copy(digest, binary); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s\nsha256:%x", guardrailsAgentSandboxCapability, digest.Sum(nil)), nil
+	return fmt.Sprintf("%x", digest.Sum(nil)), nil
+}
+
+func copyGuardrailsExecutable(sourcePath, destinationPath string) error {
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	destination, err := os.OpenFile(destinationPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o500)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(destination, source); err != nil {
+		_ = destination.Close()
+		return err
+	}
+	return destination.Close()
 }
 
 func guardrailsDevRuntimeError(path string, err error) error {

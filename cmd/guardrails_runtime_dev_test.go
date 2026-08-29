@@ -54,10 +54,22 @@ func TestDevelopmentRuntimeOwnsItsSandbox(t *testing.T) {
 	if err := os.WriteFile(buildBinary, []byte("runtime"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(
+		filepath.Join(buildDir, "guardrails-resource-scan"),
+		[]byte("scanner"),
+		0o700,
+	); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Symlink(buildBinary, binaryPath); err != nil {
 		t.Fatal(err)
 	}
-	if guardrailsRuntimeOwnsSandbox(binaryPath) {
+	prepared, ownsSandbox, cleanup, err := prepareGuardrailsRuntime(binaryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanup()
+	if prepared != binaryPath || ownsSandbox {
 		t.Fatal("runtime without a capability marker claimed sandbox ownership")
 	}
 	if err := os.WriteFile(
@@ -67,7 +79,12 @@ func TestDevelopmentRuntimeOwnsItsSandbox(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if guardrailsRuntimeOwnsSandbox(binaryPath) {
+	prepared, ownsSandbox, cleanup, err = prepareGuardrailsRuntime(binaryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanup()
+	if prepared != binaryPath || ownsSandbox {
 		t.Fatal("marker beside a runtime symlink claimed sandbox ownership")
 	}
 	marker, err := guardrailsSandboxCapabilityMarker(buildBinary)
@@ -81,13 +98,42 @@ func TestDevelopmentRuntimeOwnsItsSandbox(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if !guardrailsRuntimeOwnsSandbox(binaryPath) {
+	prepared, ownsSandbox, cleanup, err = prepareGuardrailsRuntime(binaryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ownsSandbox || prepared == binaryPath {
 		t.Fatal("runtime with a capability marker did not claim sandbox ownership")
+	}
+	preparedDir := filepath.Dir(prepared)
+	preparedData, err := os.ReadFile(prepared)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if err := os.WriteFile(buildBinary, []byte("replaced runtime"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if guardrailsRuntimeOwnsSandbox(binaryPath) {
+	if string(preparedData) != "runtime" {
+		t.Fatalf("prepared runtime = %q", preparedData)
+	}
+	preparedData, err = os.ReadFile(prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(preparedData) != "runtime" {
+		t.Fatal("prepared runtime changed after the source executable was replaced")
+	}
+	cleanup()
+	if _, err := os.Stat(preparedDir); !os.IsNotExist(err) {
+		t.Fatalf("prepared runtime directory survived cleanup: %v", err)
+	}
+
+	prepared, ownsSandbox, cleanup, err = prepareGuardrailsRuntime(binaryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanup()
+	if prepared != binaryPath || ownsSandbox {
 		t.Fatal("replacement runtime claimed sandbox ownership using a stale marker")
 	}
 }
