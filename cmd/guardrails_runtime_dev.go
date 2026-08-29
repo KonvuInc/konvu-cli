@@ -68,22 +68,9 @@ func prepareGuardrailsRuntime(binaryPath string) (string, bool, func(), error) {
 		return binaryPath, false, noop, nil
 	}
 
-	snapshotDir, err := os.MkdirTemp("", "konvu-guardrails-runtime-")
+	snapshotMain, cleanup, err := snapshotGuardrailsRuntime(resolved)
 	if err != nil {
 		return "", false, noop, guardrailsDevRuntimeError(binaryPath, err)
-	}
-	cleanup := func() { _ = os.RemoveAll(snapshotDir) }
-	snapshotMain := filepath.Join(snapshotDir, "guardrails")
-	sourceScanner := filepath.Join(filepath.Dir(resolved), "guardrails-resource-scan")
-	snapshotScanner := filepath.Join(snapshotDir, "guardrails-resource-scan")
-	for _, pair := range [][2]string{
-		{resolved, snapshotMain},
-		{sourceScanner, snapshotScanner},
-	} {
-		if err := copyGuardrailsExecutable(pair[0], pair[1]); err != nil {
-			cleanup()
-			return "", false, noop, guardrailsDevRuntimeError(pair[0], err)
-		}
 	}
 
 	expected, err := guardrailsSandboxCapabilityMarker(snapshotMain)
@@ -128,24 +115,6 @@ func guardrailsExecutableDigest(path string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%x", digest.Sum(nil)), nil
-}
-
-func copyGuardrailsExecutable(sourcePath, destinationPath string) error {
-	source, err := os.Open(sourcePath)
-	if err != nil {
-		return err
-	}
-	defer source.Close()
-
-	destination, err := os.OpenFile(destinationPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o500)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(destination, source); err != nil {
-		_ = destination.Close()
-		return err
-	}
-	return destination.Close()
 }
 
 func guardrailsDevRuntimeError(path string, err error) error {
