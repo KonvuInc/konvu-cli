@@ -8,6 +8,6 @@ func resolveGuardrailsBinary() (string, error) {
 
 // The currently pinned release predates the runtime-owned sandbox contract, so retain the
 // launcher's whole-process sandbox for production builds.
-func guardrailsRuntimeOwnsSandbox() bool {
+func guardrailsRuntimeOwnsSandbox(_ string) bool {
 	return false
 }

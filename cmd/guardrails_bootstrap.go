@@ -412,7 +412,7 @@ func runGuardrailsExec(args []string, apiKey, model string) {
 	child := exec.Command(binPath, args...)
 	child.Env = env
 	cleanup := func() {}
-	if shouldUseGuardrailsOuterSandbox(guardrailsNoSandbox, guardrailsRuntimeOwnsSandbox()) {
+	if shouldUseGuardrailsOuterSandbox(guardrailsNoSandbox, guardrailsRuntimeOwnsSandbox(binPath)) {
 		child, cleanup, err = sandboxedGuardrailsCommand(binPath, args, env)
 		if err != nil {
 			reportGuardrailsError(err)

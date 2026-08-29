@@ -11,6 +11,8 @@ import (
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 )
 
+const guardrailsAgentSandboxCapability = "guardrails-agent-sandbox-v1"
+
 // resolveGuardrailsBinary uses a local, explicitly selected sibling binary
 // pair only in guardrails_dev builds. Production builds retain the signed,
 // checksum-pinned release resolver.
@@ -46,11 +48,16 @@ func resolveGuardrailsBinary() (string, error) {
 	return mainPath, nil
 }
 
-// The local Rust runtime confines every model-controlled command to its own read-only repository
-// and writable scratch sandbox. Wrapping the whole runtime would prevent that nested sandbox from
-// starting on macOS.
-func guardrailsRuntimeOwnsSandbox() bool {
-	return true
+// A development runtime owns sandboxing only when its package explicitly declares the capability.
+// This keeps stale local builds under the launcher's sandbox while allowing self-sandboxing builds
+// to avoid macOS's unsupported nested sandbox-exec configuration.
+func guardrailsRuntimeOwnsSandbox(binaryPath string) bool {
+	resolved, err := filepath.EvalSymlinks(binaryPath)
+	if err != nil {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(resolved), guardrailsAgentSandboxCapability))
+	return err == nil && strings.TrimSpace(string(data)) == guardrailsAgentSandboxCapability
 }
 
 func guardrailsDevRuntimeError(path string, err error) error {

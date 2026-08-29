@@ -41,7 +41,43 @@ func TestResolveGuardrailsBinaryRejectsIncompletePair(t *testing.T) {
 }
 
 func TestDevelopmentRuntimeOwnsItsSandbox(t *testing.T) {
-	if !guardrailsRuntimeOwnsSandbox() {
-		t.Fatal("development runtime must own its agent sandbox")
+	root := t.TempDir()
+	buildDir := filepath.Join(root, "build")
+	currentDir := filepath.Join(root, "current")
+	for _, dir := range []string{buildDir, currentDir} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	buildBinary := filepath.Join(buildDir, "guardrails")
+	binaryPath := filepath.Join(currentDir, "guardrails")
+	if err := os.WriteFile(buildBinary, []byte("runtime"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(buildBinary, binaryPath); err != nil {
+		t.Fatal(err)
+	}
+	if guardrailsRuntimeOwnsSandbox(binaryPath) {
+		t.Fatal("runtime without a capability marker claimed sandbox ownership")
+	}
+	if err := os.WriteFile(
+		filepath.Join(currentDir, guardrailsAgentSandboxCapability),
+		[]byte(guardrailsAgentSandboxCapability+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if guardrailsRuntimeOwnsSandbox(binaryPath) {
+		t.Fatal("marker beside a runtime symlink claimed sandbox ownership")
+	}
+	if err := os.WriteFile(
+		filepath.Join(buildDir, guardrailsAgentSandboxCapability),
+		[]byte(guardrailsAgentSandboxCapability+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !guardrailsRuntimeOwnsSandbox(binaryPath) {
+		t.Fatal("runtime with a capability marker did not claim sandbox ownership")
 	}
 }
