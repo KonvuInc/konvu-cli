@@ -70,14 +70,24 @@ func TestDevelopmentRuntimeOwnsItsSandbox(t *testing.T) {
 	if guardrailsRuntimeOwnsSandbox(binaryPath) {
 		t.Fatal("marker beside a runtime symlink claimed sandbox ownership")
 	}
+	marker, err := guardrailsSandboxCapabilityMarker(buildBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(
 		filepath.Join(buildDir, guardrailsAgentSandboxCapability),
-		[]byte(guardrailsAgentSandboxCapability+"\n"),
+		[]byte(marker+"\n"),
 		0o600,
 	); err != nil {
 		t.Fatal(err)
 	}
 	if !guardrailsRuntimeOwnsSandbox(binaryPath) {
 		t.Fatal("runtime with a capability marker did not claim sandbox ownership")
+	}
+	if err := os.WriteFile(buildBinary, []byte("replaced runtime"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if guardrailsRuntimeOwnsSandbox(binaryPath) {
+		t.Fatal("replacement runtime claimed sandbox ownership using a stale marker")
 	}
 }

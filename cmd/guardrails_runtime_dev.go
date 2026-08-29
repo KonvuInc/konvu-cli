@@ -3,7 +3,9 @@
 package cmd
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,16 +50,35 @@ func resolveGuardrailsBinary() (string, error) {
 	return mainPath, nil
 }
 
-// A development runtime owns sandboxing only when its package explicitly declares the capability.
-// This keeps stale local builds under the launcher's sandbox while allowing self-sandboxing builds
-// to avoid macOS's unsupported nested sandbox-exec configuration.
+// A development runtime owns sandboxing only when its package explicitly declares the capability
+// for the exact resolved executable. This keeps replaced or stale local builds under the
+// launcher's sandbox while allowing self-sandboxing builds to avoid macOS's unsupported nested
+// sandbox-exec configuration.
 func guardrailsRuntimeOwnsSandbox(binaryPath string) bool {
 	resolved, err := filepath.EvalSymlinks(binaryPath)
 	if err != nil {
 		return false
 	}
+	expected, err := guardrailsSandboxCapabilityMarker(resolved)
+	if err != nil {
+		return false
+	}
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(resolved), guardrailsAgentSandboxCapability))
-	return err == nil && strings.TrimSpace(string(data)) == guardrailsAgentSandboxCapability
+	return err == nil && strings.TrimSpace(string(data)) == expected
+}
+
+func guardrailsSandboxCapabilityMarker(binaryPath string) (string, error) {
+	binary, err := os.Open(binaryPath)
+	if err != nil {
+		return "", err
+	}
+	defer binary.Close()
+
+	digest := sha256.New()
+	if _, err := io.Copy(digest, binary); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s\nsha256:%x", guardrailsAgentSandboxCapability, digest.Sum(nil)), nil
 }
 
 func guardrailsDevRuntimeError(path string, err error) error {
