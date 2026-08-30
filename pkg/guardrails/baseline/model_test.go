@@ -19,6 +19,18 @@ func TestParseCanonicalBaseline(t *testing.T) {
 	if document.Run.Status != StatusCompleted || document.Run.DurationSeconds != 123.4 {
 		t.Fatalf("run = %#v", document.Run)
 	}
+	if document.Run.Cost.Display != "$0.1250" ||
+		document.Run.Cost.Nanodollars != 125000000 ||
+		document.Run.Cost.UnpricedCalls != 0 {
+		t.Fatalf("run cost = %#v", document.Run.Cost)
+	}
+	if document.Run.Estimate.CostUpperCents != 70 ||
+		document.Run.Estimate.DurationUpperMinutes != 21 {
+		t.Fatalf("run estimate = %#v", document.Run.Estimate)
+	}
+	if document.Run.Usage.Calls != 6 {
+		t.Fatalf("run usage = %#v", document.Run.Usage)
+	}
 	if document.Codebase.Name != "payments" || document.Codebase.Path != "/work/payments" {
 		t.Fatalf("codebase = %#v", document.Codebase)
 	}

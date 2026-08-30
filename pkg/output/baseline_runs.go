@@ -18,6 +18,7 @@ type BaselineRunOption struct {
 	Commit          string
 	Scanned         string
 	Duration        string
+	TotalCost       string
 	Assets          int
 	Controls        int
 	Implementations int
@@ -283,6 +284,7 @@ func baselineRunColumns(terminalWidth int) []baselineRunColumn {
 		{key: "run", header: "Run", minimum: 3, desired: 28},
 		{key: "scanned", header: "Scanned", minimum: 7, desired: 16},
 		{key: "duration", header: "Duration", minimum: 8, desired: 8},
+		{key: "total_cost", header: "Total cost", minimum: 10, desired: 10},
 		{key: "assets", header: "Assets", minimum: 6, desired: 6},
 		{key: "controls", header: "Controls", minimum: 8, desired: 8},
 		{key: "implementations", header: "Implementations", minimum: 15, desired: 15},
@@ -291,7 +293,9 @@ func baselineRunColumns(terminalWidth int) []baselineRunColumn {
 	compact := []baselineRunColumn{
 		{key: "repository", header: "Repository", minimum: 10, desired: 16},
 		{key: "commit", header: "Commit", minimum: 9, desired: 9},
-		{key: "run", header: "Run", minimum: 8, desired: 24},
+		{key: "run", header: "Run", minimum: 6, desired: 24},
+		{key: "duration", header: "Duration", minimum: 8, desired: 8},
+		{key: "total_cost", header: "Total cost", minimum: 10, desired: 10},
 		{key: "assets", header: "Assets", minimum: 6, desired: 6},
 		{key: "controls", header: "Controls", minimum: 8, desired: 8},
 		{key: "implementations", header: "Implementations", minimum: 15, desired: 15},
@@ -348,6 +352,8 @@ func baselineRunColumnValue(option BaselineRunOption, key string) string {
 		return sanitizeBaselineText(option.Scanned, false)
 	case "duration":
 		return sanitizeBaselineText(option.Duration, false)
+	case "total_cost":
+		return sanitizeBaselineText(option.TotalCost, false)
 	case "assets":
 		return fmt.Sprintf("%d", option.Assets)
 	case "controls":

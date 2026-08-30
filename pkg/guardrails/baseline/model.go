@@ -33,6 +33,28 @@ type RunMetadata struct {
 	StartedAt       string
 	CompletedAt     string
 	DurationSeconds float64
+	Cost            CostMetadata
+	Estimate        EstimateMetadata
+	Usage           UsageMetadata
+}
+
+// CostMetadata is the producer-calculated total cost for one run.
+type CostMetadata struct {
+	Nanodollars   uint64
+	Display       string
+	UnpricedCalls uint64
+}
+
+// EstimateMetadata contains the producer's upper estimate for a run.
+type EstimateMetadata struct {
+	CostUpperCents       uint64
+	DurationUpperMinutes uint64
+}
+
+// UsageMetadata contains the usage needed to distinguish measured runs from
+// historical imports without phase telemetry.
+type UsageMetadata struct {
+	Calls uint64
 }
 
 // GitMetadata identifies the exact source snapshot without consulting Git.
@@ -261,16 +283,20 @@ func parseRun(raw map[string]any) (RunMetadata, error) {
 	if _, err := requiredString(raw, "model", "baseline.run"); err != nil {
 		return RunMetadata{}, err
 	}
-	if _, err := requiredObject(raw, "estimate", "baseline.run"); err != nil {
+	estimateObject, err := requiredObject(raw, "estimate", "baseline.run")
+	if err != nil {
 		return RunMetadata{}, err
 	}
-	if err := validateRunCost(raw); err != nil {
+	estimate := parseRunEstimate(estimateObject)
+	cost, err := parseRunCost(raw)
+	if err != nil {
 		return RunMetadata{}, err
 	}
 	if err := validateRunStages(raw); err != nil {
 		return RunMetadata{}, err
 	}
-	if err := validateRunUsage(raw); err != nil {
+	usage, err := parseRunUsage(raw)
+	if err != nil {
 		return RunMetadata{}, err
 	}
 	runError, err := requiredNullableString(raw, "error", "baseline.run")
@@ -289,22 +315,49 @@ func parseRun(raw map[string]any) (RunMetadata, error) {
 		StartedAt:       startedAt,
 		CompletedAt:     completedAt,
 		DurationSeconds: duration,
+		Cost:            cost,
+		Estimate:        estimate,
+		Usage:           usage,
 	}, nil
 }
 
-func validateRunCost(raw map[string]any) error {
+func parseRunEstimate(raw map[string]any) EstimateMetadata {
+	bounds, ok := raw["estimate"].(map[string]any)
+	if !ok {
+		return EstimateMetadata{}
+	}
+	cost, _ := bounds["cost_cents"].(map[string]any)
+	duration, _ := bounds["duration_minutes"].(map[string]any)
+	costUpper, _ := requiredNonNegativeInteger(cost, "high", "baseline.run.estimate.estimate.cost_cents")
+	durationUpper, _ := requiredNonNegativeInteger(duration, "high", "baseline.run.estimate.estimate.duration_minutes")
+	return EstimateMetadata{
+		CostUpperCents:       costUpper,
+		DurationUpperMinutes: durationUpper,
+	}
+}
+
+func parseRunCost(raw map[string]any) (CostMetadata, error) {
 	cost, err := requiredObject(raw, "cost", "baseline.run")
 	if err != nil {
-		return err
+		return CostMetadata{}, err
 	}
-	if _, err := requiredNonNegativeInteger(cost, "nanodollars", "baseline.run.cost"); err != nil {
-		return err
+	nanodollars, err := requiredNonNegativeInteger(cost, "nanodollars", "baseline.run.cost")
+	if err != nil {
+		return CostMetadata{}, err
 	}
-	if _, err := requiredString(cost, "display", "baseline.run.cost"); err != nil {
-		return err
+	display, err := requiredString(cost, "display", "baseline.run.cost")
+	if err != nil {
+		return CostMetadata{}, err
 	}
-	_, err = requiredNonNegativeInteger(cost, "unpriced_calls", "baseline.run.cost")
-	return err
+	unpricedCalls, err := requiredNonNegativeInteger(cost, "unpriced_calls", "baseline.run.cost")
+	if err != nil {
+		return CostMetadata{}, err
+	}
+	return CostMetadata{
+		Nanodollars:   nanodollars,
+		Display:       display,
+		UnpricedCalls: unpricedCalls,
+	}, nil
 }
 
 func validateRunStages(raw map[string]any) error {
@@ -345,17 +398,22 @@ var runUsageFields = []string{
 	"unpriced_calls",
 }
 
-func validateRunUsage(raw map[string]any) error {
+func parseRunUsage(raw map[string]any) (UsageMetadata, error) {
 	usage, err := requiredObject(raw, "usage", "baseline.run")
 	if err != nil {
-		return err
+		return UsageMetadata{}, err
 	}
+	metadata := UsageMetadata{}
 	for _, field := range runUsageFields {
-		if _, err := requiredNonNegativeInteger(usage, field, "baseline.run.usage"); err != nil {
-			return err
+		value, err := requiredNonNegativeInteger(usage, field, "baseline.run.usage")
+		if err != nil {
+			return UsageMetadata{}, err
+		}
+		if field == "calls" {
+			metadata.Calls = value
 		}
 	}
-	return nil
+	return metadata, nil
 }
 
 func parseCodebase(raw map[string]any, status Status) (CodebaseMetadata, error) {

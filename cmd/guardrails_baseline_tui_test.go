@@ -38,6 +38,7 @@ func TestGuardrailsBaselineTUINonInteractiveStartsWithRuns(t *testing.T) {
 			Status:          baseline.StatusCompleted,
 			CompletedAt:     "2026-08-27T10:00:12Z",
 			DurationSeconds: 12.5,
+			Cost:            baseline.CostMetadata{Display: "$0.1250"},
 		},
 		Codebase: baseline.CodebaseMetadata{
 			Name: "payments",
@@ -53,10 +54,48 @@ func TestGuardrailsBaselineTUINonInteractiveStartsWithRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Guardrails baselines", "payments", "Assets", "Controls", "completed"} {
+	for _, want := range []string{"Guardrails baselines", "payments", "Duration", "Total cost", "$0.1250", "Assets", "Controls", "completed"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("runs-first output is missing %q:\n%s", want, stdout.String())
 		}
+	}
+}
+
+func TestGuardrailsBaselineTUIUsesUpperEstimatesWhenTelemetryIsUnavailable(t *testing.T) {
+	unpriced := baseline.RunMetadata{
+		Status:          baseline.StatusCompleted,
+		DurationSeconds: 4066,
+		Cost: baseline.CostMetadata{
+			Display:       "$0.0000",
+			UnpricedCalls: 525,
+		},
+		Estimate: baseline.EstimateMetadata{
+			CostUpperCents:       280,
+			DurationUpperMinutes: 51,
+		},
+		Usage: baseline.UsageMetadata{Calls: 525},
+	}
+	if got := formatGuardrailsBaselineTUITotalCost(unpriced); got != "≤$2.80" {
+		t.Fatalf("unpriced cost = %q", got)
+	}
+	if got := formatGuardrailsBaselineTUIDuration(unpriced); got != "67m46s" {
+		t.Fatalf("measured duration = %q", got)
+	}
+
+	historicalImport := baseline.RunMetadata{
+		Status:          baseline.StatusCompleted,
+		DurationSeconds: 60338,
+		Cost:            baseline.CostMetadata{Display: "$0.0000"},
+		Estimate: baseline.EstimateMetadata{
+			CostUpperCents:       420,
+			DurationUpperMinutes: 54,
+		},
+	}
+	if got := formatGuardrailsBaselineTUITotalCost(historicalImport); got != "≤$4.20" {
+		t.Fatalf("imported cost = %q", got)
+	}
+	if got := formatGuardrailsBaselineTUIDuration(historicalImport); got != "≤54m est" {
+		t.Fatalf("imported duration = %q", got)
 	}
 }
 
