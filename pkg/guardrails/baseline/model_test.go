@@ -103,6 +103,24 @@ func TestCanonicalFixtureMatchesProducerArtifact(t *testing.T) {
 	}
 }
 
+func TestParseAcceptsBaselineWithoutRetiredASVSFields(t *testing.T) {
+	raw := canonicalRaw(t)
+	for _, value := range raw["observations"].(map[string]any)["controls"].([]any) {
+		delete(value.(map[string]any), "asvs")
+	}
+	for _, value := range array(raw, "controls") {
+		delete(value.(map[string]any), "asvs")
+	}
+
+	document, err := Parse(mustJSON(t, raw))
+	if err != nil {
+		t.Fatalf("Parse without retired ASVS fields: %v", err)
+	}
+	if document.Counts.Controls != 1 || document.Counts.ControlObservations != 2 {
+		t.Fatalf("counts = %#v", document.Counts)
+	}
+}
+
 func TestParseRejectsInvalidShapeIDsAndReferences(t *testing.T) {
 	tests := []struct {
 		name    string

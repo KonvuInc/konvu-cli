@@ -317,9 +317,6 @@ func validateRecordShapes(document *Document) error {
 		if _, err := requiredStringArray(record, "checked", context); err != nil {
 			return err
 		}
-		if _, err := requiredNullableString(record, "asvs", context); err != nil {
-			return err
-		}
 	}
 	for index, record := range document.sections[CollectionAssets] {
 		context := fmt.Sprintf("baseline.assets[%d]", index)
@@ -356,9 +353,6 @@ func validateRecordShapes(document *Document) error {
 			if _, err := requiredText(record, field, context); err != nil {
 				return err
 			}
-		}
-		if _, err := requiredStringArray(record, "asvs", context); err != nil {
-			return err
 		}
 	}
 	for index, record := range document.sections[CollectionImplementations] {
