@@ -198,13 +198,34 @@ func guardrailsBaselineTUIOption(run baseline.RunEntry) output.BaselineRunOption
 		Repository:      repository,
 		Commit:          commit,
 		Scanned:         formatGuardrailsBaselineScanned(scanned),
-		Duration:        formatGuardrailsBaselineDuration(run.Run.DurationSeconds),
+		Duration:        formatGuardrailsBaselineTUIDuration(run.Run),
+		TotalCost:       formatGuardrailsBaselineTUITotalCost(run.Run),
 		Assets:          counts.Assets,
 		Controls:        counts.Controls,
 		Implementations: counts.Implementations,
 		Status:          status,
 		Problem:         problem,
 	}
+}
+
+func formatGuardrailsBaselineTUIDuration(run baseline.RunMetadata) string {
+	upperMinutes := run.Estimate.DurationUpperMinutes
+	if run.Status == baseline.StatusCompleted &&
+		run.Usage.Calls == 0 &&
+		upperMinutes > 0 &&
+		run.DurationSeconds > float64(upperMinutes)*60 {
+		return fmt.Sprintf("≤%dm est", upperMinutes)
+	}
+	return formatGuardrailsBaselineDuration(run.DurationSeconds)
+}
+
+func formatGuardrailsBaselineTUITotalCost(run baseline.RunMetadata) string {
+	upperCents := run.Estimate.CostUpperCents
+	if run.Cost.Nanodollars == 0 && upperCents > 0 &&
+		(run.Cost.UnpricedCalls > 0 || run.Usage.Calls == 0) {
+		return fmt.Sprintf("≤$%.2f", float64(upperCents)/100)
+	}
+	return run.Cost.Display
 }
 
 func formatGuardrailsBaselineScanned(value string) string {
