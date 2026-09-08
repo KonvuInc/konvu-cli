@@ -628,5 +628,4 @@ func init() {
 		newGuardrailsBaselineRecordsGetCmd(),
 		newGuardrailsBaselineRecordsExplainCmd(),
 	)
-	inventoryMapCmd.AddCommand(guardrailsBaselineRecordsCmd)
 }

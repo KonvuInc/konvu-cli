@@ -859,7 +859,7 @@ func newInventoryMapCmd() *cobra.Command {
 		Use:   "map <local-path>",
 		Short: "Map a local repository into a Security Context Graph",
 		Long: `Create a Security Context Graph from a local repository, or inspect stored
-map runs with the history, show, diff, and records subcommands.
+map runs with the history, show, and diff subcommands.
 
 Mapping runs locally and does not require a Konvu account. Hosted repository
 selectors are not supported yet; clone the repository and pass its local path.

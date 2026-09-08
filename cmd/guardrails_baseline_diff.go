@@ -18,7 +18,7 @@ func newGuardrailsBaselineDiffCmd() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "diff <base-run> <head-run>",
 		Short: "Compare two completed Security Context Graph map runs",
-		Long:  "Compare collection counts and added, removed, or changed record IDs between two completed runs.",
+		Long:  "Compare graph section counts and added, removed, or changed IDs between two completed runs.",
 		Example: `  konvu inventory map diff <base-run> <head-run>
   konvu inventory map diff <base-run> <head-run> --collection controls -o json`,
 		Args: cobra.ExactArgs(2),
@@ -38,7 +38,7 @@ func newGuardrailsBaselineDiffCmd() *cobra.Command {
 			})
 		},
 	}
-	command.Flags().StringVar(&collectionName, "collection", "", "Compare only one record collection")
+	command.Flags().StringVar(&collectionName, "collection", "", "Compare only one graph section")
 	command.Flags().StringVarP(&explicitFormat, "output", "o", "", "Output format: table, json")
 	return command
 }

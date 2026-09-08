@@ -85,7 +85,7 @@ Use --run to select one exact stored run.`,
 				}
 				if shouldOpenMapHistoryTUI(output.BaselineTerminalInteractive(), cmd.Flags().Changed("output"), quiet) {
 					dependencies := defaultGuardrailsBaselineTUIDependencies(store)
-					dependencies.emptyState = guardrailsBaselineEmptyState
+					dependencies.emptyState = mapHistoryEmptyState(runID, repository, options)
 					dependencies.list = func() ([]baselinemodel.RunEntry, error) {
 						runs, listErr := store.List()
 						if listErr != nil {
@@ -119,6 +119,20 @@ Use --run to select one exact stored run.`,
 	command.Flags().StringVarP(&explicitFormat, "output", "o", "", "Output format: table, json")
 	command.Flags().BoolVarP(&quiet, "quiet", "q", false, "Print only run IDs")
 	return command
+}
+
+// mapHistoryEmptyState explains an empty interactive history. When any
+// filter narrowed the stored runs it says so instead of suggesting a first map.
+func mapHistoryEmptyState(runID, repository string, options guardrailsBaselineRunListOptions) string {
+	filtered := strings.TrimSpace(runID) != "" ||
+		strings.TrimSpace(repository) != "" ||
+		len(options.Statuses) > 0 ||
+		options.Offset > 0
+	if !filtered {
+		return guardrailsBaselineEmptyState
+	}
+	return "No stored Security Context Graph map runs matched the given filters. " +
+		"Run `konvu inventory map history` without filters to see every run.\n"
 }
 
 func shouldOpenMapHistoryTUI(interactive, outputChanged, quiet bool) bool {
