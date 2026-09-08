@@ -8,63 +8,7 @@ import (
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	baselinemodel "github.com/KonvuInc/konvu-cli/pkg/guardrails/baseline"
 	"github.com/KonvuInc/konvu-cli/pkg/output"
-	"github.com/spf13/cobra"
 )
-
-var guardrailsBaselineExplainCmd = newGuardrailsBaselineExplainCmd()
-
-func newGuardrailsBaselineExplainCmd() *cobra.Command {
-	var runID string
-	var repository string
-	var collectionName string
-	var explicitFormat string
-	command := &cobra.Command{
-		Use:    "explain <record-id>",
-		Short:  "Explain one baseline record and its relationships",
-		Hidden: true,
-		Long: `Explain one baseline record and its direct relationships.
-Use --collection when an ID is represented in more than one baseline section.`,
-		Args: cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			runGuardrailsBaselineCommand(cmd, func() error {
-				for _, flag := range []struct{ name, value string }{
-					{name: "run", value: runID},
-					{name: "repo", value: repository},
-					{name: "collection", value: collectionName},
-				} {
-					if err := guardrailsBaselineValidateOptionalFlag(cmd, flag.name, flag.value); err != nil {
-						return err
-					}
-				}
-				format, err := guardrailsBaselineOutputFormat(explicitFormat)
-				if err != nil {
-					return err
-				}
-				selector, err := guardrailsBaselineSelector(runID, repository)
-				if err != nil {
-					return err
-				}
-				store, err := defaultGuardrailsBaselineStore()
-				if err != nil {
-					return wrapGuardrailsBaselineError(err)
-				}
-				return writeGuardrailsBaselineExplainCollection(
-					cmd.OutOrStdout(),
-					store,
-					args[0],
-					selector,
-					collectionName,
-					format,
-				)
-			})
-		},
-	}
-	command.Flags().StringVar(&runID, "run", "", "select an exact stored run ID")
-	command.Flags().StringVar(&repository, "repo", "", "select the latest completed run for a codebase name or absolute path")
-	command.Flags().StringVar(&collectionName, "collection", "", "resolve the record inside one exact baseline collection")
-	command.Flags().StringVarP(&explicitFormat, "output", "o", "", "Output format: table, json")
-	return command
-}
 
 type guardrailsBaselineRelatedRecord struct {
 	Depth  int
@@ -317,8 +261,4 @@ func guardrailsBaselineCollectionTitle(collection baselinemodel.Collection) stri
 	default:
 		return "Record"
 	}
-}
-
-func init() {
-	guardrailsBaselineCmd.AddCommand(guardrailsBaselineExplainCmd)
 }

@@ -14,9 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const guardrailsBaselineEmptyState = "No existing baseline detected. Run `konvu guardrails baseline scan <codebase>` to scan a codebase.\n"
-
-var guardrailsBaselineTUIRunID string
+const guardrailsBaselineEmptyState = "No Security Context Graph map runs yet. Run `konvu inventory map <local-path>` to create one.\n"
 
 type guardrailsBaselineTUIDependencies struct {
 	list            func() ([]baseline.RunEntry, error)
@@ -26,33 +24,6 @@ type guardrailsBaselineTUIDependencies struct {
 	openDiagnostics func(output.BaselineRunOption, bool, io.Writer) (output.BaselineWorkspaceOutcome, error)
 	renderRuns      func([]output.BaselineRunOption) string
 	emptyState      string
-}
-
-var guardrailsBaselineTUICmd = &cobra.Command{
-	Use:    "tui",
-	Short:  "Explore historical baselines interactively",
-	Hidden: true,
-	Args:   cobra.NoArgs,
-	Run: func(cmd *cobra.Command, _ []string) {
-		runGuardrailsBaselineCommand(cmd, func() error {
-			if err := guardrailsBaselineValidateOptionalFlag(
-				cmd,
-				"run",
-				guardrailsBaselineTUIRunID,
-			); err != nil {
-				return err
-			}
-			store, err := defaultGuardrailsBaselineStore()
-			if err != nil {
-				return err
-			}
-			return executeGuardrailsBaselineTUI(
-				cmd,
-				guardrailsBaselineTUIRunID,
-				defaultGuardrailsBaselineTUIDependencies(store),
-			)
-		})
-	},
 }
 
 func defaultGuardrailsBaselineTUIDependencies(
@@ -188,9 +159,9 @@ func guardrailsBaselineTUIOption(run baseline.RunEntry) output.BaselineRunOption
 			problem, _ = metadata["error"].(string)
 		}
 	}
-	scanned := run.Run.CompletedAt
-	if scanned == "" {
-		scanned = run.Run.StartedAt
+	mapped := run.Run.CompletedAt
+	if mapped == "" {
+		mapped = run.Run.StartedAt
 	}
 	counts := run.Counts
 	if run.Valid && run.Run.Status == baseline.StatusCompleted {
@@ -202,7 +173,7 @@ func guardrailsBaselineTUIOption(run baseline.RunEntry) output.BaselineRunOption
 		ID:              run.ID,
 		Repository:      repository,
 		Commit:          commit,
-		Scanned:         formatGuardrailsBaselineScanned(scanned),
+		Mapped:          formatGuardrailsBaselineMapped(mapped),
 		Duration:        formatGuardrailsBaselineTUIDuration(run.Run),
 		TotalCost:       formatGuardrailsBaselineTUITotalCost(run.Run),
 		Assets:          counts.Assets,
@@ -233,7 +204,7 @@ func formatGuardrailsBaselineTUITotalCost(run baseline.RunMetadata) string {
 	return run.Cost.Display
 }
 
-func formatGuardrailsBaselineScanned(value string) string {
+func formatGuardrailsBaselineMapped(value string) string {
 	parsed, err := time.Parse(time.RFC3339Nano, value)
 	if err != nil {
 		return value
@@ -248,14 +219,4 @@ func guardrailsBaselineRunIndex(runs []baseline.RunEntry, id string) int {
 		}
 	}
 	return -1
-}
-
-func init() {
-	guardrailsBaselineTUICmd.Flags().StringVar(
-		&guardrailsBaselineTUIRunID,
-		"run",
-		"",
-		"open an exact run first (Escape returns to the run list)",
-	)
-	guardrailsBaselineCmd.AddCommand(guardrailsBaselineTUICmd)
 }

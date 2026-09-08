@@ -1,20 +1,20 @@
 ---
 name: guardrails-onboarding
 version: 2.0.0
-description: "Create and explore local Konvu Guardrails baselines. Use when a user wants to scan a codebase, inspect its Assets, Controls, or Implementations, compare stored runs, or navigate a baseline in the terminal."
+description: "Create and explore local Konvu Security Context Graphs. Use when a user wants to map a codebase, inspect its Assets, Controls, or Implementations, compare stored runs, or navigate graph history in the terminal."
 metadata:
   requires:
     bins: ["konvu"]
 ---
-# Guardrails baselines
+# Security Context Graphs
 
-Konvu Guardrails models the security-relevant Assets in a codebase, the
+Konvu Inventory maps the security-relevant Assets in a codebase, the
 Controls that apply to them, and the concrete Implementations it found.
 
-## Scan a codebase
+## Map a codebase
 
 ```bash
-konvu guardrails baseline scan <codebase>
+konvu inventory map <codebase>
 ```
 
 The codebase may be any local path; it does not need to be the current working
@@ -28,7 +28,7 @@ the environment variable so the key is not stored in shell history.
 Each attempt creates an immutable run under
 `~/.konvu/guardrails/baselines/<run-id>/` containing only:
 
-- `baseline.json` — the complete queryable baseline
+- `baseline.json` — the complete queryable Security Context Graph
 - `run.log` — stage, retry, usage, cost, and error details
 
 Failed and cancelled attempts remain available for diagnostics.
@@ -36,50 +36,50 @@ Failed and cancelled attempts remain available for diagnostics.
 ## Find a run
 
 ```bash
-konvu guardrails baseline list
-konvu guardrails baseline list --repo <name-or-absolute-path>
+konvu inventory map history
+konvu inventory map history <name-or-absolute-path>
 ```
 
 Run queries are independent of the current directory. Use `--run <run-id>` for
 an exact historical run. `--repo` selects the latest completed run for an
 unambiguous repository name or exact stored path. With neither selector, a
-data query succeeds only when exactly one completed run exists. `list runs
---repo` is the one history-filter exception: it returns every stored run for
-that unambiguous repository, including failed and cancelled runs.
+data query succeeds only when exactly one completed run exists. `map history
+--repo` returns every stored run for that unambiguous repository, including
+failed and cancelled runs.
 
-## Explore baseline data
+## Explore graph data
 
 ```bash
-konvu guardrails baseline list assets --run <run-id>
-konvu guardrails baseline list controls --run <run-id>
-konvu guardrails baseline list implementations --run <run-id>
-konvu guardrails baseline show <run-id>
-konvu guardrails baseline show <record-id> --run <run-id>
-konvu guardrails baseline show <record-id> --collection <collection> --run <run-id>
-konvu guardrails baseline explain <record-id> --run <run-id>
+konvu inventory map records list --run <run-id> --collection assets
+konvu inventory map records list --run <run-id> --collection controls
+konvu inventory map records list --run <run-id> --collection implementations
+konvu inventory map show <run-id>
+konvu inventory map records get <record-id> --run <run-id>
+konvu inventory map records get <record-id> --collection <collection> --run <run-id>
+konvu inventory map records explain <record-id> --run <run-id>
 ```
 
 Other listable sections include Asset observations, classes, routes, resources,
 roles, Control observations, and unresolved observations. Use `--collection`
-with `show` or `explain` to address an exact section when IDs overlap. Use
+with `records get` or `records explain` to address an exact section when IDs overlap. Use
 `--output json` for scripts.
-`show <run-id> --output json` returns the exact `baseline.json`. Use `--log` to
-read a run's execution log.
+`show <run-id> --output json` returns the exact `baseline.json`. Use
+`--include log` to read a run's execution log.
 
-`show` returns one stored record. `explain` adds its direct relationships—for
+`records get` returns one stored record. `records explain` adds its direct relationships—for
 example an Asset's Controls and Implementations, or every Asset using a
 Control.
 
 ## Use the terminal explorer
 
 ```bash
-konvu guardrails baseline tui
-konvu guardrails baseline tui --run <run-id>
+konvu inventory map history
+konvu inventory map history --run <run-id>
 ```
 
-The first screen lists historical runs with repository, commit, scan time,
+The first screen lists historical runs with repository, commit, mapped time,
 duration, counts, and status. Enter opens a completed run. Failed, cancelled,
 running, and invalid runs open diagnostics. Escape returns to the run list.
 
-If no run exists, report the scan command printed by the CLI. Do not look for
-or infer data from repository-local files or older Guardrails artifacts.
+If no run exists, report the map command printed by the CLI. Do not look for
+or infer data from repository-local files or other artifacts.

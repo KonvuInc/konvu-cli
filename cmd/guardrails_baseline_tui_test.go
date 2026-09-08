@@ -54,7 +54,7 @@ func TestGuardrailsBaselineTUINonInteractiveStartsWithRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Guardrails baselines", "payments", "Duration", "Total cost", "$0.1250", "Assets", "Controls", "completed"} {
+	for _, want := range []string{"Security Context Graph history", "payments", "Duration", "Total cost", "$0.1250", "Assets", "Controls", "completed"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("runs-first output is missing %q:\n%s", want, stdout.String())
 		}

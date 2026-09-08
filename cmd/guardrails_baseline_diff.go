@@ -17,10 +17,10 @@ func newGuardrailsBaselineDiffCmd() *cobra.Command {
 	var collectionName, explicitFormat string
 	command := &cobra.Command{
 		Use:   "diff <base-run> <head-run>",
-		Short: "Compare two completed baseline runs",
+		Short: "Compare two completed Security Context Graph map runs",
 		Long:  "Compare collection counts and added, removed, or changed record IDs between two completed runs.",
-		Example: `  konvu guardrails baseline diff <base-run> <head-run>
-  konvu guardrails baseline diff <base-run> <head-run> --collection controls -o json`,
+		Example: `  konvu inventory map diff <base-run> <head-run>
+  konvu inventory map diff <base-run> <head-run> --collection controls -o json`,
 		Args: cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			runGuardrailsBaselineCommand(cmd, func() error {
@@ -156,5 +156,5 @@ func guardrailsBaselineSortStrings(values []string) {
 }
 
 func init() {
-	guardrailsBaselineCmd.AddCommand(guardrailsBaselineDiffCmd)
+	inventoryMapCmd.AddCommand(guardrailsBaselineDiffCmd)
 }

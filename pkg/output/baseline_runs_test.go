@@ -13,7 +13,7 @@ func TestBaselineRunTableContainsCatalogMetadata(t *testing.T) {
 		ID:              "payments--a17c2e99--000042",
 		Repository:      "payments",
 		Commit:          "a17c2e9987654321",
-		Scanned:         "2026-08-27 10:00",
+		Mapped:          "2026-08-27 10:00",
 		Duration:        "12.5s",
 		TotalCost:       "$0.1250",
 		Assets:          7,
@@ -22,7 +22,7 @@ func TestBaselineRunTableContainsCatalogMetadata(t *testing.T) {
 		Status:          "completed",
 	}})
 	for _, want := range []string{
-		"Repository", "Commit", "Run", "Scanned", "Duration", "Total cost", "Assets", "Controls", "Implementations", "Status",
+		"Repository", "Commit", "Run", "Mapped", "Duration", "Total cost", "Assets", "Controls", "Implementations", "Status",
 		"payments", "a17c2e99", "12.5s", "$0.1250", "completed",
 	} {
 		if !strings.Contains(table, want) {
@@ -36,7 +36,7 @@ func TestBaselineRunTableRespondsAtCommonTerminalWidths(t *testing.T) {
 		ID:              "payments-service-with-a-long-name--a17c2e99--000042",
 		Repository:      "payments-service-with-a-long-name",
 		Commit:          "a17c2e9987654321",
-		Scanned:         "2026-08-27 10:00",
+		Mapped:          "2026-08-27 10:00",
 		Duration:        "12.5s",
 		TotalCost:       "$0.1250",
 		Assets:          7,
@@ -60,8 +60,8 @@ func TestBaselineRunTableRespondsAtCommonTerminalWidths(t *testing.T) {
 			if width >= 100 && (!strings.Contains(table, "Duration") || !strings.Contains(table, "Total cost")) {
 				t.Fatalf("width %d omitted full metadata:\n%s", width, table)
 			}
-			if width >= 120 && !strings.Contains(table, "Scanned") {
-				t.Fatalf("width %d omitted scan time:\n%s", width, table)
+			if width >= 120 && !strings.Contains(table, "Mapped") {
+				t.Fatalf("width %d omitted map time:\n%s", width, table)
 			}
 		})
 	}
