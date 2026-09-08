@@ -117,3 +117,21 @@ func TestTypedFindingDetailText(t *testing.T) {
 		})
 	}
 }
+
+func TestFindingBrowserHelpDescribesInteractiveAndMachineOutputModes(t *testing.T) {
+	for _, command := range []*cobra.Command{
+		findingListCmd,
+		scaListCmd,
+		sastListCmd,
+		secretsListCmd,
+		containerListCmd,
+	} {
+		if !strings.Contains(command.Long, "interactively") ||
+			!strings.Contains(command.Long, "non-interactive output") {
+			t.Errorf("%s help does not describe both output modes:\n%s", command.CommandPath(), command.Long)
+		}
+	}
+	if !strings.Contains(findingCmd.Long, "first 50 findings") {
+		t.Errorf("finding help does not describe the bare-command limit:\n%s", findingCmd.Long)
+	}
+}

@@ -32,7 +32,15 @@ var inventoryCmd = &cobra.Command{
 hosted repository Threat Profiles. Local mapping and exploration work without a
 Konvu account.
 
+In an interactive terminal, run without a subcommand to open the combined
+repository browser. When piped, or when -o or -q is set, it prints the same
+repository listing as 'inventory list'.
+
 Use 'inventory map <local-path>' to create a Security Context Graph locally.`,
+	Example: `  konvu inventory
+  konvu inventory list -o json
+  konvu inventory map .
+  konvu inventory show .`,
 	Args: cobra.NoArgs,
 	RunE: runInventory,
 }
@@ -55,15 +63,17 @@ func shouldOpenInventoryTUI(interactive, outputChanged, quiet bool) bool {
 }
 
 var inventoryShowCmd = &cobra.Command{
-	Use:   "show <repo>",
+	Use:   "show <target>",
 	Short: "Show the security context available for one repository",
 	Long: `Show a local Security Context Graph by filesystem path, without requiring a
 Konvu account. For a hosted repository URL or ID, show its Konvu Threat Profile:
 score, tier, classification, summary, attributes, provenance, and evidence.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth failed`,
-	Example: `  konvu inventory show github:org/repo
-  konvu inventory show org/repo -o json`,
+	Example: `  konvu inventory show .
+  konvu inventory show github:org/repo
+  konvu inventory show org/repo -o json
+  konvu inventory show org/repo --fields threat_profile_score,threat_profile_tier -o json`,
 	RunE: runInventoryShow,
 }
 
@@ -444,11 +454,11 @@ func handleInventoryError(err error, format output.OutputFormat) {
 
 func init() {
 	inventoryShowCmd.Flags().StringP("output", "o", "", "Output format: json, table")
-	inventoryShowCmd.Flags().String("fields", "", "Comma-separated top-level fields to include (e.g. threat_profile_score,threat_profile_tier)")
+	inventoryShowCmd.Flags().String("fields", "", "Comma-separated top-level fields to include in JSON output")
 
 	inventoryCmd.AddCommand(inventoryShowCmd, newInventoryListCmd(), newInventoryMapCmd())
 
-	inventoryCmd.Flags().StringP("output", "o", "", "Output format: json, table")
+	inventoryCmd.Flags().StringP("output", "o", "", "Output format for the repository listing: json, table")
 	inventoryCmd.Flags().BoolP("quiet", "q", false, "Print only repository selectors")
 
 	rootCmd.AddCommand(inventoryCmd)

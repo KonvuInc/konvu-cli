@@ -18,9 +18,13 @@ var containerCmd = &cobra.Command{
 var containerListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Browse or list container findings",
-	Long: `Browse container findings interactively when stdin and stdout are terminals.
+	Long: `Browse container findings interactively when stdin and stdout are terminals and
+no machine-output flag is set.
 
 Use -o json, -o table, -o csv, or -q for deterministic non-interactive output.`,
+	Example: `  konvu finding container list
+  konvu finding container list --severity critical -o table
+  konvu finding container list --image payments-api -o json`,
 	RunE: runContainerList,
 }
 

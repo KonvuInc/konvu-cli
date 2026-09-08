@@ -193,7 +193,13 @@ func newInventoryListCmd() *cobra.Command {
 authenticated, repositories and Threat Profiles hosted by Konvu.
 
 Local results never require a Konvu account. If hosted data cannot be reached,
-local results are still returned and the hosted source is marked unavailable.`,
+local results are still returned and the hosted source is marked unavailable.
+
+Use -o json or -o table for deterministic output, or -q to print selectors that
+can be passed directly to 'inventory show'.`,
+		Example: `  konvu inventory list
+  konvu inventory list -o json
+  konvu inventory list -q | xargs -n1 konvu inventory show`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			format, err := inventoryOutputFormat(explicitFormat)
@@ -775,7 +781,10 @@ func newInventoryMapCmd() *cobra.Command {
 		Long: `Create a Security Context Graph from a local repository.
 
 Mapping runs locally and does not require a Konvu account. Hosted repository
-selectors are not supported yet; clone the repository and pass its local path.`,
+selectors are not supported yet; clone the repository and pass its local path.
+The mapper uses OPENAI_API_KEY unless --openai-api-key is provided.`,
+		Example: `  konvu inventory map .
+  konvu inventory map /path/to/repository --yes`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			path, err := inventoryLocalDirectory(args[0])

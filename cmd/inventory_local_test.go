@@ -249,6 +249,25 @@ func TestInventoryCommandSurface(t *testing.T) {
 	}
 }
 
+func TestInventoryHelpDescribesLocalHostedAndOutputModes(t *testing.T) {
+	for _, want := range []string{"Security Context Graphs", "Threat Profiles", "without a", "interactive terminal", "When piped"} {
+		if !strings.Contains(inventoryCmd.Long, want) {
+			t.Errorf("inventory help missing %q:\n%s", want, inventoryCmd.Long)
+		}
+	}
+	if inventoryShowCmd.Use != "show <target>" {
+		t.Errorf("inventory show usage = %q", inventoryShowCmd.Use)
+	}
+	list := newInventoryListCmd()
+	if !strings.Contains(list.Long, "Local results never require") || !strings.Contains(list.Long, "-q") {
+		t.Errorf("inventory list help is incomplete:\n%s", list.Long)
+	}
+	mapping := newInventoryMapCmd()
+	if !strings.Contains(mapping.Long, "does not require a Konvu account") || !strings.Contains(mapping.Long, "OPENAI_API_KEY") {
+		t.Errorf("inventory map help is incomplete:\n%s", mapping.Long)
+	}
+}
+
 func TestShouldOpenInventoryTUI(t *testing.T) {
 	if !shouldOpenInventoryTUI(true, false, false) {
 		t.Error("interactive bare inventory did not select the TUI")

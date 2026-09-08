@@ -28,9 +28,14 @@ one element. Pipe IDs into --stdin to rate many at once (chunked at 500).`,
 var secretsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Browse or list secret findings",
-	Long: `Browse secret findings interactively when stdin and stdout are terminals.
+	Long: `Browse secret findings interactively when stdin and stdout are terminals and
+no machine-output flag is set.
 
-Use -o json, -o table, -o csv, or -q for deterministic non-interactive output.`,
+Use -o json, -o table, -o csv, or -q for deterministic non-interactive output.
+One row represents a (provider, secret_hash) group.`,
+	Example: `  konvu finding secrets list
+  konvu finding secrets list --assessment unknown -o table
+  konvu finding secrets list -q`,
 	RunE: runSecretsList,
 }
 

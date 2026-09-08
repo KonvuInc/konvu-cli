@@ -24,7 +24,12 @@ var scaCmd = &cobra.Command{
 var scaListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Browse or list security findings",
-	Long: `List security findings with filtering and sorting.
+	Long: `Browse SCA findings interactively when stdin and stdout are terminals and
+no machine-output flag is set. Otherwise, list findings with filtering and
+sorting.
+
+Use -o json, -o table, -o csv, -q, --count, or --group-by for deterministic
+non-interactive output.
 
 Note: --since / --until filter by FIRST-SEEN date (when the finding first appeared),
 not by when it changed state. To scope by when a finding was closed, use
