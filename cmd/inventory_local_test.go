@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -162,10 +163,10 @@ func TestInventoryHostedEntriesUseStableSelectorAndProfileFacet(t *testing.T) {
 	coverage := map[string]any{"repositories": []any{map[string]any{
 		"id": "repo-1", "url": "github:acme/api",
 	}}}
-	summary := map[string]any{"top_repos": []any{map[string]any{
+	profiles := map[string]any{"profiles": []any{map[string]any{
 		"vcs_repository_id": "repo-1", "threat_profile_score": float64(92), "threat_profile_tier": "crown_jewel",
 	}}}
-	entries := inventoryHostedEntries(coverage, summary)
+	entries := inventoryHostedEntries(coverage, profiles)
 	if len(entries) != 1 {
 		t.Fatalf("entries = %d, want 1", len(entries))
 	}
@@ -176,6 +177,46 @@ func TestInventoryHostedEntriesUseStableSelectorAndProfileFacet(t *testing.T) {
 	profile := getMap(getMap(entry, "hosted"), "threat_profile")
 	if got := intOf(profile["score"]); got != 92 {
 		t.Errorf("score = %d, want 92", got)
+	}
+}
+
+func TestFetchInventoryHostedProfilesIncludesProfilesOutsideRanking(t *testing.T) {
+	coverage := map[string]any{"repositories": []any{
+		map[string]any{"id": "ranked"},
+		map[string]any{"id": "outside-ranking"},
+		map[string]any{"id": "not-mapped"},
+	}}
+	summary := map[string]any{"top_repos": []any{map[string]any{
+		"vcs_repository_id": "ranked", "threat_profile_score": float64(92),
+	}}}
+	profileData, err := fetchInventoryHostedProfiles(coverage, summary, func(id string) (map[string]any, error) {
+		switch id {
+		case "outside-ranking":
+			return map[string]any{"threat_profile_score": float64(71)}, nil
+		case "not-mapped":
+			return nil, &api.APIError{StatusCode: 404, Message: "No threat profile for this repository"}
+		default:
+			return nil, fmt.Errorf("unexpected profile fetch for %q", id)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := inventoryHostedEntries(coverage, profileData)
+	if got := len(entries); got != 3 {
+		t.Fatalf("entries = %d, want 3", got)
+	}
+	profilesByID := make(map[string]map[string]any)
+	for _, value := range entries {
+		entry := value.(map[string]any)
+		id := getStr(getMap(entry, "identity"), "hosted_repository_id")
+		profilesByID[id] = getMap(getMap(entry, "hosted"), "threat_profile")
+	}
+	if got := intOf(profilesByID["outside-ranking"]["score"]); got != 71 {
+		t.Errorf("outside-ranking score = %d, want 71", got)
+	}
+	if len(profilesByID["not-mapped"]) != 0 {
+		t.Errorf("not-mapped repository unexpectedly has a profile: %v", profilesByID["not-mapped"])
 	}
 }
 
@@ -231,6 +272,19 @@ func TestInventoryLocalDirectory(t *testing.T) {
 	}
 	if _, err := inventoryLocalDirectory("github:acme/api"); err == nil {
 		t.Fatal("hosted selector unexpectedly accepted")
+	}
+}
+
+func TestInventoryLooksLocalTargetKeepsMissingRelativePathsLocal(t *testing.T) {
+	for _, target := range []string{"./removed-repo", "../removed-repo", `.\removed-repo`, `..\removed-repo`} {
+		if !inventoryLooksLocalTarget(target) {
+			t.Errorf("%q was not recognized as a local target", target)
+		}
+	}
+	for _, target := range []string{"github:acme/api", "acme/api"} {
+		if inventoryLooksLocalTarget(target) {
+			t.Errorf("hosted selector %q was recognized as local", target)
+		}
 	}
 }
 

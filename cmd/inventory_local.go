@@ -387,9 +387,9 @@ func inventoryMappingStatusDisplay(run map[string]any) string {
 	return orDefault(getStr(run, "status"), "—")
 }
 
-func inventoryHostedEntries(coverage, summary map[string]any) []any {
+func inventoryHostedEntries(coverage, profileData map[string]any) []any {
 	profiles := make(map[string]map[string]any)
-	for _, value := range getSlice(summary, "top_repos") {
+	for _, value := range getSlice(profileData, "profiles") {
 		profile, ok := value.(map[string]any)
 		if !ok {
 			continue
@@ -541,7 +541,85 @@ func fetchInventoryHosted() (map[string]any, map[string]any, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return coverage, summary, nil
+	profiles, err := fetchInventoryHostedProfiles(coverage, summary, func(repositoryID string) (map[string]any, error) {
+		return client.Get(threatProfileRepoPath+repositoryID, nil)
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return coverage, profiles, nil
+}
+
+type inventoryProfileFetchResult struct {
+	repositoryID string
+	profile      map[string]any
+	err          error
+}
+
+func fetchInventoryHostedProfiles(
+	coverage, summary map[string]any,
+	fetch func(string) (map[string]any, error),
+) (map[string]any, error) {
+	profiles := make(map[string]map[string]any)
+	for _, value := range getSlice(summary, "top_repos") {
+		profile, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		if id := getStr(profile, "vcs_repository_id"); id != "" {
+			profiles[id] = profile
+		}
+	}
+
+	var missing []string
+	for _, value := range getSlice(coverage, inventoryRepositoriesKey) {
+		repository, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		id := getStr(repository, "id")
+		if id != "" && profiles[id] == nil {
+			missing = append(missing, id)
+		}
+	}
+
+	jobs := make(chan string, len(missing))
+	results := make(chan inventoryProfileFetchResult, len(missing))
+	for _, id := range missing {
+		jobs <- id
+	}
+	close(jobs)
+	for range min(8, len(missing)) {
+		go func() {
+			for id := range jobs {
+				profile, err := fetch(id)
+				results <- inventoryProfileFetchResult{repositoryID: id, profile: profile, err: err}
+			}
+		}()
+	}
+	for range missing {
+		result := <-results
+		if result.err != nil {
+			if inventoryIsNoThreatProfileError(result.err) {
+				continue
+			}
+			return nil, result.err
+		}
+		if result.profile == nil {
+			return nil, fmt.Errorf("empty Threat Profile response for repository %s", result.repositoryID)
+		}
+		result.profile["vcs_repository_id"] = result.repositoryID
+		profiles[result.repositoryID] = result.profile
+	}
+
+	ordered := make([]any, 0, len(profiles))
+	for _, value := range getSlice(coverage, inventoryRepositoriesKey) {
+		repository, _ := value.(map[string]any)
+		if profile := profiles[getStr(repository, "id")]; profile != nil {
+			ordered = append(ordered, profile)
+		}
+	}
+	return map[string]any{"profiles": ordered}, nil
 }
 
 func inventoryLocalError(err error) error {
@@ -835,6 +913,11 @@ func inventoryMapTargetError(value string) error {
 func inventoryLooksLocalTarget(target string) bool {
 	target = strings.TrimSpace(target)
 	if filepath.IsAbs(target) {
+		return true
+	}
+	if target == "." || target == ".." ||
+		strings.HasPrefix(target, "./") || strings.HasPrefix(target, "../") ||
+		strings.HasPrefix(target, `.\`) || strings.HasPrefix(target, `..\`) {
 		return true
 	}
 	info, err := os.Stat(target)
