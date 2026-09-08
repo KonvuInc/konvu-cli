@@ -159,7 +159,6 @@ func TestGuardrailsReadOnlyCommandsHaveNoOpenAIFlags(t *testing.T) {
 		{"history"},
 		{"show", "run-id"},
 		{"diff", "base-run", "head-run"},
-		{"records", "list"},
 	} {
 		command, _, err := inventoryMapCmd.Find(commandPath)
 		if err != nil {

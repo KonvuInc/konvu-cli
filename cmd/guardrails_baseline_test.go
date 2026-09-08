@@ -62,26 +62,17 @@ func TestSecurityContextGraphCommandsLiveUnderInventoryMap(t *testing.T) {
 		}
 	}
 	mapChildren := direct(inventoryMapCmd)
-	if len(mapChildren) != 4 {
-		t.Fatalf("map children = %v, want history, show, diff, and records", mapChildren)
+	if len(mapChildren) != 3 {
+		t.Fatalf("map children = %v, want history, show, and diff", mapChildren)
 	}
-	for _, name := range []string{"history", "show", "diff", "records"} {
+	for _, name := range []string{"history", "show", "diff"} {
 		if !mapChildren[name] {
 			t.Errorf("inventory map command missing %q: %v", name, mapChildren)
 		}
 	}
-	for _, name := range []string{"scan", "list", "get", "counts", "tui"} {
+	for _, name := range []string{"scan", "list", "get", "counts", "tui", "records"} {
 		if mapChildren[name] {
 			t.Errorf("inventory map still exposes redundant command %q", name)
-		}
-	}
-	recordChildren := direct(guardrailsBaselineRecordsCmd)
-	if len(recordChildren) != 4 {
-		t.Fatalf("record children = %v, want exactly four commands", recordChildren)
-	}
-	for _, name := range []string{"list", "search", "get", "explain"} {
-		if !recordChildren[name] {
-			t.Errorf("records command missing %q: %v", name, recordChildren)
 		}
 	}
 }
@@ -105,6 +96,7 @@ func TestRemovedGuardrailsCommandsAreRejected(t *testing.T) {
 		{name: "legacy get", args: []string{"inventory", "map", "get"}},
 		{name: "redundant counts", args: []string{"inventory", "map", "counts"}},
 		{name: "legacy tui", args: []string{"inventory", "map", "tui"}},
+		{name: "low-level records", args: []string{"inventory", "map", "records"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

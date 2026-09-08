@@ -79,7 +79,7 @@ func guardrailsBaselineError(code, message string, exitCode int) *clierrors.CLIE
 	case "GUARDRAILS_BASELINE_NOT_FOUND":
 		suggestion = "Run 'konvu inventory map history' to see stored runs."
 	case "GUARDRAILS_BASELINE_RECORD_NOT_FOUND":
-		suggestion = "Run 'konvu inventory map records search <query> --run <run-id>' to find matching records."
+		suggestion = "Run 'konvu inventory map show <run-id> --output json' to inspect the complete graph."
 	case "GUARDRAILS_BASELINE_AMBIGUOUS":
 		suggestion = "Select an exact run with --run, or an unambiguous codebase with --repo."
 	case "GUARDRAILS_BASELINE_INCOMPLETE":

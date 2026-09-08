@@ -91,6 +91,9 @@ const helpAllFooter = `EXAMPLES
   konvu inventory
   konvu inventory list -o json
   konvu inventory map .
+  konvu inventory map history
+  konvu inventory map show <run-id> -o json
+  konvu inventory map diff <base-run> <head-run>
   konvu inventory show github:org/repo -o json
   konvu inventory -q | xargs -n1 konvu inventory show
 
