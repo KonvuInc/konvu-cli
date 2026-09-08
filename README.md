@@ -180,9 +180,10 @@ the scan.
 
 ## Connect to Konvu (optional)
 
-The finding, vulnerability, metrics, coverage, inventory, and remediation
-commands connect to the Konvu API and require a Konvu account. Authenticate with
-either a browser login or a Konvu API key:
+The finding, vulnerability, metrics, coverage, remediation, and hosted Inventory
+features connect to the Konvu API and require a Konvu account. Local Inventory
+mapping and exploration do not. Authenticate with either a browser login or a
+Konvu API key:
 
 ```bash
 konvu login                      # interactive picker (OAuth or API key)
@@ -219,7 +220,11 @@ Findings come from four scanner categories, each with its own subcommand:
 
 Common ops are `list`, `get`, and `counts`. `sca`, `sast`, and `secrets` also support `rate`. `sca` alone supports `submit`.
 
-**Backward compatibility**: bare forms (`konvu finding list`, `konvu finding get`, `konvu finding rate`, `konvu finding counts`, `konvu finding submit`) continue to work exactly as before — they're aliases for the `sca` equivalents. Existing scripts, skills, and pipes do not need to change.
+Run any source's `list` command in an interactive terminal to open its findings browser. Use Up/Down to select, Enter or Right to inspect, Left or Escape to return, and Q to quit. The SCA table keeps the assessment summary and colors assessment results. Detail views are concise; request complete SCA evidence explicitly with `konvu finding get <id> --include evidence`.
+
+Bare `konvu finding` opens the first 50 SCA findings in the same browser.
+
+**SCA aliases**: bare forms (`konvu finding list`, `konvu finding get`, `konvu finding rate`, `konvu finding counts`, `konvu finding submit`) delegate to the `sca` equivalents. `finding list` now opens a browser on a TTY; pipes still receive JSON, and scripts can select `--output`, `--quiet`, `--count`, or `--group-by` explicitly.
 
 **SAST identity note**: `konvu finding sast list` emits the *investigation ID* as the row's `id` field. Both `get` and `rate` expect that investigation ID (not the raw scanner detection ID). The raw detection ID is available as `detection_id` in the list rows. Detections without a Konvu investigation are included in the output with an empty `id` and `triage_status: "pending"`; `konvu finding sast list -q` skips them so `xargs`-style pipes stay safe. To restrict output to triaged rows only, filter with `jq '.[] | select(.id != "")'`.
 
@@ -231,7 +236,9 @@ konvu finding secrets list --assessment unknown -q \
 The bulk endpoint applies to whole `(provider, secret_hash)` groups, so a rating on one location propagates to every finding of the same secret.
 
 ### `konvu finding list` — Browse findings
-List and filter findings across your repositories.
+
+Open the interactive SCA findings browser on a TTY, or list and filter findings
+when piped or given an explicit output mode.
 ```bash
 # This week's exploitable findings
 konvu finding list --since 7d --assessment exploitable
@@ -473,32 +480,40 @@ konvu coverage default --all
 
 Severities are `CRITICAL`, `HIGH`, `MEDIUM` (alias for `MODERATE`), `LOW`. `--all` clears the restriction (assess every severity); an empty set is rejected. Use `--dry-run` on `enable`/`disable`/`severities` to preview.
 
-### `konvu inventory` — Explore repositories and their threat profiles
+### `konvu inventory` — Understand repositories and their security context
 
-Explore your repositories through Konvu's threat profiles: the production-vs-noise classification, a composite 0–100 threat score and named tier (crown jewel / key asset / standard / peripheral), a one-line summary, and an evidence-bearing attribute map (internet exposure, customer data, cloud credentials, and more). Read-only. Aliased as `konvu inv`. Repositories are identified by URL, id, or a unique URL substring.
+Inventory combines locally generated Security Context Graphs with hosted Konvu Threat Profiles. Local mapping and exploration do not require a Konvu account. When credentials are configured, hosted repositories and profiles are added to the same listing. Aliased as `konvu inv`.
 
 ```bash
-# Org-wide overview: repos profiled, headline attribute counts, tier distribution,
-# and the highest-scoring repositories
+# Open the combined local and hosted repository picker in an interactive terminal
 konvu inventory
 
-# Full threat profile for a single repository — score, tier, classification, and
-# every stored attribute with its provenance, confidence, and evidence
+# List local repositories and any available hosted repositories
+konvu inventory list
+
+# Map a local checkout into a Security Context Graph (no Konvu account required)
+konvu inventory map .
+
+# Show a local graph by path or a hosted Threat Profile by repository selector
+konvu inventory show .
 konvu inventory show github:org/repo
 
 # Machine-readable output for scripting
-konvu inventory -o json
+konvu inventory list -o json
 konvu inventory show org/repo -o json
 
-# Bare `repo_id<TAB>tier` for the ranked repos, for piping
-konvu inventory -q                       # 0190a1b2-...  crown_jewel
-konvu inventory -q | cut -f1 | xargs -n1 konvu inventory show
+# Print stable repository selectors for piping
+konvu inventory list -q | xargs -n1 konvu inventory show
 
 # Select only the fields you need (top-level keys)
 konvu inventory show org/repo --fields threat_profile_score,threat_profile_tier,internet_exposed -o json
 ```
 
-`show` exits 3 (not found) when a repository has no threat profile yet — Konvu builds them as it analyzes your repositories. The `threat_profile_tier` field is a stable slug (`crown_jewel`, `key_asset`, `standard`, `peripheral`); `threat_profile_tier_label` carries the human-readable version.
+`inventory map` currently accepts local directories only. Hosted mapping will be added to the same command later; login state will never silently change a local map into a hosted one.
+
+Inventory navigation uses the same pattern as findings: Up/Down selects a repository, Enter or Right opens it, Left or Escape returns to the repository list, and Q quits. If hosted data is unavailable, local repositories remain usable and table output prints a warning; JSON reports the hosted source as `unavailable`.
+
+For hosted profiles, `show` exits 3 (not found) when the repository has not been mapped in Konvu yet. Its Threat Profile appears after mapping. The `threat_profile_tier` field is a stable slug (`crown_jewel`, `key_asset`, `standard`, `peripheral`); `threat_profile_tier_label` carries the human-readable version.
 
 ### `konvu skills path` — Locate bundled skills
 
@@ -585,7 +600,9 @@ konvu skills path
 
 ## Output formats
 
-The CLI auto-detects output format: **table** when running interactively, **JSON** when piped. Override with `--output`:
+Finding and Inventory list commands that support a browser open it when stdin and
+stdout are interactive and no machine-output option is set. Piped output defaults
+to **JSON**. Select a deterministic format explicitly for scripts:
 
 ```bash
 konvu finding list --output json    # machine-readable

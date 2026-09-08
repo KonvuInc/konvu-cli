@@ -27,28 +27,53 @@ var inventoryHeadlineKeys = []struct{ key, label string }{
 var inventoryCmd = &cobra.Command{
 	Use:     "inventory",
 	Aliases: []string{"inv"},
-	Short:   "Explore repositories and their threat profiles",
-	Long: `Explore your repositories through Konvu's threat profiles.
+	Short:   "Understand repositories and their security context",
+	Long: `Explore repository security context from local Security Context Graphs and
+hosted repository Threat Profiles. Local mapping and exploration work without a
+Konvu account.
 
-A threat profile is Konvu's production-vs-noise classification of a repository plus
-a composite 0-100 threat score, a named tier (crown jewel / key asset / standard /
-peripheral), a one-line summary, and an evidence-bearing attribute map (internet
-exposure, customer data, cloud credentials, and more).
+In an interactive terminal, run without a subcommand to open the combined
+repository browser. When piped, or when -o or -q is set, it prints the same
+repository listing as 'inventory list'.
 
-With no subcommand, prints the org-wide overview.`,
-	RunE: runInventoryOverview,
+Use 'inventory map <local-path>' to create a Security Context Graph locally.`,
+	Example: `  konvu inventory
+  konvu inventory list -o json
+  konvu inventory map .
+  konvu inventory show .`,
+	Args: cobra.NoArgs,
+	RunE: runInventory,
+}
+
+func runInventory(cmd *cobra.Command, _ []string) error {
+	quiet, _ := cmd.Flags().GetBool("quiet")
+	if shouldOpenInventoryTUI(output.BaselineTerminalInteractive(), cmd.Flags().Changed("output"), quiet) {
+		return runInventoryTUI(cmd)
+	}
+	format := output.DetectOutputFormat(mustOutputFlag(cmd))
+	deps, err := defaultInventoryListDependencies()
+	if err != nil {
+		return inventoryLocalError(err)
+	}
+	return runInventoryList(cmd, deps, format, quiet)
+}
+
+func shouldOpenInventoryTUI(interactive, outputChanged, quiet bool) bool {
+	return interactive && !outputChanged && !quiet
 }
 
 var inventoryShowCmd = &cobra.Command{
-	Use:   "show <repo>",
-	Short: "Show the full threat profile for a single repository",
-	Long: `Show the full threat profile for one repository (identified by URL, id, or a
-unique URL substring): score, tier, classification, summary, and every stored
-attribute with its provenance, confidence, and evidence.
+	Use:   "show <target>",
+	Short: "Show the security context available for one repository",
+	Long: `Show a local Security Context Graph by filesystem path, without requiring a
+Konvu account. For a hosted repository URL or ID, show its Konvu Threat Profile:
+score, tier, classification, summary, attributes, provenance, and evidence.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth failed`,
-	Example: `  konvu inventory show github:org/repo
-  konvu inventory show org/repo -o json`,
+	Example: `  konvu inventory show .
+  konvu inventory show github:org/repo
+  konvu inventory show org/repo -o json
+  konvu inventory show org/repo --fields threat_profile_score,threat_profile_tier -o json`,
 	RunE: runInventoryShow,
 }
 
@@ -156,6 +181,9 @@ func runInventoryShow(cmd *cobra.Command, args []string) error {
 	// before any network call so a bad invocation fails fast.
 	if fields != "" && format != output.JSON {
 		handleInventoryError(usageError("--fields only applies to JSON output; re-run with -o json."), format)
+	}
+	if inventoryLooksLocalTarget(args[0]) {
+		return runInventoryShowLocal(cmd, args[0], fields, format)
 	}
 
 	client := api.NewClient("", "")
@@ -399,14 +427,13 @@ func handleInventoryError(err error, format output.OutputFormat) {
 	case *api.AuthenticationError:
 		cliErr = clierrors.NewAuthError(e.Error())
 	case *api.APIError:
+		if inventoryIsNoThreatProfileError(e) {
+			cliErr = inventoryNoThreatProfileError()
+			break
+		}
 		switch e.StatusCode {
 		case 404:
-			cliErr = &clierrors.CLIError{
-				Code:       "NO_THREAT_PROFILE",
-				Message:    "No threat profile exists for this repository yet.",
-				Suggestion: "Konvu builds threat profiles as it analyzes repositories. Run 'konvu inventory' to see profiled repos.",
-				ExitCode:   clierrors.ExitNotFound,
-			}
+			cliErr = inventoryNoThreatProfileError()
 		default:
 			cliErr = clierrors.NewAPIError(e.Error())
 		}
@@ -427,14 +454,12 @@ func handleInventoryError(err error, format output.OutputFormat) {
 
 func init() {
 	inventoryShowCmd.Flags().StringP("output", "o", "", "Output format: json, table")
-	inventoryShowCmd.Flags().String("fields", "", "Comma-separated top-level fields to include (e.g. threat_profile_score,threat_profile_tier)")
+	inventoryShowCmd.Flags().String("fields", "", "Comma-separated top-level fields to include in JSON output")
 
-	inventoryCmd.AddCommand(inventoryShowCmd)
+	inventoryCmd.AddCommand(inventoryShowCmd, newInventoryListCmd(), newInventoryMapCmd())
 
-	// Bare `konvu inventory` prints the org overview, matching the coverage/dismiss
-	// bare-command pattern.
-	inventoryCmd.Flags().StringP("output", "o", "", "Output format: json, table")
-	inventoryCmd.Flags().BoolP("quiet", "q", false, "Print only the ranked repos as repo_id<TAB>tier (for piping)")
+	inventoryCmd.Flags().StringP("output", "o", "", "Output format for the repository listing: json, table")
+	inventoryCmd.Flags().BoolP("quiet", "q", false, "Print only repository selectors")
 
 	rootCmd.AddCommand(inventoryCmd)
 }

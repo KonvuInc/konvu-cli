@@ -27,8 +27,16 @@ one element. Pipe IDs into --stdin to rate many at once (chunked at 500).`,
 
 var secretsListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List secret findings",
-	RunE:  runSecretsList,
+	Short: "Browse or list secret findings",
+	Long: `Browse secret findings interactively when stdin and stdout are terminals and
+no machine-output flag is set.
+
+Use -o json, -o table, -o csv, or -q for deterministic non-interactive output.
+One row represents a (provider, secret_hash) group.`,
+	Example: `  konvu finding secrets list
+  konvu finding secrets list --assessment unknown -o table
+  konvu finding secrets list -q`,
+	RunE: runSecretsList,
 }
 
 var secretsGetCmd = &cobra.Command{
@@ -105,6 +113,7 @@ func mapSecretsError(err error) error {
 func runSecretsList(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
+	browse := shouldBrowseFindings(cmd)
 
 	f := findings.ReadCommonFilters(cmd)
 	params := map[string]any{"per_page": f.LimitOr(30), "page": 1}
@@ -125,7 +134,9 @@ func runSecretsList(cmd *cobra.Command, args []string) error {
 		params["assessment"] = a
 	}
 
+	clearLoading := findingLoading(cmd, browse, "secret")
 	resp, err := client.Get("/secret_findings", params)
+	clearLoading()
 	if err != nil {
 		return mapSecretsError(err)
 	}
@@ -138,6 +149,9 @@ func runSecretsList(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		rows = append(rows, transformSecretGroup(m))
+	}
+	if browse {
+		return browseSecretFindings(cmd, rows)
 	}
 	if f.QuietIDs {
 		return findings.RenderBareIDs(cmd, rows, "id")

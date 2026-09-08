@@ -26,8 +26,17 @@ without the caller filtering explicitly.`,
 
 var sastListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List SAST findings",
-	RunE:  runSastList,
+	Short: "Browse or list SAST findings",
+	Long: `Browse SAST findings interactively when stdin and stdout are terminals and
+no machine-output flag is set.
+
+Use -o json, -o table, -o csv, or -q for deterministic non-interactive output.
+The browser and list include untriaged detections; -q prints only investigation
+IDs that can be passed to get or rate.`,
+	Example: `  konvu finding sast list
+  konvu finding sast list --severity critical -o table
+  konvu finding sast list -q | xargs -n1 konvu finding sast get`,
+	RunE: runSastList,
 }
 
 var sastGetCmd = &cobra.Command{
@@ -91,6 +100,7 @@ var sastCSVColumns = append(append([]string{}, sastDefaultColumns...), "triage_u
 func runSastList(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
+	browse := shouldBrowseFindings(cmd)
 
 	f := findings.ReadCommonFilters(cmd)
 	kind, _ := cmd.Flags().GetString("kind")
@@ -124,7 +134,9 @@ func runSastList(cmd *cobra.Command, args []string) error {
 		params["title"] = []string{title}
 	}
 
+	clearLoading := findingLoading(cmd, browse, "SAST")
 	resp, err := client.Get("/detections", params)
+	clearLoading()
 	if err != nil {
 		return &clierrors.CLIError{
 			Message:    fmt.Sprintf("list SAST findings: %v", err),
@@ -145,6 +157,9 @@ func runSastList(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		rows = append(rows, transformDetection(m))
+	}
+	if browse {
+		return browseSASTFindings(cmd, rows)
 	}
 	if f.QuietIDs {
 		return findings.RenderBareIDs(cmd, rows, "id")

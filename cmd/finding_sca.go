@@ -23,8 +23,13 @@ var scaCmd = &cobra.Command{
 
 var scaListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List security findings",
-	Long: `List security findings with filtering and sorting.
+	Short: "Browse or list security findings",
+	Long: `Browse SCA findings interactively when stdin and stdout are terminals and
+no machine-output flag is set. Otherwise, list findings with filtering and
+sorting.
+
+Use -o json, -o table, -o csv, -q, --count, or --group-by for deterministic
+non-interactive output.
 
 Note: --since / --until filter by FIRST-SEEN date (when the finding first appeared),
 not by when it changed state. To scope by when a finding was closed, use
@@ -64,6 +69,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		outputFlag, _ := cmd.Flags().GetString("output")
 		format := output.DetectOutputFormat(outputFlag)
+		browse := shouldBrowseFindings(cmd)
 
 		since, _ := cmd.Flags().GetString("since")
 		until, _ := cmd.Flags().GetString("until")
@@ -179,10 +185,12 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 		var items []any
 		var total int
 		truncated := false
+		clearLoading := findingLoading(cmd, browse, "")
 
 		if needAll {
 			all, tr, err := fetchAllFindings(client, filterParams, sortFlag, order)
 			if err != nil {
+				clearLoading()
 				handleFindingError(err, format)
 				return nil
 			}
@@ -205,6 +213,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 
 			data, err := client.Get("/sca_findings", params)
 			if err != nil {
+				clearLoading()
 				handleFindingError(err, format)
 				return nil
 			}
@@ -213,7 +222,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			// The API doesn't return a total; derive it. If the page is full there
 			// may be more, so paginate to get an accurate count for the summary.
 			total = offset + len(items)
-			if len(items) == perPage {
+			if len(items) == perPage && !browse {
 				if t, err := findings.CountByPagination(client, "/sca_findings", filterParams); err == nil {
 					total = t
 				}
@@ -276,6 +285,11 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			}
 			fmt.Println(output.FormatQuiet(ids, "id"))
 			return nil
+		}
+
+		if browse {
+			clearLoading()
+			return browseSCAFindings(cmd, client, transformed)
 		}
 
 		// Assessment breakdown

@@ -89,13 +89,16 @@ const helpAllFooter = `EXAMPLES
   konvu remediate abc-123 --wait --timeout 15m
   konvu remediate status abc-123
   konvu inventory
+  konvu inventory list -o json
+  konvu inventory map .
   konvu inventory show github:org/repo -o json
-  konvu inventory -q | cut -f1 | xargs -n1 konvu inventory show
+  konvu inventory -q | xargs -n1 konvu inventory show
 
 OUTPUT FORMATS
   Most commands support: -o json (structured), -o table (human), -o csv (finding list only)
-  Default is json when piped, table when interactive.
-  Use -q/--quiet on finding list for bare IDs (useful for piping).
+  Finding and Inventory lists open a browser on interactive terminals unless an output option is set.
+  Piped list output defaults to json; use -o table for a non-interactive human-readable table.
+  Use -q/--quiet on finding lists for IDs and Inventory lists for repository selectors.
 
 EXIT CODES
   0  Success
