@@ -17,8 +17,11 @@ var containerCmd = &cobra.Command{
 
 var containerListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List container findings",
-	RunE:  runContainerList,
+	Short: "Browse or list container findings",
+	Long: `Browse container findings interactively when stdin and stdout are terminals.
+
+Use -o json, -o table, -o csv, or -q for deterministic non-interactive output.`,
+	RunE: runContainerList,
 }
 
 var containerGetCmd = &cobra.Command{
@@ -69,6 +72,7 @@ var containerCSVColumns = append(append([]string{}, containerDefaultColumns...),
 func runContainerList(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
+	browse := shouldBrowseFindings(cmd)
 
 	f := findings.ReadCommonFilters(cmd)
 	params := map[string]any{"per_page": f.LimitOr(30), "page": 1}
@@ -99,7 +103,9 @@ func runContainerList(cmd *cobra.Command, args []string) error {
 		params["source"] = []string{src}
 	}
 
+	clearLoading := findingLoading(cmd, browse, "container")
 	resp, err := client.Get("/container_findings", params)
+	clearLoading()
 	if err != nil {
 		return &clierrors.CLIError{
 			Message:    fmt.Sprintf("list container findings: %v", err),
@@ -115,6 +121,9 @@ func runContainerList(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		rows = append(rows, transformContainerFinding(m))
+	}
+	if browse {
+		return browseContainerFindings(cmd, rows)
 	}
 
 	if f.QuietIDs {

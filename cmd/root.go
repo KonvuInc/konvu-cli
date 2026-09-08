@@ -89,8 +89,10 @@ const helpAllFooter = `EXAMPLES
   konvu remediate abc-123 --wait --timeout 15m
   konvu remediate status abc-123
   konvu inventory
+  konvu inventory list -o json
+  konvu inventory map .
   konvu inventory show github:org/repo -o json
-  konvu inventory -q | cut -f1 | xargs -n1 konvu inventory show
+  konvu inventory -q | xargs -n1 konvu inventory show
 
 OUTPUT FORMATS
   Most commands support: -o json (structured), -o table (human), -o csv (finding list only)

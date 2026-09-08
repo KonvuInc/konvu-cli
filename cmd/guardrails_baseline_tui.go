@@ -25,6 +25,7 @@ type guardrailsBaselineTUIDependencies struct {
 	openCompleted   func(*baseline.Document, bool, io.Writer) (output.BaselineWorkspaceOutcome, error)
 	openDiagnostics func(output.BaselineRunOption, bool, io.Writer) (output.BaselineWorkspaceOutcome, error)
 	renderRuns      func([]output.BaselineRunOption) string
+	emptyState      string
 }
 
 var guardrailsBaselineTUICmd = &cobra.Command{
@@ -102,7 +103,11 @@ func executeGuardrailsBaselineTUI(
 		return wrapGuardrailsBaselineError(err)
 	}
 	if len(runs) == 0 {
-		return output.WriteString(cmd.OutOrStdout(), guardrailsBaselineEmptyState)
+		emptyState := deps.emptyState
+		if emptyState == "" {
+			emptyState = guardrailsBaselineEmptyState
+		}
+		return output.WriteString(cmd.OutOrStdout(), emptyState)
 	}
 	options := make([]output.BaselineRunOption, len(runs))
 	for index, run := range runs {

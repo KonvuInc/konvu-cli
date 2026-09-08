@@ -20,6 +20,13 @@ import (
 var findingCmd = &cobra.Command{
 	Use:   "finding",
 	Short: "Security findings",
+	Long: `Browse and inspect security findings.
+
+Run without a subcommand to open the interactive SCA findings browser. The
+browser requires a Konvu account. Use explicit output flags on list commands
+for deterministic JSON, table, or CSV output.`,
+	Args: cobra.NoArgs,
+	RunE: runFindingRoot,
 }
 
 var defaultTableColumns = []string{"cve", "dependency", "repository", "assessment", "assessment_summary"}
@@ -503,9 +510,12 @@ func copyFlagsFrom(dst, src *cobra.Command) {
 
 var findingListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List SCA findings (alias for `finding sca list`)",
-	Long:  "Backward-compatible alias for `konvu finding sca list`. See that command for full documentation.",
-	RunE:  func(cmd *cobra.Command, args []string) error { return scaListCmd.RunE(cmd, args) },
+	Short: "Browse or list SCA findings",
+	Long: `Browse SCA findings interactively when stdin and stdout are terminals.
+
+Use -o json, -o table, -o csv, or -q for deterministic non-interactive output.
+This command delegates to 'konvu finding sca list' and supports the same filters.`,
+	RunE: func(cmd *cobra.Command, args []string) error { return scaListCmd.RunE(cmd, args) },
 }
 
 var findingGetCmd = &cobra.Command{
