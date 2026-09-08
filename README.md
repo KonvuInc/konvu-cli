@@ -2,7 +2,7 @@
 
 Give agents a security model of your codebase.
 
-Guardrails turns a repository into a source-linked security map: its sensitive
+Inventory turns a repository into a source-linked Security Context Graph: its sensitive
 endpoints, objects, and fields; the roles associated with them; and the
 controls that protect them. Build this agent-ready context without creating a
 Konvu account. Connect an account later to browse findings, track posture, or
@@ -57,9 +57,9 @@ Download the binary for your platform from [GitHub Releases](https://github.com/
 
 ### Docker
 
-Run the account-free baseline with your repository mounted read-only. The two
-named volumes preserve the downloaded Guardrails runtime and completed
-baselines. The container boundary and read-only repository mount provide the
+Run account-free mapping with your repository mounted read-only. The two named
+volumes preserve the downloaded mapping runtime and completed graph runs. The
+container boundary and read-only repository mount provide the
 isolation here, so the command disables the nested OS sandbox:
 
 ```bash
@@ -68,15 +68,15 @@ docker run --rm -it \
   -v "$PWD:/repo:ro" \
   -v guardrails-config:/root/.config/guardrails \
   -v guardrails-store:/root/.konvu/guardrails \
-  ghcr.io/konvuinc/konvu-cli guardrails baseline scan /repo --no-sandbox
+  ghcr.io/konvuinc/konvu-cli inventory map /repo --no-sandbox
 ```
 
-Review the stored result without rerunning the scan:
+Review the stored result without rerunning the map:
 
 ```bash
 docker run --rm -it \
   -v guardrails-store:/root/.konvu/guardrails \
-  ghcr.io/konvuinc/konvu-cli guardrails baseline tui
+  ghcr.io/konvuinc/konvu-cli inventory map history
 ```
 
 For account-backed commands, persist Konvu credentials in a separate volume:
@@ -92,8 +92,8 @@ docker run --rm -it \
 ## Build an agent-ready security map (no Konvu account)
 
 Before asking an agent to review or modify security-sensitive code, give it a
-reliable representation of what the application protects. A Guardrails
-baseline captures:
+reliable representation of what the application protects. A Security Context
+Graph captures:
 
 - sensitive endpoints, objects, and fields;
 - the roles and actors associated with them;
@@ -107,7 +107,7 @@ protections without reconstructing the application's security model from
 scratch. Creating it does not require `konvu login` or a
 `KONVU_ACCESS_TOKEN`.
 
-**Coming soon:** the same baseline will feed agent hooks and CI checks, applying
+**Coming soon:** the same graph will feed agent hooks and CI checks, applying
 this security context automatically as agents edit code and changes move
 through the delivery pipeline.
 
@@ -117,12 +117,12 @@ sandbox. Windows is not currently supported.
 
 ```bash
 export OPENAI_API_KEY=sk-...
-konvu guardrails baseline scan path/to/repo
+konvu inventory map path/to/repo
 ```
 
 The command deliberately separates inspection from model-backed work:
 
-1. It downloads and verifies the pinned Guardrails runtime on first use.
+1. It downloads and verifies the pinned mapping runtime on first use.
 2. It builds a deterministic index, then prints the estimated OpenAI cost and
    duration for the remaining stages.
 3. It asks whether to continue, with **No** as the default. No model-backed
@@ -132,32 +132,32 @@ The command deliberately separates inspection from model-backed work:
 5. It records the attempt under
    `~/.konvu/guardrails/baselines/<run-id>/` as `baseline.json` and `run.log`.
 
-Once the scan completes, list historical runs or open the terminal explorer:
+Once the map completes, list historical runs or open the terminal explorer:
 
 ```bash
-konvu guardrails baseline list
-konvu guardrails baseline tui
+konvu inventory map history
+konvu inventory map history <repository>
 ```
 
 Use a run ID to query the assets, roles, controls, implementations, and source
-evidence without rerunning the scan:
+evidence without rerunning the map:
 
 ```bash
-konvu guardrails baseline records list --run <run-id> --collection assets
-konvu guardrails baseline records list --run <run-id> --collection roles
-konvu guardrails baseline records list --run <run-id> --collection controls
-konvu guardrails baseline records get <record-id> --run <run-id>
-konvu guardrails baseline records explain <record-id> --run <run-id>
+konvu inventory map records list --run <run-id> --collection assets
+konvu inventory map records list --run <run-id> --collection roles
+konvu inventory map records list --run <run-id> --collection controls
+konvu inventory map records get <record-id> --run <run-id>
+konvu inventory map records explain <record-id> --run <run-id>
 ```
 
-### Use the baseline as agent context
+### Use the Security Context Graph as agent context
 
 Export the complete structured result and give it to an agent alongside a code
 review or implementation task:
 
 ```bash
-konvu guardrails baseline get <run-id> --output json \
-  > ~/guardrails-context.json
+konvu inventory map show <run-id> --output json \
+  > ~/security-context-graph.json
 ```
 
 The exported context may contain sensitive details about the repository. Store
@@ -167,16 +167,16 @@ and share it with the same care as the source code.
 
 | Question | Answer |
 |---|---|
-| Do I need a Konvu account? | No. The Guardrails baseline commands do not authenticate with Konvu. |
-| Can the scan cost money? | Yes. The model-backed stages use your OpenAI API account. Review the estimate and decline if you do not want to incur that cost. |
-| Does repository data leave my machine? | The accepted model-backed stages send relevant repository content to your OpenAI API. Only scan code you are authorized to share under your organization's OpenAI data policy. |
-| Is my OpenAI key stored? | Not by Konvu CLI. It is passed to the Guardrails child process for the run. Prefer `OPENAI_API_KEY` so the key does not enter shell history. |
-| What is installed? | On first use, the CLI caches the pinned, verified Guardrails binaries under `~/.config/guardrails/bin/`. |
+| Do I need a Konvu account? | No. Local mapping and stored graph commands do not authenticate with Konvu. |
+| Can mapping cost money? | Yes. The model-backed stages use your OpenAI API account. Review the estimate and decline if you do not want to incur that cost. |
+| Does repository data leave my machine? | The accepted model-backed stages send relevant repository content to your OpenAI API. Only map code you are authorized to share under your organization's OpenAI data policy. |
+| Is my OpenAI key stored? | Not by Konvu CLI. It is passed to the mapping process for the run. Prefer `OPENAI_API_KEY` so the key does not enter shell history. |
+| What is installed? | On first use, the CLI caches the pinned, verified mapping binaries under `~/.config/guardrails/bin/`. |
 | What is written to my repository? | Nothing by default. The sandbox keeps the repository read-only and writes each attempt under `~/.konvu/guardrails/baselines/<run-id>/`. |
 
-To print a static run summary, use `konvu guardrails baseline get <run-id>`.
-Add `--output json` for the complete structured baseline; neither form reruns
-the scan.
+To print a static run summary, use `konvu inventory map show <run-id>`.
+Add `--output json` for the complete structured graph; neither form reruns
+the map.
 
 ## Connect to Konvu (optional)
 

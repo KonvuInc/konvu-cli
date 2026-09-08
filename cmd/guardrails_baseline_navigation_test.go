@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	baselinemodel "github.com/KonvuInc/konvu-cli/pkg/guardrails/baseline"
 	"github.com/KonvuInc/konvu-cli/pkg/output"
 )
@@ -31,7 +30,7 @@ func TestWriteGuardrailsBaselineRunListSupportsFiltersPagingAndQuiet(t *testing.
 			Statuses: []string{"completed"},
 			Limit:    1,
 			Offset:   0,
-			Sort:     "scanned",
+			Sort:     "mapped",
 			Order:    "desc",
 			Quiet:    true,
 		},
@@ -45,22 +44,58 @@ func TestWriteGuardrailsBaselineRunListSupportsFiltersPagingAndQuiet(t *testing.
 	}
 }
 
-func TestLegacyCollectionListRejectsRunListFlags(t *testing.T) {
+func TestMapHistoryAcceptsOptionalRepository(t *testing.T) {
 	command := newGuardrailsBaselineListCmd()
-	if err := command.Flags().Set("limit", "5"); err != nil {
-		t.Fatal(err)
+	if command.Use != "history [repository]" {
+		t.Fatalf("Use = %q", command.Use)
 	}
-	if err := command.Flags().Set("quiet", "true"); err != nil {
-		t.Fatal(err)
+	if err := command.Args(command, []string{"payments"}); err != nil {
+		t.Errorf("history rejected one repository: %v", err)
 	}
-	err := guardrailsBaselineValidateLegacyListFlags(command)
-	assertGuardrailsBaselineCLIError(t, err, "INVALID_ARGUMENTS", clierrors.ExitUsageError)
-	if !strings.Contains(err.Error(), "records list --collection <collection>") {
-		t.Fatalf("error does not direct users to records list: %v", err)
+	if err := command.Args(command, []string{"payments", "api"}); err == nil {
+		t.Error("history accepted more than one repository")
 	}
 }
 
-func TestBaselineRecordsNavigationSearchListCountsAndExplain(t *testing.T) {
+func TestMapHistoryOpensTUIOnlyByDefaultOnATerminal(t *testing.T) {
+	if !shouldOpenMapHistoryTUI(true, false, false) {
+		t.Error("interactive map history did not select the TUI")
+	}
+	for _, test := range []struct {
+		interactive, outputChanged, quiet bool
+	}{
+		{interactive: false},
+		{interactive: true, outputChanged: true},
+		{interactive: true, quiet: true},
+	} {
+		if shouldOpenMapHistoryTUI(test.interactive, test.outputChanged, test.quiet) {
+			t.Errorf("unexpected map history TUI for %+v", test)
+		}
+	}
+}
+
+func TestMapHistoryNormalizesRelativePathsButKeepsRepositoryNames(t *testing.T) {
+	absolute, err := normalizeMapHistoryRepository("./removed-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.Abs("./removed-repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if absolute != filepath.Clean(want) {
+		t.Errorf("relative repository = %q, want %q", absolute, filepath.Clean(want))
+	}
+	name, err := normalizeMapHistoryRepository("payments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "payments" {
+		t.Errorf("repository name = %q, want payments", name)
+	}
+}
+
+func TestMapRecordsNavigationSearchListAndExplain(t *testing.T) {
 	store := newGuardrailsBaselineCommandStore(t)
 	runID := "payments--aaaaaaaa--000001"
 	writeGuardrailsBaselineCommandRun(t, store, guardrailsBaselineCommandRun{
@@ -126,14 +161,6 @@ func TestBaselineRecordsNavigationSearchListCountsAndExplain(t *testing.T) {
 		t.Fatalf("filtered assets = %#v", recordPayload.Assets)
 	}
 
-	var counts bytes.Buffer
-	if err := writeGuardrailsBaselineCounts(&counts, store, selector, "collection", output.JSON); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(counts.String(), `"group": "controls"`) || !strings.Contains(counts.String(), `"count": 1`) {
-		t.Fatalf("collection counts missing Controls: %s", counts.String())
-	}
-
 	var explained bytes.Buffer
 	if err := writeGuardrailsBaselineExplainDepth(
 		&explained,
@@ -165,7 +192,7 @@ func TestBaselineRecordsNavigationSearchListCountsAndExplain(t *testing.T) {
 	}
 }
 
-func TestBaselineGetIncludesAndDiff(t *testing.T) {
+func TestMapShowIncludesCountsAndDiff(t *testing.T) {
 	store := newGuardrailsBaselineCommandStore(t)
 	baseID := "payments--aaaaaaaa--000001"
 	headID := "payments--bbbbbbbb--000002"
@@ -197,6 +224,15 @@ func TestBaselineGetIncludesAndDiff(t *testing.T) {
 	for _, key := range []string{"run", "architecture", "counts", "stages"} {
 		if _, found := payload[key]; !found {
 			t.Errorf("get payload missing %q: %s", key, getOutput.String())
+		}
+	}
+	var summary bytes.Buffer
+	if err := writeGuardrailsBaselineGet(&summary, store, headID, nil, output.Table); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"assets", "controls", "implementations"} {
+		if !strings.Contains(summary.String(), field) {
+			t.Errorf("map show summary missing %q: %s", field, summary.String())
 		}
 	}
 

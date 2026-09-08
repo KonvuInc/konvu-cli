@@ -43,9 +43,9 @@ var skillDirs = []SkillDir{
 		EmbedName:   "guardrails-onboarding",
 		InstallName: "konvu-guardrails-onboarding",
 		Pitch: []string{
-			"  Guardrails Baselines — scan a codebase and explore its Assets, Controls,",
+			"  Security Context Graphs — map a codebase and explore its Assets, Controls,",
 			"  and Implementations across historical runs. Run it in Claude Code with:",
-			"  /konvu-guardrails-onboarding, or ask it to explore a Guardrails baseline.",
+			"  /konvu-guardrails-onboarding, or ask it to explore a Security Context Graph.",
 		},
 	},
 }

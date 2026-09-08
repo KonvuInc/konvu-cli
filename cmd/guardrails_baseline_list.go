@@ -28,17 +28,16 @@ func newGuardrailsBaselineListCmd() *cobra.Command {
 	var order string
 	var quiet bool
 	command := &cobra.Command{
-		Use:   "list",
-		Short: "List baseline runs",
-		Long: `List locally stored baseline runs from any working directory.
+		Use:   "history [repository]",
+		Short: "List Security Context Graph map runs",
+		Long: `List locally stored Security Context Graph map runs from any working directory.
 
-Use --repo to filter by repository name or absolute path. The legacy
-'list <collection>' form remains available; use 'baseline records list' for
-new scripts and interactive navigation.`,
-		Example: `  konvu guardrails baseline list
-  konvu guardrails baseline list --repo <repository>
-  konvu guardrails baseline list --status completed --limit 20
-  konvu guardrails baseline list --repo <repository> -q`,
+Pass a repository name or path, or use --repo, to filter its history.
+Use --run to select one exact stored run.`,
+		Example: `  konvu inventory map history
+  konvu inventory map history <repository>
+  konvu inventory map history --status completed --limit 20
+  konvu inventory map history --repo <repository> -q`,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			runGuardrailsBaselineCommand(cmd, func() error {
@@ -50,6 +49,20 @@ new scripts and interactive navigation.`,
 						return err
 					}
 				}
+				if len(args) == 1 {
+					if strings.TrimSpace(runID) != "" || strings.TrimSpace(repository) != "" {
+						return guardrailsBaselineError(
+							"INVALID_ARGUMENTS",
+							"a repository argument cannot be combined with --run or --repo",
+							clierrors.ExitUsageError,
+						)
+					}
+					repository = args[0]
+				}
+				repository, err := normalizeMapHistoryRepository(repository)
+				if err != nil {
+					return err
+				}
 				format, err := guardrailsBaselineOutputFormat(explicitFormat)
 				if err != nil {
 					return err
@@ -58,68 +71,80 @@ new scripts and interactive navigation.`,
 				if err != nil {
 					return err
 				}
-				if len(args) == 1 {
-					if err := guardrailsBaselineValidateLegacyListFlags(cmd); err != nil {
-						return err
-					}
-				}
 				store, err := defaultGuardrailsBaselineStore()
 				if err != nil {
 					return wrapGuardrailsBaselineError(err)
 				}
-				if len(args) == 1 {
-					return writeGuardrailsBaselineList(
-						cmd.OutOrStdout(),
-						store,
-						strings.ToLower(strings.TrimSpace(args[0])),
-						selector,
-						format,
-					)
+				options := guardrailsBaselineRunListOptions{
+					Statuses: statuses,
+					Limit:    limit,
+					Offset:   offset,
+					Sort:     sortBy,
+					Order:    order,
+					Quiet:    quiet,
+				}
+				if shouldOpenMapHistoryTUI(output.BaselineTerminalInteractive(), cmd.Flags().Changed("output"), quiet) {
+					dependencies := defaultGuardrailsBaselineTUIDependencies(store)
+					dependencies.emptyState = guardrailsBaselineEmptyState
+					dependencies.list = func() ([]baselinemodel.RunEntry, error) {
+						runs, listErr := store.List()
+						if listErr != nil {
+							return nil, listErr
+						}
+						runs, listErr = filterGuardrailsBaselineRuns(runs, selector)
+						if listErr != nil {
+							return nil, listErr
+						}
+						return filterAndPageGuardrailsBaselineRuns(runs, options)
+					}
+					return executeGuardrailsBaselineTUI(cmd, runID, dependencies)
 				}
 				return writeGuardrailsBaselineRunList(
 					cmd.OutOrStdout(),
 					store,
 					selector,
-					guardrailsBaselineRunListOptions{
-						Statuses: statuses,
-						Limit:    limit,
-						Offset:   offset,
-						Sort:     sortBy,
-						Order:    order,
-						Quiet:    quiet,
-					},
+					options,
 					format,
 				)
 			})
 		},
 	}
 	command.Flags().StringVar(&runID, "run", "", "filter by exact run ID")
-	command.Flags().StringVar(&repository, "repo", "", "filter runs or select a codebase by name or absolute path")
+	command.Flags().StringVar(&repository, "repo", "", "filter runs by repository name or path")
 	command.Flags().StringSliceVar(&statuses, "status", nil, "Filter by status: running,completed,failed,cancelled,invalid")
 	command.Flags().IntVarP(&limit, "limit", "n", 50, "Maximum runs to return")
 	command.Flags().IntVar(&offset, "offset", 0, "Skip N runs")
-	command.Flags().StringVar(&sortBy, "sort", "scanned", "Sort by: scanned,repository,status,duration")
+	command.Flags().StringVar(&sortBy, "sort", "mapped", "Sort by: mapped,repository,status,duration")
 	command.Flags().StringVar(&order, "order", "desc", "Order: asc,desc")
 	command.Flags().StringVarP(&explicitFormat, "output", "o", "", "Output format: table, json")
 	command.Flags().BoolVarP(&quiet, "quiet", "q", false, "Print only run IDs")
 	return command
 }
 
-func guardrailsBaselineValidateLegacyListFlags(command *cobra.Command) error {
-	var flags []string
-	for _, name := range []string{"status", "limit", "offset", "sort", "order", "quiet"} {
-		if command.Flags().Changed(name) {
-			flags = append(flags, "--"+name)
+func shouldOpenMapHistoryTUI(interactive, outputChanged, quiet bool) bool {
+	return interactive && !outputChanged && !quiet
+}
+
+func normalizeMapHistoryRepository(repository string) (string, error) {
+	repository = strings.TrimSpace(repository)
+	if repository == "" {
+		return "", nil
+	}
+	if filepath.IsAbs(repository) {
+		return filepath.Clean(repository), nil
+	}
+	if repository == "." || repository == ".." || strings.ContainsAny(repository, `/\`) {
+		absolute, err := filepath.Abs(repository)
+		if err != nil {
+			return "", guardrailsBaselineError(
+				"INVALID_ARGUMENTS",
+				fmt.Sprintf("could not resolve repository path %q", repository),
+				clierrors.ExitUsageError,
+			)
 		}
+		return filepath.Clean(absolute), nil
 	}
-	if len(flags) == 0 {
-		return nil
-	}
-	return guardrailsBaselineError(
-		"INVALID_ARGUMENTS",
-		fmt.Sprintf("%s cannot be used with 'list <collection>'; use 'records list --collection <collection>'", strings.Join(flags, ", ")),
-		clierrors.ExitUsageError,
-	)
+	return repository, nil
 }
 
 type guardrailsBaselineRunListOptions struct {
@@ -213,14 +238,14 @@ func filterAndPageGuardrailsBaselineRuns(
 	}
 	sortBy := strings.ToLower(strings.TrimSpace(options.Sort))
 	if sortBy == "" {
-		sortBy = "scanned"
+		sortBy = "mapped"
 	}
 	switch sortBy {
-	case "scanned", "repository", "status", "duration":
+	case "mapped", "repository", "status", "duration":
 	default:
 		return nil, guardrailsBaselineError(
 			"INVALID_ARGUMENTS",
-			fmt.Sprintf("unsupported sort %q; use scanned, repository, status, or duration", options.Sort),
+			fmt.Sprintf("unsupported sort %q; use mapped, repository, status, or duration", options.Sort),
 			clierrors.ExitUsageError,
 		)
 	}
@@ -291,7 +316,7 @@ func writeGuardrailsBaselineList(
 		return guardrailsBaselineError(
 			"INVALID_ARGUMENTS",
 			fmt.Sprintf(
-				"unknown baseline collection %q; use assets, asset-observations, controls, implementations, resources, routes, classes, roles, control-observations, or unresolved",
+				"unknown graph collection %q; use assets, asset-observations, controls, implementations, resources, routes, classes, roles, control-observations, or unresolved",
 				collectionName,
 			),
 			clierrors.ExitUsageError,
@@ -366,7 +391,7 @@ func writeGuardrailsBaselineRunsValue(
 		writer,
 		output.FormatTable(
 			map[string]any{"runs": values},
-			[]string{"repository", "commit", "scanned", "duration", "assets", "controls", "implementations", "status", "run"},
+			[]string{"repository", "commit", "mapped", "duration", "assets", "controls", "implementations", "status", "run"},
 			"runs",
 			nil,
 		),
@@ -423,7 +448,7 @@ func filterGuardrailsBaselineRuns(
 		}
 		return nil, guardrailsBaselineError(
 			"GUARDRAILS_BASELINE_NOT_FOUND",
-			fmt.Sprintf("no stored baseline runs matched %q", target),
+			fmt.Sprintf("no stored map runs matched %q", target),
 			clierrors.ExitNotFound,
 		)
 	}
@@ -544,5 +569,5 @@ func guardrailsBaselineSortedKeys(values map[string]bool) []string {
 }
 
 func init() {
-	guardrailsBaselineCmd.AddCommand(guardrailsBaselineListCmd)
+	inventoryMapCmd.AddCommand(guardrailsBaselineListCmd)
 }

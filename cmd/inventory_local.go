@@ -722,7 +722,7 @@ func inventoryHostedDetailText(profile map[string]any) string {
 	}
 	updated := getStr(profile, "updated_at")
 	if updated != "" {
-		updated = formatGuardrailsBaselineScanned(updated)
+		updated = formatGuardrailsBaselineMapped(updated)
 	}
 	fmt.Fprintf(&value, "%-18s %s\n", "Updated", orDefault(updated, "—"))
 
@@ -849,6 +849,8 @@ func inventoryScoreBar(score, width int) string {
 	return strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
 }
 
+var inventoryMapCmd = newInventoryMapCmd()
+
 func newInventoryMapCmd() *cobra.Command {
 	var apiKey string
 	var yes bool
@@ -856,13 +858,17 @@ func newInventoryMapCmd() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "map <local-path>",
 		Short: "Map a local repository into a Security Context Graph",
-		Long: `Create a Security Context Graph from a local repository.
+		Long: `Create a Security Context Graph from a local repository, or inspect stored
+map runs with the history, show, diff, and records subcommands.
 
 Mapping runs locally and does not require a Konvu account. Hosted repository
 selectors are not supported yet; clone the repository and pass its local path.
 The mapper uses OPENAI_API_KEY unless --openai-api-key is provided.`,
 		Example: `  konvu inventory map .
-  konvu inventory map /path/to/repository --yes`,
+  konvu inventory map /path/to/repository --yes
+  konvu inventory map history
+  konvu inventory map show <run-id>
+  konvu inventory map diff <base-run> <head-run>`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			path, err := inventoryLocalDirectory(args[0])

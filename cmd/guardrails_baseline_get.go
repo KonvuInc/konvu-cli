@@ -18,16 +18,16 @@ func newGuardrailsBaselineGetCmd() *cobra.Command {
 	var includes []string
 	var explicitFormat string
 	command := &cobra.Command{
-		Use:   "get <run-id>",
-		Short: "Get a baseline run by ID",
-		Long: `Get one locally stored baseline run by its exact ID.
+		Use:   "show <run-id>",
+		Short: "Show a Security Context Graph map run",
+		Long: `Show one locally stored Security Context Graph map run by its exact ID.
 
 Table output defaults to a run summary. JSON output defaults to the complete
-baseline document. Use --include to select architecture, counts, stages, cost,
+graph document. Use --include to select architecture, counts, stages, cost,
 usage, unknowns, or log.`,
-		Example: `  konvu guardrails baseline get <run-id>
-  konvu guardrails baseline get <run-id> --include architecture,counts,stages
-  konvu guardrails baseline get <run-id> --include log -o json`,
+		Example: `  konvu inventory map show <run-id>
+  konvu inventory map show <run-id> --include architecture,counts,stages
+  konvu inventory map show <run-id> --include log -o json`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			runGuardrailsBaselineCommand(cmd, func() error {
@@ -319,5 +319,5 @@ func writeGuardrailsBaselineValuesTable(writer io.Writer, value any) error {
 }
 
 func init() {
-	guardrailsBaselineCmd.AddCommand(guardrailsBaselineGetCmd)
+	inventoryMapCmd.AddCommand(guardrailsBaselineGetCmd)
 }

@@ -155,8 +155,13 @@ func TestGuardrailsOuterSandboxSelection(t *testing.T) {
 }
 
 func TestGuardrailsReadOnlyCommandsHaveNoOpenAIFlags(t *testing.T) {
-	for _, commandName := range []string{"list", "show", "explain"} {
-		command, _, err := guardrailsCmd.Find([]string{"baseline", commandName})
+	for _, commandPath := range [][]string{
+		{"history"},
+		{"show", "run-id"},
+		{"diff", "base-run", "head-run"},
+		{"records", "list"},
+	} {
+		command, _, err := inventoryMapCmd.Find(commandPath)
 		if err != nil {
 			t.Fatal(err)
 		}

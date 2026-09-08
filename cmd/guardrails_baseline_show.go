@@ -10,68 +10,7 @@ import (
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	baselinemodel "github.com/KonvuInc/konvu-cli/pkg/guardrails/baseline"
 	"github.com/KonvuInc/konvu-cli/pkg/output"
-	"github.com/spf13/cobra"
 )
-
-var guardrailsBaselineShowCmd = newGuardrailsBaselineShowCmd()
-
-func newGuardrailsBaselineShowCmd() *cobra.Command {
-	var runID string
-	var repository string
-	var collectionName string
-	var showLog bool
-	var explicitFormat string
-	command := &cobra.Command{
-		Use:    "show <run-or-record-id>",
-		Short:  "Show one baseline run or record",
-		Hidden: true,
-		Long: `Show a stored run summary or an exact record from a completed baseline.
-JSON output for a run is the complete baseline.json. Use --log with an exact
-run ID to read execution details for completed, failed, or cancelled runs.
-Use --collection when an ID is represented in more than one baseline section.`,
-		Args: cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			runGuardrailsBaselineCommand(cmd, func() error {
-				for _, flag := range []struct{ name, value string }{
-					{name: "run", value: runID},
-					{name: "repo", value: repository},
-					{name: "collection", value: collectionName},
-				} {
-					if err := guardrailsBaselineValidateOptionalFlag(cmd, flag.name, flag.value); err != nil {
-						return err
-					}
-				}
-				format, err := guardrailsBaselineOutputFormat(explicitFormat)
-				if err != nil {
-					return err
-				}
-				selector, err := guardrailsBaselineSelector(runID, repository)
-				if err != nil {
-					return err
-				}
-				store, err := defaultGuardrailsBaselineStore()
-				if err != nil {
-					return wrapGuardrailsBaselineError(err)
-				}
-				return writeGuardrailsBaselineShowCollection(
-					cmd.OutOrStdout(),
-					store,
-					args[0],
-					selector,
-					showLog,
-					collectionName,
-					format,
-				)
-			})
-		},
-	}
-	command.Flags().StringVar(&runID, "run", "", "select an exact stored run ID for record lookup")
-	command.Flags().StringVar(&repository, "repo", "", "select the latest completed run for a codebase name or absolute path")
-	command.Flags().StringVar(&collectionName, "collection", "", "resolve the record inside one exact baseline collection")
-	command.Flags().BoolVar(&showLog, "log", false, "show run.log for an exact run ID")
-	command.Flags().StringVarP(&explicitFormat, "output", "o", "", "Output format: table, json")
-	return command
-}
 
 func writeGuardrailsBaselineShow(
 	writer io.Writer,
@@ -248,7 +187,7 @@ func readGuardrailsBaselineLog(run baselinemodel.RunEntry) (string, error) {
 func writeGuardrailsBaselineRunSummary(writer io.Writer, run baselinemodel.RunEntry) error {
 	value := guardrailsBaselineRunTableValue(run)
 	fields := []string{
-		"run", "status", "repository", "codebase_path", "commit", "branch", "scanned",
+		"run", "status", "repository", "codebase_path", "commit", "branch", "mapped",
 		"duration", "assets", "controls", "implementations", "resources", "routes", "classes",
 		"roles", "control_observations", "unresolved",
 	}
@@ -384,8 +323,4 @@ func writeGuardrailsBaselineOutput(writer io.Writer, rendered string) error {
 		)
 	}
 	return nil
-}
-
-func init() {
-	guardrailsBaselineCmd.AddCommand(guardrailsBaselineShowCmd)
 }

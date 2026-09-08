@@ -36,10 +36,12 @@ In an interactive terminal, run without a subcommand to open the combined
 repository browser. When piped, or when -o or -q is set, it prints the same
 repository listing as 'inventory list'.
 
-Use 'inventory map <local-path>' to create a Security Context Graph locally.`,
+Use 'inventory map <local-path>' to create a Security Context Graph locally.
+Use 'inventory map history' to browse its stored runs.`,
 	Example: `  konvu inventory
   konvu inventory list -o json
   konvu inventory map .
+  konvu inventory map history
   konvu inventory show .`,
 	Args: cobra.NoArgs,
 	RunE: runInventory,
@@ -456,7 +458,7 @@ func init() {
 	inventoryShowCmd.Flags().StringP("output", "o", "", "Output format: json, table")
 	inventoryShowCmd.Flags().String("fields", "", "Comma-separated top-level fields to include in JSON output")
 
-	inventoryCmd.AddCommand(inventoryShowCmd, newInventoryListCmd(), newInventoryMapCmd())
+	inventoryCmd.AddCommand(inventoryShowCmd, newInventoryListCmd(), inventoryMapCmd)
 
 	inventoryCmd.Flags().StringP("output", "o", "", "Output format for the repository listing: json, table")
 	inventoryCmd.Flags().BoolP("quiet", "q", false, "Print only repository selectors")

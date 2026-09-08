@@ -14,8 +14,8 @@ import (
 
 var guardrailsBaselineRecordsCmd = &cobra.Command{
 	Use:   "records",
-	Short: "Explore records within a baseline",
-	Long: `Explore records within one completed baseline.
+	Short: "Explore records within a Security Context Graph",
+	Long: `Explore records within one completed Security Context Graph map run.
 
 Record collections are assets, asset-observations, controls, implementations,
 resources, routes, classes, roles, control-observations, and unresolved.`,
@@ -44,9 +44,9 @@ func newGuardrailsBaselineRecordsListCmd() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "list",
 		Short: "List records in one collection",
-		Example: `  konvu guardrails baseline records list --run <run-id> --collection assets
-  konvu guardrails baseline records list --repo <repository> --collection controls -q
-  konvu guardrails baseline records list --run <run-id> --collection assets --kind object --has-controls --limit 25`,
+		Example: `  konvu inventory map records list --run <run-id> --collection assets
+  konvu inventory map records list --repo <repository> --collection controls -q
+  konvu inventory map records list --run <run-id> --collection assets --kind object --has-controls --limit 25`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
 			runGuardrailsBaselineCommand(cmd, func() error {
@@ -245,11 +245,11 @@ func newGuardrailsBaselineRecordsSearchCmd() *cobra.Command {
 	var options guardrailsBaselineSearchOptions
 	command := &cobra.Command{
 		Use:   "search <query>",
-		Short: "Search records across baseline collections",
+		Short: "Search records across graph collections",
 		Long:  "Search record IDs, names, descriptions, source locations, evidence, and other string fields.",
-		Example: `  konvu guardrails baseline records search "manual override" --run <run-id>
-  konvu guardrails baseline records search auth --repo <repository> --collection assets,controls
-  konvu guardrails baseline records search shared/config.py --run <run-id> -q`,
+		Example: `  konvu inventory map records search "manual override" --run <run-id>
+  konvu inventory map records search auth --repo <repository> --collection assets,controls
+  konvu inventory map records search shared/config.py --run <run-id> -q`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			runGuardrailsBaselineCommand(cmd, func() error {
@@ -425,7 +425,7 @@ func newGuardrailsBaselineRecordsGetCmd() *cobra.Command {
 	var runID, repository, collectionName, explicitFormat string
 	command := &cobra.Command{
 		Use:   "get <record-id>",
-		Short: "Get a baseline record by ID",
+		Short: "Get a graph record by ID",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			runGuardrailsBaselineCommand(cmd, func() error {
@@ -474,7 +474,7 @@ func writeGuardrailsBaselineRecordGet(
 	if !found {
 		return guardrailsBaselineError(
 			"GUARDRAILS_BASELINE_RECORD_NOT_FOUND",
-			fmt.Sprintf("baseline record %q was not found", strings.TrimSpace(target)),
+			fmt.Sprintf("graph record %q was not found", strings.TrimSpace(target)),
 			clierrors.ExitNotFound,
 		)
 	}
@@ -543,8 +543,8 @@ func newGuardrailsBaselineRecordsExplainCmd() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "explain <record-id>",
 		Short: "Explain a record and its related records",
-		Example: `  konvu guardrails baseline records explain <record-id> --run <run-id>
-  konvu guardrails baseline records explain <record-id> --repo <repository> --depth 2`,
+		Example: `  konvu inventory map records explain <record-id> --run <run-id>
+  konvu inventory map records explain <record-id> --repo <repository> --depth 2`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			runGuardrailsBaselineCommand(cmd, func() error {
@@ -578,7 +578,7 @@ func guardrailsBaselineUnknownCollection(name string) error {
 	return guardrailsBaselineError(
 		"INVALID_ARGUMENTS",
 		fmt.Sprintf(
-			"unknown baseline collection %q; use assets, asset-observations, controls, implementations, resources, routes, classes, roles, control-observations, or unresolved",
+			"unknown graph collection %q; use assets, asset-observations, controls, implementations, resources, routes, classes, roles, control-observations, or unresolved",
 			strings.TrimSpace(name),
 		),
 		clierrors.ExitUsageError,
@@ -628,5 +628,5 @@ func init() {
 		newGuardrailsBaselineRecordsGetCmd(),
 		newGuardrailsBaselineRecordsExplainCmd(),
 	)
-	guardrailsBaselineCmd.AddCommand(guardrailsBaselineRecordsCmd)
+	inventoryMapCmd.AddCommand(guardrailsBaselineRecordsCmd)
 }

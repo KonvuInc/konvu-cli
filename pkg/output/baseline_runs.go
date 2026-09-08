@@ -16,7 +16,7 @@ type BaselineRunOption struct {
 	ID              string
 	Repository      string
 	Commit          string
-	Scanned         string
+	Mapped          string
 	Duration        string
 	TotalCost       string
 	Assets          int
@@ -50,7 +50,7 @@ func BaselineRunDiagnostics(option BaselineRunOption) string {
 		problem = "This run is not complete. Inspect run.log for execution details."
 	}
 	return fmt.Sprintf(
-		"Guardrails baseline\n\nRepository: %s\nRun: %s\nCommit: %s\nStatus: %s\n\n%s\n",
+		"Security Context Graph\n\nRepository: %s\nRun: %s\nCommit: %s\nStatus: %s\n\n%s\n",
 		baselineRunRepository(option),
 		sanitizeBaselineText(option.ID, false),
 		baselineRunCommit(option),
@@ -224,7 +224,7 @@ func renderBaselineRunTable(
 	}
 
 	var out strings.Builder
-	out.WriteString(style.bold(baselineFit("Guardrails baselines", width-1)))
+	out.WriteString(style.bold(baselineFit("Security Context Graph history", width-1)))
 	out.WriteString(newline)
 	out.WriteString(style.dim(baselineFit(
 		"Select a run to explore its Assets, Controls, and Implementations.",
@@ -282,7 +282,7 @@ func baselineRunColumns(terminalWidth int) []baselineRunColumn {
 		{key: "repository", header: "Repository", minimum: 10, desired: 20},
 		{key: "commit", header: "Commit", minimum: 9, desired: 9},
 		{key: "run", header: "Run", minimum: 3, desired: 28},
-		{key: "scanned", header: "Scanned", minimum: 7, desired: 16},
+		{key: "mapped", header: "Mapped", minimum: 6, desired: 16},
 		{key: "duration", header: "Duration", minimum: 8, desired: 8},
 		{key: "total_cost", header: "Total cost", minimum: 10, desired: 10},
 		{key: "assets", header: "Assets", minimum: 6, desired: 6},
@@ -319,7 +319,7 @@ func baselineRunColumns(terminalWidth int) []baselineRunColumn {
 		columns[index].width = columns[index].minimum
 	}
 	extra := max(0, available-baselineRunColumnsMinimum(columns))
-	for _, key := range []string{"run", "repository", "scanned", "status"} {
+	for _, key := range []string{"run", "repository", "mapped", "status"} {
 		for index := range columns {
 			if columns[index].key != key || extra == 0 {
 				continue
@@ -348,8 +348,8 @@ func baselineRunColumnValue(option BaselineRunOption, key string) string {
 		return baselineRunCommit(option)
 	case "run":
 		return sanitizeBaselineText(option.ID, false)
-	case "scanned":
-		return sanitizeBaselineText(option.Scanned, false)
+	case "mapped":
+		return sanitizeBaselineText(option.Mapped, false)
 	case "duration":
 		return sanitizeBaselineText(option.Duration, false)
 	case "total_cost":

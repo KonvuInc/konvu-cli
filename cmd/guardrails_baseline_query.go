@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const guardrailsBaselineScanSuggestion = "Run 'konvu guardrails baseline scan <codebase>' to create a baseline."
+const guardrailsBaselineScanSuggestion = "Run 'konvu inventory map <local-path>' to create a Security Context Graph."
 
 var defaultGuardrailsBaselineStore = baseline.DefaultStore
 
@@ -75,11 +75,11 @@ func guardrailsBaselineError(code, message string, exitCode int) *clierrors.CLIE
 	suggestion := guardrailsBaselineScanSuggestion
 	switch code {
 	case "INVALID_ARGUMENTS":
-		suggestion = "Run 'konvu guardrails baseline --help' to see valid commands and selectors."
+		suggestion = "Run 'konvu inventory map --help' to see valid commands and selectors."
 	case "GUARDRAILS_BASELINE_NOT_FOUND":
-		suggestion = "Run 'konvu guardrails baseline list' to see stored runs."
+		suggestion = "Run 'konvu inventory map history' to see stored runs."
 	case "GUARDRAILS_BASELINE_RECORD_NOT_FOUND":
-		suggestion = "Run 'konvu guardrails baseline records search <query> --run <run-id>' to find matching records."
+		suggestion = "Run 'konvu inventory map records search <query> --run <run-id>' to find matching records."
 	case "GUARDRAILS_BASELINE_AMBIGUOUS":
 		suggestion = "Select an exact run with --run, or an unambiguous codebase with --repo."
 	case "GUARDRAILS_BASELINE_INCOMPLETE":
@@ -87,7 +87,7 @@ func guardrailsBaselineError(code, message string, exitCode int) *clierrors.CLIE
 	case "GUARDRAILS_BASELINE_OUTPUT_FAILED":
 		suggestion = "Check that the output destination is writable, then try again."
 	case "GUARDRAILS_BASELINE_INVALID":
-		suggestion = "Run 'konvu guardrails baseline get <run-id> --include log' for diagnostics."
+		suggestion = "Run 'konvu inventory map show <run-id> --include log' for diagnostics."
 	}
 	return &clierrors.CLIError{
 		Code:       code,
@@ -136,7 +136,7 @@ func wrapGuardrailsBaselineError(err error) error {
 	}
 	return guardrailsBaselineError(
 		"GUARDRAILS_BASELINE_INVALID",
-		fmt.Sprintf("could not read stored baselines: %v", err),
+		fmt.Sprintf("could not read stored Security Context Graphs: %v", err),
 		clierrors.ExitGeneralError,
 	)
 }
@@ -240,14 +240,14 @@ func guardrailsBaselineRunTableValue(run baseline.RunEntry) map[string]any {
 		}
 	}
 	value["run"] = value["id"]
-	value["scanned"] = value["completed_at"]
-	if value["scanned"] == "" {
-		value["scanned"] = value["started_at"]
+	value["mapped"] = value["completed_at"]
+	if value["mapped"] == "" {
+		value["mapped"] = value["started_at"]
 	}
 	if !run.Valid {
 		value["repository"] = "—"
 		value["commit"] = "—"
-		value["scanned"] = "—"
+		value["mapped"] = "—"
 		value["duration"] = "—"
 		return value
 	}
