@@ -333,20 +333,17 @@ where every item is rejected exits `1`.
 
 ### `konvu finding vulnerability-report submit` — Submit a vulnerability report
 
-Submit a Markdown or plain-text report to a vulnerability-report Program:
+Submit a Markdown or plain-text report for a repository:
 
 ```bash
 konvu finding vulnerability-report submit \
-  --program-id 0195b9e1-4a3c-7c11-9f2e-6b1d0a4f8c00 \
-  --title "Stored XSS in profile rendering" \
-  --file report.md \
-  --source-url https://hackerone.com/reports/123
+  --repo github:acme/web \
+  --file report.md
 ```
 
-The command generates an idempotency key. For a manual retry, pass a stable key
-with `--idempotency-key`; reusing the same key and report returns the original
-submission rather than creating a duplicate. Use `--file -` to read from stdin
-and `--dry-run` to validate without sending the report.
+The title is derived from the first Markdown heading or the file name. Pass
+`--title` to override it. Use `--file -` to read from stdin and `--dry-run` to
+validate without sending the report.
 
 ### `konvu finding counts` — Assessment metrics
 
