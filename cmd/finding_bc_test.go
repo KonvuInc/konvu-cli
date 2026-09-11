@@ -76,10 +76,10 @@ func TestBCAlias_ArgsMatch(t *testing.T) {
 	}
 }
 
-// TestNewSubcommandsRegistered verifies the four canonical parents exist
+// TestNewSubcommandsRegistered verifies the canonical parents exist
 // under `konvu finding` after init().
 func TestNewSubcommandsRegistered(t *testing.T) {
-	expected := []string{"sca", "sast", "container", "secrets"}
+	expected := []string{"sca", "sast", "container", "secrets", "vulnerability-report"}
 	for _, name := range expected {
 		found := false
 		for _, c := range findingCmd.Commands() {

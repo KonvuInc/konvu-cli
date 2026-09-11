@@ -214,11 +214,12 @@ konvu finding get <finding-id> --include evidence
 
 ### Finding sources
 
-Findings come from four scanner categories, each with its own subcommand:
+The `finding` command groups scanner findings and submitted reports by source:
 - `konvu finding sca <op>` — dependency (SCA) findings — the historical default
 - `konvu finding sast <op>` — application-code (SAST) findings from Semgrep, Arnica, etc.
 - `konvu finding container <op>` — container image findings from AWS Inspector and other scanners
 - `konvu finding secrets <op>` — leaked-credential findings from repository secret scanning
+- `konvu finding vulnerability-report submit` — externally reported vulnerabilities for triage and reproduction
 
 Common ops are `list`, `get`, and `counts`. `sca`, `sast`, and `secrets` also support `rate`. `sca` alone supports `submit`.
 
@@ -329,6 +330,23 @@ changed value renames the scanner and an omitted one clears the label — send i
 on every submission. Every item is processed independently and reported back as
 created / updated / accepted_unmapped / rejected (with a reason); a submission
 where every item is rejected exits `1`.
+
+### `konvu finding vulnerability-report submit` — Submit a vulnerability report
+
+Submit a Markdown or plain-text report to a vulnerability-report Program:
+
+```bash
+konvu finding vulnerability-report submit \
+  --program-id 0195b9e1-4a3c-7c11-9f2e-6b1d0a4f8c00 \
+  --title "Stored XSS in profile rendering" \
+  --file report.md \
+  --source-url https://hackerone.com/reports/123
+```
+
+The command generates an idempotency key. For a manual retry, pass a stable key
+with `--idempotency-key`; reusing the same key and report returns the original
+submission rather than creating a duplicate. Use `--file -` to read from stdin
+and `--dry-run` to validate without sending the report.
 
 ### `konvu finding counts` — Assessment metrics
 
