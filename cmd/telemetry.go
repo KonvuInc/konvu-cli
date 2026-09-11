@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
+	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -31,10 +32,17 @@ func runTelemetryUpload(cmd *cobra.Command, args []string) error {
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return fmt.Errorf("parse telemetry JSON: %w", err)
 	}
+	if payload == nil {
+		return fmt.Errorf("parse telemetry JSON: expected an object")
+	}
 
 	client := api.NewClient("", "")
 	response, err := client.Post("/agent_telemetry/batches", payload)
 	if err != nil {
+		if _, ok := err.(*api.AuthenticationError); ok {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			os.Exit(clierrors.ExitAuthFailed)
+		}
 		return err
 	}
 	return json.NewEncoder(cmd.OutOrStdout()).Encode(response)
