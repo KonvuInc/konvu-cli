@@ -313,13 +313,13 @@ duplicating; on a Konvu-connected, scanned repo the findings flow into AI triage
 automatically.
 ```bash
 # Submit an export against a repo's default branch
-konvu finding submit --repo https://github.com/acme/web --file snyk-findings.json
+konvu finding submit --repo github:acme/web --file snyk-findings.json
 
 # Target a specific branch or tag
-konvu finding submit --repo https://github.com/acme/web --ref release-2.3 --file findings.json
+konvu finding submit --repo github:acme/web --ref release-2.3 --file findings.json
 
 # Pipe findings in and preview without submitting
-cat findings.json | konvu finding submit --repo https://github.com/acme/web --file - --dry-run
+cat findings.json | konvu finding submit --repo github:acme/web --file - --dry-run
 ```
 Each finding object accepts `vulnerability_id`, `manifest_location`, and
 `dependency_name` (required), plus optional `dependency_version`,
@@ -337,7 +337,7 @@ Submit a Markdown or plain-text report for a repository:
 
 ```bash
 konvu finding vulnerability-report submit \
-  --repo https://github.com/acme/web \
+  --repo github:acme/web \
   --file report.md
 ```
 

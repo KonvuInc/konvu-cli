@@ -41,10 +41,10 @@ Each finding object accepts:
 
 Exit codes: 0 success, 1 general error (incl. all findings rejected), 2 invalid arguments, 4 auth failed`,
 	Example: `  # Submit a Snyk export against a repo's default branch
-  konvu finding submit --repo https://github.com/acme/web --file snyk-findings.json
+  konvu finding submit --repo github:acme/web --file snyk-findings.json
 
   # Pipe findings in for a specific branch, preview only
-  cat findings.json | konvu finding submit --repo https://github.com/acme/web --ref release-2.3 --file - --dry-run`,
+  cat findings.json | konvu finding submit --repo github:acme/web --ref release-2.3 --file - --dry-run`,
 	RunE: runScaSubmit,
 }
 
@@ -227,7 +227,7 @@ func parseFindings(data []byte) ([]any, error) {
 }
 
 func init() {
-	scaSubmitCmd.Flags().StringP("repo", "r", "", "Repository URL, e.g. https://github.com/acme/web (required)")
+	scaSubmitCmd.Flags().StringP("repo", "r", "", "Repository URL, e.g. github:acme/web (required)")
 	scaSubmitCmd.Flags().String("ref", "", "Git branch or tag ref (default: repo's default branch)")
 	scaSubmitCmd.Flags().StringP("file", "f", "", "JSON file of findings, or '-' for stdin (required)")
 	scaSubmitCmd.Flags().Bool("dry-run", false, "Preview what would be submitted without executing")
