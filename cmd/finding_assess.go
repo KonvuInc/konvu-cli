@@ -15,17 +15,21 @@ func newFindingAssessCommand(kind, resource, idName string) *cobra.Command {
 		Short: "Request an assessment of one " + kind + " finding",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			formatFlag, _ := cmd.Flags().GetString("output")
+			format := output.DetectOutputFormat(formatFlag)
+			if formatFlag != "" && formatFlag != "json" && formatFlag != "table" {
+				handleFindingError(&clierrors.CLIError{
+					Code: "INVALID_OUTPUT", Message: "Unsupported output format",
+					Suggestion: "Use -o json or -o table.", ExitCode: clierrors.ExitUsageError,
+				}, format)
+			}
 			client := api.NewClient("", "")
 			defer client.Close()
 			response, err := client.Post(fmt.Sprintf("/%s/%s/trigger_assessment", resource, args[0]), nil)
 			if err != nil {
-				return &clierrors.CLIError{
-					Message:    fmt.Sprintf("request %s assessment: %v", kind, err),
-					Suggestion: "Check the finding ID, assessment eligibility, and available credits.",
-				}
+				handleFindingError(err, format)
 			}
-			format, _ := cmd.Flags().GetString("output")
-			if output.DetectOutputFormat(format) == output.JSON {
+			if format == output.JSON {
 				return output.WriteString(cmd.OutOrStdout(), output.FormatJSON(response)+"\n")
 			}
 			return output.WriteString(cmd.OutOrStdout(), "Assessment requested.\n")
