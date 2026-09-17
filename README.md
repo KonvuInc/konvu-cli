@@ -271,6 +271,15 @@ konvu finding list --assessment exploitable -q | xargs -I {} konvu finding get {
 
 **Output:** `--output json|table|csv`, `--quiet` (IDs only), `--count` (total only), `--fields` (select fields)
 
+### Request an assessment
+
+```bash
+konvu finding sca assess <finding-id>
+konvu finding sast assess <detection-id>
+```
+
+These commands request one assessment and return the API response. SAST uses `detection_id` from `finding sast list`. Normal assessment eligibility and credit limits apply. Use `-o json` for the raw response; bare `finding assess` is an SCA alias.
+
 ### `konvu finding get` — Inspect a finding
 
 Get full details on a finding, structured into three sections: **Assessment** (Konvu's analysis), **Finding** (this specific instance), and **Vulnerability** (CVE details).
