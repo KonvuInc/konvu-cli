@@ -271,6 +271,20 @@ konvu finding list --assessment exploitable -q | xargs -I {} konvu finding get {
 
 **Output:** `--output json|table|csv`, `--quiet` (IDs only), `--count` (total only), `--fields` (select fields)
 
+### Request and follow an assessment
+
+```bash
+konvu finding sca assess <finding-id> --watch
+konvu finding sast assess <detection-id> --watch
+konvu finding sast status <detection-id> -o json
+```
+
+`assess` requests a single assessment using the normal repository coverage and credit rules. If one is already queued or running, it follows the existing request. SAST also accepts a stable finding ID or investigation ID; use `detection_id` from `finding sast list` before the first assessment.
+
+Execution progresses through `queued`, `assessing`, and `done` or `failed`; `not_started` means no request exists. A pending retry is `queued`, with `retrying: true`. Execution is separate from the security verdict. `status` only reads progress and never triggers work.
+
+Use `--watch --interval 3s --timeout 15m` to follow progress. Watching a failed assessment or reaching the timeout returns a nonzero exit status; a timeout leaves the assessment running. With `-o json`, watch emits one final JSON document. Bare `finding assess` and `finding status` are SCA aliases.
+
 ### `konvu finding get` — Inspect a finding
 
 Get full details on a finding, structured into three sections: **Assessment** (Konvu's analysis), **Finding** (this specific instance), and **Vulnerability** (CVE details).

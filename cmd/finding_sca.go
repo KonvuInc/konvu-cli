@@ -570,6 +570,9 @@ func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]
 		"summary":   qualSummary,
 		"checklist": checklistItems,
 	}
+	if execution := getMap(detail, "execution"); len(execution) > 0 {
+		assessmentSection["execution"] = execution
+	}
 
 	source := getMap(detail, "source")
 	dismissibleFromKonvu, _ := getBool(source, "dismissible_from_konvu")
