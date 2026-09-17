@@ -283,7 +283,7 @@ konvu finding sast status <detection-id> -o json
 
 Execution progresses through `queued`, `assessing`, and `done` or `failed`; `not_started` means no request exists. A pending retry is `queued`, with `retrying: true`. Execution is separate from the security verdict. `status` only reads progress and never triggers work.
 
-Use `--watch --interval 3s --timeout 15m` to follow progress. Watching a failed assessment or reaching the timeout returns a nonzero exit status; a timeout leaves the assessment running. With `-o json`, watch emits one final JSON document. Bare `finding assess` and `finding status` are SCA aliases.
+Use `--watch --interval 3s --timeout 15m` to follow progress. The timeout includes reference lookup, the initial request, and polling; it cancels pending HTTP requests but does not cancel a server-side assessment. Watching a failed assessment or reaching the timeout exits with status 1. Invalid arguments exit with 2, a missing finding with 3, and authentication failures with 4. With `-o json`, completion or timeout emits one final JSON document containing the last known execution state; no state is emitted if the initial request fails. Bare `finding assess` and `finding status` are SCA aliases.
 
 ### `konvu finding get` — Inspect a finding
 

@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
+	"github.com/KonvuInc/konvu-cli/pkg/output"
 	"github.com/KonvuInc/konvu-cli/skills"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -36,7 +39,16 @@ func Execute() {
 	}
 
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		_ = output.WriteString(rootCmd.ErrOrStderr(), err.Error()+"\n")
+		var cliErr *clierrors.CLIError
+		if errors.As(err, &cliErr) {
+			if cliErr.Suggestion != "" {
+				_ = output.WriteString(rootCmd.ErrOrStderr(), cliErr.Suggestion+"\n")
+			}
+			if cliErr.ExitCode > 0 {
+				os.Exit(cliErr.ExitCode)
+			}
+		}
 		os.Exit(1)
 	}
 }

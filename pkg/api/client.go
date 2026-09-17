@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,12 +29,18 @@ type APIError struct {
 func (e *APIError) Error() string { return e.Message }
 
 type Client struct {
+	ctx           context.Context
 	baseURL       string
 	explicitToken string
 	httpClient    *http.Client
 }
 
 func NewClient(baseURL, accessToken string) *Client {
+	return NewClientWithContext(context.Background(), baseURL, accessToken)
+}
+
+// NewClientWithContext binds every request, including response body reads, to ctx.
+func NewClientWithContext(ctx context.Context, baseURL, accessToken string) *Client {
 	if baseURL == "" {
 		baseURL = config.GetAPIBaseURL()
 	}
@@ -42,6 +49,7 @@ func NewClient(baseURL, accessToken string) *Client {
 		os.Exit(1)
 	}
 	return &Client{
+		ctx:           ctx,
 		baseURL:       baseURL,
 		explicitToken: accessToken,
 		httpClient:    &http.Client{Timeout: 120 * time.Second},
@@ -158,7 +166,7 @@ func (c *Client) query(method, path string, params map[string]any) (map[string]a
 		reqURL += "?" + values.Encode()
 	}
 
-	req, err := http.NewRequest(method, reqURL, nil)
+	req, err := http.NewRequestWithContext(c.ctx, method, reqURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +214,7 @@ func (c *Client) GetList(path string, params map[string]any) ([]any, error) {
 		reqURL += "?" + values.Encode()
 	}
 
-	req, err := http.NewRequest("GET", reqURL, nil)
+	req, err := http.NewRequestWithContext(c.ctx, "GET", reqURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +254,7 @@ func (c *Client) Post(path string, data map[string]any) (map[string]any, error) 
 		body = bytes.NewReader(b)
 	}
 
-	req, err := http.NewRequest("POST", reqURL, body)
+	req, err := http.NewRequestWithContext(c.ctx, "POST", reqURL, body)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +320,7 @@ func (c *Client) sendBody(method, path string, data any) (any, error) {
 		body = bytes.NewReader(b)
 	}
 
-	req, err := http.NewRequest(method, reqURL, body)
+	req, err := http.NewRequestWithContext(c.ctx, method, reqURL, body)
 	if err != nil {
 		return nil, err
 	}
@@ -351,7 +359,7 @@ func (c *Client) sendBody(method, path string, data any) (any, error) {
 // gateway take form fields rather than JSON, because the same route also accepts a file
 // upload and a route cannot take both a JSON body and a file part.
 func (c *Client) PostForm(path string, form url.Values) (map[string]any, error) {
-	req, err := http.NewRequest("POST", c.baseURL+path, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(c.ctx, "POST", c.baseURL+path, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
