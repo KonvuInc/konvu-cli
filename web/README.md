@@ -62,6 +62,42 @@ at. When one of these changes in the dashboard, change it here.
 | Hairline group | `AssetOverview.tsx` `HairlineGroup` | `#EEEBF3` top border, 12px padding, uppercase 11px/700 ghostBlue-8 eyebrow. |
 | Rows | `styles.module.css` `.assetRow` | mist-2 hairline, `lch(99.35 0.25 282)` hover, 2px deepPurple-3 focus ring inset. |
 
+### The information, not just the look
+
+Matching colours is the easy half. The tables carry the product's own columns,
+because what you need to know about an endpoint group is not what you need to
+know about a data object, and `InventoryAssetTables.tsx` defines three shapes,
+not one generic list.
+
+| View | Columns | Default sort |
+|---|---|---|
+| Endpoints | Endpoint group (name + `RoutePreview`) · Endpoints (route count) · Control coverage | gaps first (`absent*1000 + partial`, descending) |
+| Data objects | Data object (name + location) · Fields (count + "N carrying controls") · Version tables · Control coverage | gaps first |
+| Controls | Control · Property · Status · Protects (N assets) | status ascending, partial first |
+
+Three consequences worth stating, because each one was wrong in an earlier draft:
+
+- **A data object is a group, not a row per object.** `dataObjectGroups()` pairs
+  a model with the version/audit tables generated for it and the fields it owns,
+  and the coverage cell rolls up the model's control links *together with every
+  field's*. On the `ihatemoney` baseline that turns 10 raw object assets into 6
+  data objects. Fields are therefore not a rail destination: they are folded
+  into the object that owns them, exactly as the product does.
+- **There is no Kind column.** The rail already scopes to one kind, so a column
+  repeating it on every row says nothing. There is no Declared-at column either;
+  the declaration is the sub-line under the name, and in full in the panel.
+- **Controls lists only implemented ones.** A control nothing implements is an
+  expectation the code fails, which is a finding rather than an asset. The
+  product omits them; this does too, and names the count in the caveats so the
+  omission is visible rather than silent.
+
+One local correction. `data.ts` pairs a version table to its model by `name`,
+because the hosted graph names an object after its table. This artifact names it
+for a human ("Bill version history" declared at `...#bill_version`), so matching
+on `name` alone pairs nothing and the Version tables column is dead in every
+row. `objectKey()` prefers the declared symbol and falls back to the name, which
+reproduces the product's behaviour under both naming conventions.
+
 ### Shell and navigation
 
 The page is laid out as the app shell, not as a standalone document:

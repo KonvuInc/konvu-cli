@@ -264,7 +264,27 @@ tbody tr:focus-visible {
   outline-offset: -2px;
 }
 
-.cell-name { color: var(--konvu-ink); font-weight: 500; font-size: var(--konvu-fs-base); }
+/* The product's name cell: 13px, 600, black, truncated. Endpoint groups are
+ * additionally capitalised. */
+.cell-name {
+  color: #000;
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cell-name.cap { text-transform: capitalize; }
+
+/* Counts are monospace, with their unit and any qualifier beneath. */
+.num { font-family: var(--konvu-mono); font-size: var(--konvu-fs-sm); color: var(--konvu-gray-7); }
+.unit { font-size: var(--konvu-fs-xs); color: var(--konvu-ink-faint); margin-left: 4px; }
+.cell-note { font-size: var(--konvu-fs-xs); color: var(--konvu-ink-faint); margin-top: 2px; }
+.dash { color: var(--konvu-ink-faint); }
+
+/* Property in a list cell is plain gray text; the accent belongs to a control
+ * card, not to a row. */
+.plain-prop { font-size: var(--konvu-fs-sm); color: var(--konvu-gray-7); }
 .cell-sub {
   font-family: var(--konvu-mono);
   font-size: var(--konvu-fs-xs);
@@ -800,6 +820,72 @@ function assetBroadUrls(a) {
 
 /* ------------------------------------------------------------ derivation -- */
 
+/* --- data-object grouping, ported from data.ts -----------------------------
+ * A data object is a model plus the version/audit tables generated for it and
+ * the fields it owns. The product groups them this way, and its coverage cell
+ * rolls up the model's own control links together with every field's, so a
+ * classified field is never invisible behind an unclassified model.
+ */
+
+const VERSION_SUFFIX = /_version$/;
+
+function childFields(objectId) {
+  return ASSETS.filter((a) => a.kind === "field" && a.parent === objectId);
+}
+
+/**
+ * The identifier to pair a version table with its model.
+ *
+ * data.ts matches on `name`, because the hosted graph names an object after its
+ * table. This artifact names it for a human -- "Bill version history" declared
+ * at `...#bill_version` -- so matching on `name` alone pairs nothing and the
+ * Version tables column is dead in every row. Prefer the declared symbol and
+ * fall back to the name, which reproduces the product's behaviour on both
+ * naming conventions.
+ */
+function objectKey(asset) {
+  const decl = asset.decl || "";
+  const symbol = decl.includes("#") ? decl.slice(decl.lastIndexOf("#") + 1) : "";
+  return (symbol || asset.name || "").toLowerCase();
+}
+
+function isVersionTable(asset) {
+  return VERSION_SUFFIX.test(objectKey(asset)) || VERSION_SUFFIX.test(asset.name);
+}
+
+function dataObjectGroups() {
+  const objects = ASSETS.filter((a) => a.kind === "object");
+  const versionTables = objects.filter(isVersionTable);
+  const models = objects.filter((o) => !isVersionTable(o));
+
+  const groups = models.map((model) => {
+    const key = objectKey(model);
+    const shadows = versionTables.filter(
+      (t) => objectKey(t).replace(VERSION_SUFFIX, "") === key
+    );
+    const fields = childFields(model.id);
+    return {
+      model,
+      versionTables: shadows,
+      fields,
+      classifiedFields: fields.filter((f) => (f.controls || []).length > 0),
+    };
+  });
+
+  // A version table with no matching model still gets a row, so no object in
+  // the repository goes unlisted.
+  const paired = new Set(groups.flatMap((g) => g.versionTables.map((t) => t.id)));
+  for (const orphan of versionTables.filter((t) => !paired.has(t.id))) {
+    groups.push({ model: orphan, versionTables: [], fields: [], classifiedFields: [] });
+  }
+  return groups;
+}
+
+/** Sorting a coverage cell by its gaps is what a reviewer actually wants. */
+function byGaps(c) {
+  return c.absent * 1000 + c.partial;
+}
+
 /** `coverageOf` — present / partial / absent counts over a control's statuses. */
 function coverageOf(statuses) {
   return {
@@ -854,9 +940,12 @@ const COV_LABEL = {
 const VIEWS = [
   { value: "endpoint", label: "Endpoints", kind: "endpoint" },
   { value: "object", label: "Data objects", kind: "object" },
-  { value: "field", label: "Fields", kind: "field" },
-  { value: "code", label: "Code assets", kind: "code" },
   { value: "controls", label: "Controls" },
+  // Local-only. The hosted graph lists neither, but the baseline carries both
+  // and dropping rows the artifact contains would be the wrong kind of
+  // faithfulness. Fields are NOT a destination: like the product, they are
+  // folded into the data object that owns them.
+  { value: "code", label: "Code assets", kind: "code" },
   { value: "urls", label: "URLs" },
 ];
 
@@ -865,7 +954,8 @@ const state = {
   q: "",
   covs: new Set(),
   props: new Set(),
-  sort: { key: "name", dir: 1 },
+  /** `null` means "whatever this table's default is" — see tableSpec(). */
+  sort: { key: null, dir: 1 },
   selected: null,
   cursor: -1,
 };
@@ -882,8 +972,11 @@ function viewLabel(v) {
   return found ? found.label : "Inventory";
 }
 function viewCount(v) {
-  if (v.kind) return VIEW_ROWS.filter((r) => r.asset.kind === v.kind).length;
-  if (v.value === "controls") return CONTROLS.length;
+  // Data objects are grouped, so the count is groups, not raw object assets;
+  // controls are the implemented ones, which is what the table lists.
+  if (v.value === "object") return dataObjectGroups().length;
+  if (v.value === "controls") return implementedControls().length;
+  if (v.kind) return ASSETS.filter((a) => a.kind === v.kind).length;
   return ROUTES.length;
 }
 
@@ -1121,6 +1214,16 @@ function renderNotices() {
     );
   }
 
+  const unimplemented = unimplementedControls().length;
+  if (unimplemented) {
+    tags.push(`<b>${unimplemented}</b> unimplemented`);
+    out.push(
+      `<div class="notice"><b>${unimplemented} of ${CONTROLS.length} controls have no implementation in the code.</b> ` +
+      `The Controls view lists only implemented ones, as the product does: a control nothing implements is an ` +
+      `expectation the code fails, which is a finding rather than an asset. They are named here so the omission is visible.</div>`
+    );
+  }
+
   const broadAssets = ASSETS.filter((a) => assetBroadUrls(a).length).length;
   if (broadAssets) {
     tags.push(`<b>${broadAssets}</b> catch-all`);
@@ -1223,172 +1326,366 @@ function searchPlaceholder() {
   return "URL, name, file…";
 }
 
-const COLUMNS = [
-  { key: "name", label: "Asset" },
-  { key: "kind", label: "Kind" },
-  { key: "cov", label: "Coverage" },
-  { key: "controls", label: "Controls" },
-  { key: "decl", label: "Declared at" },
+/* --- tables ----------------------------------------------------------------
+ * The product does not render one generic asset table: each asset type has its
+ * own columns, because what you need to know about an endpoint group is not
+ * what you need to know about a data object. InventoryAssetTables.tsx defines
+ * three, and these mirror them column for column.
+ *
+ * Note what is absent. There is no "Kind" column: the rail already scopes to
+ * one kind, so a column repeating it on every row says nothing. There is no
+ * "Declared at" column either; the declaration is the sub-line under the name
+ * where the product puts it, and in full in the panel.
+ */
+
+/** Every table is described this way, then rendered by one engine. */
+function tableSpec() {
+  const v = state.view;
+
+  if (v === "endpoint") {
+    return {
+      itemLabel: "endpoint groups",
+      defaultSort: { key: "coverage", dir: -1 },
+      columns: [
+        {
+          key: "endpoint", label: "Endpoint group", width: "auto",
+          value: (r) => (r.asset.name || "").toLowerCase(),
+          cell: (r) =>
+            `<div class="cell-name cap">${esc(r.asset.name)}</div>` +
+            (r.asset.ambiguous ? `<div style="margin-top:3px">${chip("ambiguous", "ambiguous")}</div>` : "") +
+            routePreview(r.urls, (r.asset.routes && r.asset.routes[0] && r.asset.routes[0].method) || "route"),
+        },
+        {
+          key: "routes", label: "Endpoints", width: "110px",
+          value: (r) => r.urls.length,
+          cell: (r) => `<span class="num">${r.urls.length}</span>`,
+        },
+        {
+          key: "coverage", label: "Control coverage", width: "220px",
+          value: (r) => byGaps(r.counts),
+          cell: (r) => ((r.asset.controls || []).length ? coverageSummary(r.counts, r.asset.name) : presenceTag("none")),
+        },
+      ],
+    };
+  }
+
+  if (v === "object") {
+    return {
+      itemLabel: "data objects",
+      defaultSort: { key: "coverage", dir: -1 },
+      columns: [
+        {
+          key: "model", label: "Data object", width: "auto",
+          value: (r) => (r.group.model.name || "").toLowerCase(),
+          cell: (r) =>
+            `<div class="cell-name">${esc(r.group.model.name)}</div>` +
+            (r.group.model.ambiguous ? `<div style="margin-top:3px">${chip("ambiguous", "ambiguous")}</div>` : "") +
+            `<div class="cell-sub" title="${esc(r.group.model.decl || "")}">${esc(r.group.model.decl || "")}</div>`,
+        },
+        {
+          key: "fields", label: "Fields", width: "170px",
+          value: (r) => r.group.fields.length,
+          cell: (r) =>
+            `<span class="num">${r.group.fields.length}</span>` +
+            `<div class="cell-note">${r.group.classifiedFields.length} carrying controls</div>`,
+        },
+        {
+          key: "versions", label: "Version tables", width: "140px",
+          value: (r) => r.group.versionTables.length,
+          cell: (r) =>
+            r.group.versionTables.length
+              ? `<span class="num" title="${esc(r.group.versionTables.map((t) => t.name).join(", "))}">${r.group.versionTables.length}</span>`
+              : `<span class="dash">—</span>`,
+        },
+        {
+          key: "coverage", label: "Control coverage", width: "220px",
+          value: (r) => byGaps(r.counts),
+          cell: (r) => (r.counts.total ? coverageSummary(r.counts, r.group.model.name) : presenceTag("none")),
+        },
+      ],
+    };
+  }
+
+  if (v === "code") {
+    return {
+      itemLabel: "code assets",
+      defaultSort: { key: "coverage", dir: -1 },
+      columns: [
+        {
+          key: "code", label: "Code asset", width: "auto",
+          value: (r) => (r.asset.name || "").toLowerCase(),
+          cell: (r) =>
+            `<div class="cell-name">${esc(r.asset.name)}</div>` +
+            (r.asset.ambiguous ? `<div style="margin-top:3px">${chip("ambiguous", "ambiguous")}</div>` : "") +
+            `<div class="cell-sub" title="${esc(r.asset.decl || "")}">${esc(r.asset.decl || "")}</div>`,
+        },
+        {
+          key: "coverage", label: "Control coverage", width: "220px",
+          value: (r) => byGaps(r.counts),
+          cell: (r) => ((r.asset.controls || []).length ? coverageSummary(r.counts, r.asset.name) : presenceTag("none")),
+        },
+      ],
+    };
+  }
+
+  if (v === "controls") {
+    return {
+      itemLabel: "controls",
+      // Partial first: the product sorts status ascending so the weakest reads
+      // at the top.
+      defaultSort: { key: "status", dir: 1 },
+      columns: [
+        {
+          key: "control", label: "Control", width: "auto",
+          value: (r) => (r.c.name || r.c.id).toLowerCase(),
+          cell: (r) =>
+            `<div class="cell-name">${esc(r.c.name || r.c.id)}</div>` +
+            `<div class="cell-sub" title="${esc(r.c.id)}">${esc(r.c.id)}</div>`,
+        },
+        {
+          key: "property", label: "Property", width: "150px",
+          value: (r) => PROPERTY_ORDER.indexOf(r.c.property),
+          // Plain gray text, not an accent: the accent belongs to a control
+          // card, not to a cell in a list.
+          cell: (r) => `<span class="plain-prop">${esc(propertyLabel(r.c.property))}</span>`,
+        },
+        {
+          key: "status", label: "Status", width: "120px",
+          value: (r) => (r.presence === "partial" ? 0 : 1),
+          cell: (r) => presenceTag(r.presence),
+        },
+        {
+          key: "protects", label: "Protects", width: "140px",
+          value: (r) => r.links.length,
+          cell: (r) =>
+            `<span class="num">${r.links.length}</span>` +
+            `<span class="unit">${r.links.length === 1 ? "asset" : "assets"}</span>`,
+        },
+      ],
+    };
+  }
+
+  return {
+    itemLabel: "routes",
+    defaultSort: { key: "path", dir: 1 },
+    columns: [
+      {
+        key: "method", label: "Method", width: "90px",
+        value: (r) => r.route.method || "",
+        cell: (r) => `<span class="method">${esc(r.route.method || "—")}</span>`,
+      },
+      {
+        key: "path", label: "Path", width: "auto",
+        value: (r) => r.route.path || "",
+        cell: (r) => `<span class="mono" style="color:var(--konvu-ink)">${esc(r.route.path)}</span>`,
+      },
+      {
+        key: "module", label: "Declared in", width: "200px",
+        value: (r) => r.route.module || "",
+        cell: (r) => `<span class="cell-sub" style="margin:0">${esc(r.route.module)}:${esc(r.route.line)}</span>`,
+      },
+      {
+        key: "attributed", label: "Attributed to", width: "270px",
+        value: (r) => r.owners.length,
+        cell: (r) => r.ownerCells,
+      },
+    ],
+  };
+}
+
+const PROPERTY_ORDER = [
+  "authorization",
+  "authentication",
+  "confidentiality",
+  "integrity",
+  "availability",
+  "non_repudiation",
 ];
 
-function renderTableHead() {
-  document.getElementById("thead").innerHTML =
-    "<tr>" +
-    COLUMNS.map((c) => {
-      const active = state.sort.key === c.key;
-      const arrow = active ? `<span class="arrow">${state.sort.dir > 0 ? "↑" : "↓"}</span>` : "";
-      return `<th data-key="${c.key}">${esc(c.label)}${arrow}</th>`;
-    }).join("") +
-    "</tr>";
-}
+/** The rows for the current view, before search, filters and sorting. */
+function baseRows() {
+  const v = state.view;
 
-function renderAssets() {
-  const rows = filtered();
-  const tbody = document.getElementById("tbody");
-  const empty = document.getElementById("empty");
-
-  document.getElementById("foot-count").textContent =
-    `${rows.length} of ${VIEW_ROWS.length} assets`;
-
-  if (!rows.length) {
-    tbody.innerHTML = "";
-    empty.style.display = "";
-    empty.innerHTML =
-      `<h4>Nothing matches</h4><p>No asset matches these filters. ` +
-      `If you searched a URL, it may be covered by a group pattern rather than named directly &mdash; ` +
-      `check the <b>URLs</b> tab, which resolves patterns to concrete routes.</p>`;
-    return;
-  }
-  empty.style.display = "none";
-
-  tbody.innerHTML = rows
-    .map((r, i) => {
-      const a = r.asset;
-      const n = (a.controls || []).length;
-      const method = (a.routes && a.routes[0] && a.routes[0].method) || "route";
-      return (
-        `<tr data-i="${i}" data-id="${esc(a.id)}" tabindex="-1" aria-selected="${state.selected === a.id}">` +
-        `<td><div class="cell-name">${esc(a.name)}</div>` +
-        (a.ambiguous ? `<div style="margin-top:3px">${chip("ambiguous", "ambiguous", "The engine flagged this identification as ambiguous")}</div>` : "") +
-        routePreview(r.urls, method) +
-        `</td>` +
-        `<td>${kindCell(a.kind)}</td>` +
-        `<td>${n ? coverageSummary(r.counts, a.name) : presenceTag("none")}</td>` +
-        `<td style="font-variant-numeric:tabular-nums">${n || "—"}</td>` +
-        `<td class="decl-cell"><span class="cell-sub" style="margin:0" title="${esc(a.decl || "")}">${esc(a.decl || "—")}</span></td>` +
-        `</tr>`
-      );
-    })
-    .join("");
-}
-
-function renderControls() {
-  const tbody = document.getElementById("tbody");
-  document.getElementById("empty").style.display = "none";
-  document.getElementById("thead").innerHTML =
-    "<tr><th style=\"width:34%\">Control</th><th style=\"width:150px\">Property</th>" +
-    "<th style=\"width:130px\">Presence</th><th style=\"width:80px\">Assets</th><th>Implementations</th></tr>";
-
-  const q = state.q.trim().toLowerCase();
-
-  const rows = CONTROLS.map((c) => {
-    const links = [];
-    for (const a of ASSETS) {
-      for (const l of a.controls || []) {
-        if (l.control_id === c.id) links.push({ asset: a, link: l });
+  if (v === "object") {
+    return dataObjectGroups().map((group) => {
+      const statuses = [
+        ...(group.model.controls || []).map((l) => l.status),
+        ...group.fields.flatMap((f) => (f.controls || []).map((l) => l.status)),
+      ];
+      const props = new Set();
+      for (const a of [group.model, ...group.fields]) {
+        for (const l of a.controls || []) {
+          const c = controlById.get(l.control_id);
+          if (c && c.property) props.add(c.property);
+        }
       }
-    }
-    let presence = "none";
-    if (links.length) {
-      presence = "present";
-      for (const { link } of links) {
-        const s = RANK[link.status] === undefined ? "partial" : link.status;
-        if (RANK[s] < RANK[presence]) presence = s;
-      }
-    }
-    const impls = new Set();
-    for (const { link } of links) for (const id of link.implementation_ids || []) impls.add(id);
-    const counts = coverageOf(links.map(({ link }) => link.status));
-    return { c, links, presence, counts, impls: Array.from(impls) };
-  }).filter((r) => {
-    if (!q) return true;
-    return (r.c.name + " " + r.c.id + " " + (r.c.description || "") + " " + (r.c.property || ""))
-      .toLowerCase().indexOf(q) !== -1;
-  });
-
-  document.getElementById("foot-count").textContent = `${rows.length} of ${CONTROLS.length} controls`;
-
-  tbody.innerHTML = rows
-    .map(
-      (r) =>
-        `<tr data-control="${esc(r.c.id)}">` +
-        `<td class="decl-cell"><div class="cell-name">${esc(r.c.name || r.c.id)}</div>` +
-        `<div class="cell-sub" title="${esc(r.c.id)}">${esc(r.c.id)}</div></td>` +
-        `<td>${propertyCell(r.c.property)}</td>` +
-        `<td>${r.links.length ? coverageSummary(r.counts, r.c.name) : presenceTag("none")}</td>` +
-        `<td style="font-variant-numeric:tabular-nums">${r.links.length || "—"}</td>` +
-        `<td style="font-variant-numeric:tabular-nums">${r.impls.length || "—"}</td>` +
-        `</tr>`
-    )
-    .join("");
-}
-
-function renderUrls() {
-  const tbody = document.getElementById("tbody");
-  document.getElementById("empty").style.display = "none";
-  document.getElementById("thead").innerHTML =
-    "<tr><th style=\"width:90px\">Method</th><th>Path</th>" +
-    "<th style=\"width:200px\">Declared in</th><th style=\"width:270px\">Attributed to</th></tr>";
-
-  const q = state.q.trim().toLowerCase();
-  const rows = ROUTES.filter(
-    (r) => !q || (r.path + " " + r.module + " " + r.method).toLowerCase().indexOf(q) !== -1
-  );
-
-  document.getElementById("foot-count").textContent = `${rows.length} of ${ROUTES.length} routes`;
-
-  if (!rows.length) {
-    tbody.innerHTML = "";
-    document.getElementById("empty").style.display = "";
-    document.getElementById("empty").innerHTML =
-      `<h4>No route matches</h4><p>No declared route matches that text.</p>`;
-    return;
+      return {
+        id: group.model.id,
+        group,
+        counts: coverageOf(statuses),
+        cov: statuses.length ? worstOf(statuses) : "none",
+        props: Array.from(props),
+        haystack: [
+          group.model.name, group.model.decl, group.model.description,
+          group.fields.map((f) => f.name).join(" "),
+          group.versionTables.map((t) => t.name).join(" "),
+        ].join(" ").toLowerCase(),
+      };
+    });
   }
 
-  tbody.innerHTML = rows
-    .map((r) => {
-      const owners = ROUTE_INDEX.byRoute.get(r.id) || [];
+  if (v === "controls") {
+    return implementedControls().map((c) => {
+      const links = [];
+      for (const a of ASSETS) {
+        for (const l of a.controls || []) if (l.control_id === c.id) links.push({ asset: a, link: l });
+      }
+      const statuses = links.map(({ link }) => link.status);
+      return {
+        id: c.id,
+        c,
+        links,
+        presence: statuses.length ? worstOf(statuses) : "absent",
+        counts: coverageOf(statuses),
+        haystack: [c.name, c.id, c.description, c.property].join(" ").toLowerCase(),
+      };
+    });
+  }
+
+  if (v === "urls") {
+    return ROUTES.map((route) => {
+      const owners = ROUTE_INDEX.byRoute.get(route.id) || [];
       const seen = new Set();
       const all = [];
       for (const o of owners) {
         if (seen.has(o.assetId)) continue;
         seen.add(o.assetId);
         const a = ASSETS.find((x) => x.id === o.assetId);
-        if (!a) continue;
-        all.push({ name: a.name, broad: o.broad });
+        if (a) all.push({ name: a.name, broad: o.broad });
       }
-      // Specific attributions first, then at most two, so a route claimed by
-      // several groups stays one row high. The rest are named in the tooltip.
       all.sort((x, y) => Number(x.broad) - Number(y.broad));
       const shown = all.slice(0, 2);
-      const cells = shown.map(
-        (o) =>
-          `<span class="urlpill${o.broad ? " broad" : ""}" title="${esc(o.broad ? "Reached only through a catch-all token — not treated as coverage" : "Resolved from a specific token")}">${esc(o.name)}</span>`
-      );
+      let cells = shown
+        .map(
+          (o) =>
+            `<span class="urlpill${o.broad ? " broad" : ""}" title="${esc(o.broad ? "Reached only through a catch-all token — not treated as coverage" : "Resolved from a specific token")}">${esc(o.name)}</span>`
+        )
+        .join("");
       if (all.length > shown.length) {
-        cells.push(
-          `<span class="more" title="${esc(all.slice(2).map((o) => o.name).join(", "))}">+${all.length - shown.length}</span>`
-        );
+        cells += `<span class="more" title="${esc(all.slice(2).map((o) => o.name).join(", "))}">+${all.length - shown.length}</span>`;
       }
-      return (
-        `<tr data-route="${esc(r.id)}">` +
-        `<td><span class="method">${esc(r.method || "—")}</span></td>` +
-        `<td><span class="mono" style="color:var(--konvu-ink)">${esc(r.path)}</span></td>` +
-        `<td><span class="cell-sub" style="margin:0">${esc(r.module)}:${esc(r.line)}</span></td>` +
-        `<td>${cells.length ? cells.join("") : `<span class="chip none">unattributed</span>`}</td>` +
+      if (!all.length) cells = `<span class="chip">unattributed</span>`;
+      return {
+        id: route.id,
+        route,
+        owners: all,
+        ownerCells: cells,
+        haystack: [route.path, route.module, route.method, all.map((o) => o.name).join(" ")].join(" ").toLowerCase(),
+      };
+    });
+  }
+
+  const kind = currentKind();
+  return VIEW_ROWS.filter((r) => r.asset.kind === kind).map((r) => ({ ...r, id: r.asset.id }));
+}
+
+function worstOf(statuses) {
+  let worst = "present";
+  for (const st of statuses) {
+    const v = RANK[st] === undefined ? "partial" : st;
+    if (RANK[v] < RANK[worst]) worst = v;
+  }
+  return worst;
+}
+
+/**
+ * `implementedControls` — controls with at least one implementation in the
+ * code. A control nothing implements is an expectation the code fails, which is
+ * a finding rather than an asset, so the product deliberately omits it here.
+ * The count is surfaced in the caveats instead of being silently dropped.
+ */
+function implementationsFor(control) {
+  const obs = new Set(control.source_control_observation_ids || []);
+  if (!obs.size) return [];
+  return IMPLS.filter((i) => (i.source_control_observation_ids || []).some((id) => obs.has(id)));
+}
+
+function implementedControls() {
+  return CONTROLS.filter((c) => implementationsFor(c).length > 0).sort((a, b) => {
+    const byProp = PROPERTY_ORDER.indexOf(a.property) - PROPERTY_ORDER.indexOf(b.property);
+    return byProp !== 0 ? byProp : (a.name || "").localeCompare(b.name || "");
+  });
+}
+
+function unimplementedControls() {
+  return CONTROLS.filter((c) => implementationsFor(c).length === 0);
+}
+
+/** Search, facet filters and sorting, applied to whatever baseRows() gave. */
+function filtered() {
+  const spec = tableSpec();
+  const q = state.q.trim().toLowerCase();
+  const terms = q ? q.split(/\s+/) : [];
+
+  let rows = baseRows().filter((r) => {
+    if (isAssetView()) {
+      if (state.covs.size && !state.covs.has(r.cov)) return false;
+      if (state.props.size && !(r.props || []).some((p) => state.props.has(p))) return false;
+    }
+    for (const t of terms) if (r.haystack.indexOf(t) === -1) return false;
+    return true;
+  });
+
+  const sort = state.sort.key ? state.sort : spec.defaultSort;
+  const col = spec.columns.find((c) => c.key === sort.key) || spec.columns[0];
+  rows.sort((x, y) => {
+    const a = col.value(x), b = col.value(y);
+    if (a < b) return -1 * sort.dir;
+    if (a > b) return 1 * sort.dir;
+    return 0;
+  });
+  return { rows, spec, sort };
+}
+
+function renderTable() {
+  const { rows, spec, sort } = filtered();
+  const total = baseRows().length;
+
+  document.getElementById("thead").innerHTML =
+    "<tr>" +
+    spec.columns
+      .map((c) => {
+        const active = sort.key === c.key;
+        const arrow = active ? `<span class="arrow">${sort.dir > 0 ? "↑" : "↓"}</span>` : "";
+        const w = c.width === "auto" ? "" : ` style="width:${c.width}"`;
+        return `<th data-key="${c.key}"${w}>${esc(c.label)}${arrow}</th>`;
+      })
+      .join("") +
+    "</tr>";
+
+  document.getElementById("foot-count").textContent = `${rows.length} of ${total} ${spec.itemLabel}`;
+
+  const empty = document.getElementById("empty");
+  const tbody = document.getElementById("tbody");
+
+  if (!rows.length) {
+    tbody.innerHTML = "";
+    empty.style.display = "";
+    empty.innerHTML =
+      `<h4>Nothing matches</h4><p>No ${esc(spec.itemLabel)} match these filters. ` +
+      `If you searched a URL, it may be covered by a group pattern rather than named directly &mdash; ` +
+      `the <b>URLs</b> view resolves patterns to concrete routes.</p>`;
+    return;
+  }
+  empty.style.display = "none";
+
+  tbody.innerHTML = rows
+    .map(
+      (r, i) =>
+        `<tr data-i="${i}" data-id="${esc(r.id)}" tabindex="-1" aria-selected="${state.selected === r.id}">` +
+        spec.columns.map((c) => `<td class="col-${c.key}">${c.cell(r)}</td>`).join("") +
         `</tr>`
-      );
-    })
+    )
     .join("");
 }
 
@@ -1508,6 +1805,13 @@ function openAsset(id) {
   markSelected();
 }
 
+/** Route a row to its panel: controls have their own, everything else is an asset. */
+function openRow(id) {
+  if (state.view === "controls") return openControl(id);
+  if (state.view === "urls") return;
+  openAsset(id);
+}
+
 /* Highlight the open row without re-rendering the table: a full render at 600
  * rows throws away scroll position and the row you just clicked jumps away. */
 function markSelected() {
@@ -1594,9 +1898,7 @@ function closePanel() {
 /* ------------------------------------------------------------------ wire -- */
 
 function render() {
-  if (isAssetView()) { renderTableHead(); renderAssets(); }
-  else if (state.view === "controls") renderControls();
-  else renderUrls();
+  renderTable();
   document.getElementById("view-title").textContent = viewLabel();
 }
 
@@ -1605,6 +1907,7 @@ function setView(v) {
   state.cursor = -1;
   state.covs.clear();
   state.props.clear();
+  state.sort = { key: null, dir: 1 };
   closePanelSilently();
   renderRail();
   render();
@@ -1645,17 +1948,15 @@ document.addEventListener("click", (e) => {
   const th = e.target.closest("thead th[data-key]");
   if (th) {
     const key = th.dataset.key;
-    if (state.sort.key === key) state.sort.dir *= -1;
+    const current = state.sort.key ? state.sort : tableSpec().defaultSort;
+    if (current.key === key) state.sort = { key, dir: current.dir * -1 };
     else state.sort = { key, dir: 1 };
     render();
     return;
   }
 
   const tr = e.target.closest("tbody tr");
-  if (tr) {
-    if (tr.dataset.id) openAsset(tr.dataset.id);
-    else if (tr.dataset.control) openControl(tr.dataset.control);
-  }
+  if (tr && tr.dataset.id) openRow(tr.dataset.id);
 });
 
 /* The rail re-renders, so the search box is bound by delegation rather than
@@ -1689,10 +1990,7 @@ document.addEventListener("keydown", (e) => {
     state.cursor = Math.max(state.cursor - 1, 0);
   } else if (e.key === "Enter") {
     const r = rows[state.cursor];
-    if (r) {
-      if (r.dataset.id) openAsset(r.dataset.id);
-      else if (r.dataset.control) openControl(r.dataset.control);
-    }
+    if (r && r.dataset.id) openRow(r.dataset.id);
     return;
   } else return;
 
