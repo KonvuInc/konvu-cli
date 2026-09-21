@@ -114,5 +114,46 @@
   --konvu-shadow-panel: 0 0 0 1px var(--konvu-border),
     -8px 0 32px rgba(45, 18, 102, 0.1);
 
+
+  /* ---- App shell -------------------------------------------------------
+   * _auth.module.css `.shellSplit` / `.railCard`, and the rail's own tokens
+   * from theme.ts `triageRailTokens`. The rail lives on the app background,
+   * outside the card, which is what makes the product read as a shell rather
+   * than a page.
+   */
+  --konvu-app-bg: #fff;
+  --konvu-card-bg: lch(98.94 0.5 282);
+  --konvu-card-bd: lch(93 0.5 282);
+  --konvu-card-radius: 16px;
+  --konvu-card-shadow: lch(0 0 0 / 0.04) 0px 3px 6px -2px, lch(0 0 0 / 0.06) 0px 1px 1px;
+
+  --konvu-rail-width: 200px;
+  --konvu-rail-row-text: #4b3e68;
+  --konvu-rail-row-hover: #ebe7f3;
+  --konvu-rail-row-selected: #e4dfee;
+  --konvu-rail-ink: #2d1266;
+  --konvu-rail-section-label: #a197bc;
+  --konvu-rail-well-bg: #ebe7f1;
+  --konvu-rail-well-label: #948aad;
+  --konvu-rail-well-button-hover: #ddd6e8;
+  --konvu-rail-well-active-shadow: 0 1px 2px rgba(45, 18, 102, 0.16);
+  --konvu-rail-dimmed-label: #b4aec4;
+  --konvu-rail-dimmed-count: #c6c2ce;
+  --konvu-rail-count: #8f82ab;        /* mist[7] */
+  --konvu-rail-count-active: #6e6386; /* mist[8] */
+  --konvu-rail-pill-border: rgba(45, 18, 102, 0.15);
+
+  /* Active navigation is frenchPink[7], not purple — _auth.module.css
+   * `.navlink.current`. Nav links carry a -0.28px letter-spacing. */
+  --konvu-nav-active: #ff7397;
+  --konvu-nav-ink: #2d1266;
+  --konvu-nav-hover-bg: rgba(24, 11, 51, 0.06);
+  --konvu-nav-tracking: -0.28px;
+
+  /* PageHeader.tsx: 62px min-height, 24px gutter, gray[2] hairline. */
+  --konvu-page-header-h: 62px;
+  --konvu-page-gutter: 24px;
+  --konvu-page-header-bd: #e5e5e5;
+
   --konvu-row-h: 38px;
 }

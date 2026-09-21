@@ -62,6 +62,32 @@ at. When one of these changes in the dashboard, change it here.
 | Hairline group | `AssetOverview.tsx` `HairlineGroup` | `#EEEBF3` top border, 12px padding, uppercase 11px/700 ghostBlue-8 eyebrow. |
 | Rows | `styles.module.css` `.assetRow` | mist-2 hairline, `lch(99.35 0.25 282)` hover, 2px deepPurple-3 focus ring inset. |
 
+### Shell and navigation
+
+The page is laid out as the app shell, not as a standalone document:
+
+| Element | Source | Rule |
+|---|---|---|
+| Layout | `_auth.module.css` `.shellSplit` | A transparent app background with the rail OUTSIDE the card and the page inside it. This split is what makes it read as the product rather than a page. |
+| Card | `.railCard` | 16px radius, `lch(93 0.5 282)` border, `lch(98.94 0.5 282)` fill, the shell's two-layer shadow, 8px margin. |
+| Page header | `PageHeader.tsx` | 62px min-height, 24px gutter, gray[2] hairline, title left and context right. |
+| Rail | `TriageRail.module.css` | 200px wide, 10/12/12/16 padding, 14px block gap. Rows 30px at 13px/400 `#4B3E68`, hover `#EBE7F3`, selected `#E4DFEE` at 600 in `#2D1266`, counts in DM Mono 11.5px. |
+| Scope well | `.scopeWell` | 10px radius on `#EBE7F1`, holding the asset types. A scope above the filters, not another filter. |
+| Empty rows | `.rowDead` | A count of 0 dims to `#B4AEC4` and stops being clickable rather than disappearing. Learning a dead end without entering it is what a facet count is for. |
+| Section labels | `.sectionLabel` | 10.5px/700, 0.08em tracking, uppercase, `#A197BC`. |
+| Active nav | `_auth.module.css` `.navlink.current` | frenchPink[7] `#FF7397`, **not** purple, with -0.28px tracking. |
+
+**Asset type is a destination, not a filter.** `InventoryAssetRail` lists
+Repositories, Manifest Files, Endpoints, Data objects, Controls and Knowledge as
+things you navigate to. This page follows that: Endpoints, Data objects, Fields,
+Code assets, Controls and URLs are rail destinations, and only coverage and
+security property remain filters. An earlier draft had top tabs plus a kind
+facet, which was the same choice offered twice in two different idioms.
+
+It lands on Endpoints whenever the repository exposes any, since that is where
+the findings live, and otherwise on the densest type that has rows, so the first
+screen is never an empty table.
+
 Two known departures, both deliberate. "No control linked" has no counterpart in
 the dashboard because the hosted graph does not produce it; it borrows the
 absent/gray.5 treatment so it never reads as a failure. And the `ambiguous`

@@ -24,188 +24,202 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 
 code, .mono { font-family: var(--konvu-mono); font-size: var(--konvu-fs-sm); }
 
-/* ---------------------------------------------------------------- header -- */
+/* ------------------------------------------------------------------ shell --
+ * _auth.module.css: a transparent app background, a persistent left rail that
+ * lives OUTSIDE the card, and the page itself in a 16px-radius card. That
+ * split is what makes the product read as a shell rather than a page.
+ */
 
-header.top {
+body { background: var(--konvu-app-bg); }
+
+header.brand {
   flex: none;
-  background: #fff;
-  border-bottom: 1px solid var(--konvu-border);
-  padding: 14px 20px 0;
+  height: 68px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 16px;
+  background: transparent;
+}
+header.brand h1 {
+  margin: 0;
+  font-size: var(--konvu-fs-h2);
+  font-weight: 600;
+  color: var(--konvu-nav-ink);
+  letter-spacing: var(--konvu-nav-tracking);
+}
+.brand-meta {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin-left: auto;
+  font-size: var(--konvu-fs-sm);
+  color: var(--konvu-ink-muted);
+}
+.brand-meta b { font-weight: 500; color: var(--konvu-ink-body); }
+
+/* .shellSplit — the rail slot and the card, side by side. */
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  margin: 0 8px 8px 0;
+  overflow: hidden;
 }
 
-.top-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+/* --------------------------------------------------------------- the rail --
+ * TriageRail.module.css. Authored at the handoff's real pixel sizes.
+ */
+aside.rail {
+  flex: 0 0 var(--konvu-rail-width);
+  width: var(--konvu-rail-width);
+  box-sizing: border-box;
+  height: 100%;
+  padding: 10px 12px 12px 16px;
+  display: flex; flex-direction: column; gap: 14px;
+  overflow-y: auto;
+  line-height: normal;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(45, 18, 102, 0.18) transparent;
+}
+aside.rail::-webkit-scrollbar { width: 6px; }
+aside.rail::-webkit-scrollbar-track { background: transparent; }
+aside.rail::-webkit-scrollbar-thumb { background: rgba(45, 18, 102, 0.18); border-radius: 3px; }
 
-h1 {
+/* `.scopeWell` — the scope sitting above the filters, recessed one level. */
+.well {
+  border-radius: 10px;
+  background: var(--konvu-rail-well-bg);
+  padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.well-header { display: flex; align-items: center; justify-content: space-between; padding: 0 0 2px 6px; }
+.well-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--konvu-rail-well-label);
+}
+
+.rail-section { display: flex; flex-direction: column; gap: 3px; }
+.rail-section > .section-label {
+  padding: 0 8px 2px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--konvu-rail-section-label);
+}
+
+/* `.row` */
+.rrow {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--konvu-rail-row-text);
+  text-align: left;
+  cursor: pointer;
+}
+.rrow:hover { background: var(--konvu-rail-row-hover); }
+.rrow.active { background: var(--konvu-rail-row-selected); color: var(--konvu-rail-ink); font-weight: 600; }
+.rrow.active:hover { background: var(--konvu-rail-row-selected); }
+.rrow.dead, .rrow.dead:hover {
+  background: transparent;
+  color: var(--konvu-rail-dimmed-label);
+  cursor: default;
+}
+.rrow.dead .count { color: var(--konvu-rail-dimmed-count); }
+.rrow:focus-visible { outline: 2px solid var(--konvu-focus); outline-offset: -2px; }
+
+.rrow .rlabel { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.rrow .rname { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.rrow .count {
+  flex: 0 0 auto;
+  font-family: var(--konvu-mono);
+  font-size: 11.5px;
+  color: var(--konvu-rail-count);
+}
+.rrow.active .count { color: var(--konvu-rail-count-active); }
+.rrow svg { flex: none; }
+
+/* A scope row lifts out of the well in white rather than taking a fill. */
+.well .rrow { height: 28px; padding: 0 6px; border-radius: 6px; }
+.well .rrow.active, .well .rrow.active:hover {
+  background: #fff;
+  box-shadow: var(--konvu-rail-well-active-shadow);
+}
+.well .rrow:not(.active):hover { background: var(--konvu-rail-well-button-hover); }
+
+/* --------------------------------------------------------------- the card --
+ * `.railCard`. Carries the surface; `main` carries the geometry.
+ */
+section.card {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--konvu-card-bg);
+  border: 1px solid var(--konvu-card-bd);
+  border-radius: var(--konvu-card-radius);
+  box-shadow: var(--konvu-card-shadow);
+}
+
+/* PageHeader.tsx: 62px, a 24px gutter, and a gray[2] hairline. */
+.page-header {
+  flex: none;
+  min-height: var(--konvu-page-header-h);
+  padding: 0 var(--konvu-page-gutter);
+  border-bottom: 1px solid var(--konvu-page-header-bd);
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.page-header .left {
+  display: flex; align-items: center; gap: 16px;
+  min-width: 0; flex: 1 1 auto;
+}
+.page-header h2 {
   margin: 0;
   font-size: var(--konvu-fs-h1);
   font-weight: 600;
   color: var(--konvu-ink);
-  letter-spacing: -0.01em;
+  flex-shrink: 0;
 }
 
-.repo-meta {
-  display: flex; gap: 14px; flex-wrap: wrap;
-  font-size: var(--konvu-fs-sm);
-  color: var(--konvu-ink-muted);
-  margin-left: auto;
-}
-.repo-meta b { font-weight: 500; color: var(--konvu-ink-body); }
-
+/* PageHeader right slot. One line with an ellipsis: the summary is context,
+ * not content, and must never push the title around. */
 .repo-summary {
-  margin: 6px 0 0;
+  margin: 0;
+  min-width: 0;
+  flex: 0 1 auto;
   font-size: var(--konvu-fs-sm);
-  line-height: 1.5;
+  line-height: 1.4;
   color: var(--konvu-ink-muted);
-  max-width: 900px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  max-width: 46%;
 }
 .repo-summary:empty { display: none; }
 
-.tabs { display: flex; gap: 2px; margin-top: 12px; }
-.tab {
-  appearance: none; border: 0; background: none; cursor: pointer;
-  font: inherit; font-size: var(--konvu-fs-base);
-  color: var(--konvu-ink-muted);
-  padding: 8px 14px 10px;
-  border-bottom: 2px solid transparent;
+/* `.scopeChip` — inert while the rail is open, so the scope stays readable. */
+.scope-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font-family: var(--konvu-mono);
+  font-size: 12.5px;
+  color: var(--konvu-rail-count-active);
+  white-space: nowrap;
 }
-.tab:hover { color: var(--konvu-ink); }
-.tab[aria-selected="true"] {
-  color: var(--konvu-purple-6);
-  font-weight: 500;
-  border-bottom-color: var(--konvu-purple-6);
-}
-.tab .n {
-  font-size: var(--konvu-fs-xs);
-  color: var(--konvu-ink-faint);
-  margin-left: 5px;
-}
-
-/* --------------------------------------------------------------- notices -- */
-
-/* The honesty strip. Collapsed to one line by default so it never costs the
- * table half a screen, but always present -- these caveats are not optional
- * decoration, they are what keeps the table from reading as verified fact. */
-#notices { flex: none; }
-
-details.caveats {
-  margin: 10px 20px 0;
-  border: 1px solid var(--konvu-border);
-  border-radius: var(--konvu-radius-sm);
-  background: var(--konvu-mist-0);
-  font-size: var(--konvu-fs-sm);
-}
-details.caveats > summary {
-  cursor: pointer;
-  padding: 8px 14px;
-  list-style: none;
-  color: var(--konvu-ink-body);
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-}
-details.caveats > summary::-webkit-details-marker { display: none; }
-details.caveats > summary::before {
-  content: "▸";
-  color: var(--konvu-ink-faint);
-  font-size: 10px;
-}
-details.caveats[open] > summary::before { content: "▾"; }
-details.caveats > summary:hover { background: var(--konvu-mist-1); }
-details.caveats > summary b { color: var(--konvu-ink); font-weight: 600; }
-.caveat-body { padding: 2px 14px 12px 32px; }
-
-.notice {
-  padding: 7px 0;
-  font-size: var(--konvu-fs-sm);
-  line-height: 1.55;
-  color: var(--konvu-ink-muted);
-}
-.notice + .notice { border-top: 1px solid var(--konvu-mist-2); }
-.notice b { color: var(--konvu-ink-body); font-weight: 600; }
-.notice code {
-  background: var(--konvu-mist-2);
-  border-radius: 3px;
-  padding: 0 4px;
-}
-
-/* ------------------------------------------------------------------ body -- */
-
-main { flex: 1; display: flex; min-height: 0; }
-
-aside.rail {
-  flex: none; width: 236px;
-  background: #fff;
-  border-right: 1px solid var(--konvu-border);
-  padding: 14px;
-  overflow-y: auto;
-}
-
-.rail h3 {
-  margin: 16px 0 7px;
-  font-size: var(--konvu-fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--konvu-ink-faint);
-}
-.rail h3:first-child { margin-top: 0; }
 
 .search-wrap { position: relative; }
-input.search {
-  width: 100%;
-  font: inherit;
-  padding: 8px 10px;
-  border: 1px solid var(--konvu-border-strong);
-  border-radius: var(--konvu-radius-sm);
-  background: var(--konvu-mist-0);
-  color: var(--konvu-ink);
-}
-input.search:focus {
-  outline: none;
-  border-color: var(--konvu-purple-4);
-  box-shadow: 0 0 0 3px rgba(111, 73, 193, 0.12);
-}
-input.search::placeholder { color: var(--konvu-ink-faint); }
-.search-hint {
-  font-size: var(--konvu-fs-xs);
-  color: var(--konvu-ink-faint);
-  margin-top: 6px;
-  line-height: 1.4;
-}
 
-.facet {
-  display: flex; align-items: center; gap: 8px;
-  width: 100%;
-  padding: 5px 8px;
-  border: 0; background: none; cursor: pointer;
-  font: inherit; font-size: var(--konvu-fs-sm);
-  color: var(--konvu-ink-body);
-  border-radius: var(--konvu-radius-sm);
-  text-align: left;
-}
-.facet:hover { background: var(--konvu-mist-1); }
-.facet[aria-pressed="true"] {
-  background: var(--konvu-mist-2);
-  color: var(--konvu-ink);
-  font-weight: 500;
-}
-.facet .swatch {
-  width: 6px; height: 6px; border-radius: 50%; flex: none;
-  background: var(--konvu-mist-5);
-}
-.facet-icon { display: inline-flex; color: var(--konvu-purple-5); flex: none; }
-.facet .count { margin-left: auto; color: var(--konvu-ink-faint); font-variant-numeric: tabular-nums; }
-
-button.reset {
-  margin-top: 14px; width: 100%;
-  font: inherit; font-size: var(--konvu-fs-sm);
-  padding: 6px;
-  border: 1px solid var(--konvu-border-strong);
-  border-radius: var(--konvu-radius-sm);
-  background: #fff; color: var(--konvu-ink-body); cursor: pointer;
-}
-button.reset:hover { background: var(--konvu-mist-1); }
-
-section.content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.scroll { flex: 1; overflow: auto; }
+.content-scroll { flex: 1; overflow: auto; }
 
 /* ----------------------------------------------------------------- table -- */
 
@@ -511,6 +525,11 @@ ul.plain li { word-break: break-all; }
 
 .urlpill {
   display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
   font-family: var(--konvu-mono);
   font-size: var(--konvu-fs-xs);
   background: var(--konvu-purple-0);
@@ -551,43 +570,26 @@ kbd {
 </head>
 <body>
 
-<header class="top">
-  <div class="top-row">
-    <h1 id="repo-name">Inventory</h1>
-    <div class="repo-meta" id="repo-meta"></div>
-  </div>
-  <p class="repo-summary" id="repo-summary"></p>
-  <div class="tabs" role="tablist">
-    <button class="tab" role="tab" data-view="assets" aria-selected="true">Assets <span class="n" id="n-assets"></span></button>
-    <button class="tab" role="tab" data-view="controls" aria-selected="false">Controls <span class="n" id="n-controls"></span></button>
-    <button class="tab" role="tab" data-view="urls" aria-selected="false">URLs <span class="n" id="n-urls"></span></button>
-  </div>
+<header class="brand">
+  <h1 id="repo-name">Inventory</h1>
+  <div class="brand-meta" id="repo-meta"></div>
 </header>
 
-<div id="notices"></div>
-
 <main>
-  <aside class="rail" id="rail">
-    <h3>Search</h3>
-    <div class="search-wrap">
-      <input class="search" id="q" type="search" placeholder="URL, name, file, control…" autocomplete="off" spellcheck="false" />
+  <aside class="rail" id="rail"></aside>
+
+  <section class="card">
+    <div class="page-header">
+      <div class="left">
+        <h2 id="view-title">Inventory</h2>
+        <span class="scope-chip" id="scope-chip"></span>
+      </div>
+      <p class="repo-summary" id="repo-summary"></p>
     </div>
-    <p class="search-hint" id="search-hint">Searches names, declarations, file paths, control names, and resolved URLs.</p>
 
-    <h3>Kind</h3>
-    <div id="facet-kind"></div>
+    <div id="notices"></div>
 
-    <h3>Control coverage</h3>
-    <div id="facet-cov"></div>
-
-    <h3>Security property</h3>
-    <div id="facet-prop"></div>
-
-    <button class="reset" id="reset">Clear filters</button>
-  </aside>
-
-  <section class="content">
-    <div class="scroll" id="scroll">
+    <div class="content-scroll" id="scroll">
       <table id="tbl">
         <thead id="thead"></thead>
         <tbody id="tbody"></tbody>
@@ -844,10 +846,23 @@ const COV_LABEL = {
 
 /* ------------------------------------------------------------------ state -- */
 
+/**
+ * The rail's destinations, mirroring the product's inventory asset types
+ * (InventoryAssetRail `SECURITY_GRAPH_ASSET_TYPES`): an asset type is where you
+ * navigate to, not a filter you tick. Coverage and property remain filters.
+ */
+const VIEWS = [
+  { value: "endpoint", label: "Endpoints", kind: "endpoint" },
+  { value: "object", label: "Data objects", kind: "object" },
+  { value: "field", label: "Fields", kind: "field" },
+  { value: "code", label: "Code assets", kind: "code" },
+  { value: "controls", label: "Controls" },
+  { value: "urls", label: "URLs" },
+];
+
 const state = {
-  view: "assets",
+  view: "endpoint",
   q: "",
-  kinds: new Set(),
   covs: new Set(),
   props: new Set(),
   sort: { key: "name", dir: 1 },
@@ -855,11 +870,29 @@ const state = {
   cursor: -1,
 };
 
+function isAssetView(v) {
+  return VIEWS.some((x) => x.value === (v || state.view) && x.kind);
+}
+function currentKind() {
+  const v = VIEWS.find((x) => x.value === state.view);
+  return v ? v.kind : null;
+}
+function viewLabel(v) {
+  const found = VIEWS.find((x) => x.value === (v || state.view));
+  return found ? found.label : "Inventory";
+}
+function viewCount(v) {
+  if (v.kind) return VIEW_ROWS.filter((r) => r.asset.kind === v.kind).length;
+  if (v.value === "controls") return CONTROLS.length;
+  return ROUTES.length;
+}
+
 function filtered() {
   const q = state.q.trim().toLowerCase();
   const terms = q ? q.split(/\s+/) : [];
+  const kind = currentKind();
   let rows = VIEW_ROWS.filter((r) => {
-    if (state.kinds.size && !state.kinds.has(r.asset.kind)) return false;
+    if (kind && r.asset.kind !== kind) return false;
     if (state.covs.size && !state.covs.has(r.cov)) return false;
     if (state.props.size && !r.props.some((p) => state.props.has(p))) return false;
     for (const t of terms) if (r.haystack.indexOf(t) === -1) return false;
@@ -1052,12 +1085,11 @@ function renderHeader() {
   document.getElementById("repo-meta").innerHTML = bits.join("");
 
   if (cb.summary) {
-    document.getElementById("repo-summary").textContent = cb.summary;
+    const summaryEl = document.getElementById("repo-summary");
+    summaryEl.textContent = cb.summary;
+    summaryEl.title = cb.summary;
   }
 
-  document.getElementById("n-assets").textContent = ASSETS.length;
-  document.getElementById("n-controls").textContent = CONTROLS.length;
-  document.getElementById("n-urls").textContent = ROUTES.length;
 }
 
 /* The honesty strip. Both notices exist because a table that renders these
@@ -1107,41 +1139,88 @@ function renderNotices() {
     `</summary><div class="caveat-body">${out.join("")}</div></details>`;
 }
 
-function facetButton(id, group, value, label, count, swatchVar, icon) {
-  const on = state[group].has(value);
+/** One rail row: a label, an optional icon, and its count on the right. */
+function railRow(opts) {
+  const dead = opts.count === 0 && !opts.active;
   return (
-    `<button class="facet" data-group="${group}" data-value="${esc(value)}" aria-pressed="${on}">` +
-    (icon ? `<span class="facet-icon">${icon}</span>` : "") +
-    (swatchVar ? `<span class="swatch" style="background:${swatchVar}"></span>` : "") +
-    `<span>${esc(label)}</span><span class="count">${count}</span></button>`
+    `<button class="rrow${opts.active ? " active" : ""}${dead ? " dead" : ""}"` +
+    ` data-nav="${opts.nav || ""}" data-group="${opts.group || ""}" data-value="${esc(opts.value)}"` +
+    (dead ? " disabled" : "") +
+    `><span class="rlabel">` +
+    (opts.icon || "") +
+    (opts.dot ? `<span class="dot" style="background:${opts.dot}"></span>` : "") +
+    `<span class="rname">${esc(opts.label)}</span></span>` +
+    `<span class="count">${opts.count}</span></button>`
   );
 }
 
-function renderFacets() {
-  const kindHost = document.getElementById("facet-kind");
-  kindHost.innerHTML = KINDS
-    .map((k) => {
-      const n = VIEW_ROWS.filter((r) => r.asset.kind === k).length;
-      return n ? facetButton("k", "kinds", k, KIND_LABEL[k] || k, n, null, kindIcon(k, 14)) : "";
-    })
-    .join("");
+/**
+ * The left rail. Asset types are destinations in a scope well; coverage and
+ * security property are filters in labelled sections below, which is the
+ * arrangement InventoryAssetRail and TriageRail use.
+ */
+function renderRail() {
+  const out = [];
 
-  const covHost = document.getElementById("facet-cov");
-  covHost.innerHTML = COVS
-    .map((c) => {
-      const n = VIEW_ROWS.filter((r) => r.cov === c).length;
-      const v = `var(--konvu-${c})`;
-      return n ? facetButton("c", "covs", c, COV_LABEL[c], n, v) : "";
-    })
-    .join("");
+  out.push(
+    `<div class="well"><div class="well-header"><span class="well-label">Asset type</span></div>` +
+    VIEWS.map((v) =>
+      railRow({
+        nav: v.value,
+        value: v.value,
+        label: v.label,
+        count: viewCount(v),
+        active: state.view === v.value,
+        icon: v.kind ? kindIcon(v.kind, 14) : "",
+      })
+    ).join("") +
+    `</div>`
+  );
 
-  const propHost = document.getElementById("facet-prop");
-  propHost.innerHTML = PROPS
-    .map((p) => {
-      const n = VIEW_ROWS.filter((r) => r.props.indexOf(p) !== -1).length;
-      return n ? facetButton("p", "props", p, p.replace(/_/g, " "), n, null) : "";
-    })
-    .join("") || `<p class="search-hint">No controls carry a property.</p>`;
+  out.push(
+    `<div class="search-wrap"><input class="search" id="q" type="search" ` +
+    `placeholder="${esc(searchPlaceholder())}" autocomplete="off" spellcheck="false" ` +
+    `value="${esc(state.q)}" /></div>`
+  );
+
+  if (isAssetView()) {
+    const kind = currentKind();
+    const scoped = VIEW_ROWS.filter((r) => !kind || r.asset.kind === kind);
+
+    const covRows = COVS.map((c) =>
+      railRow({
+        group: "covs",
+        value: c,
+        label: COV_LABEL[c],
+        count: scoped.filter((r) => r.cov === c).length,
+        active: state.covs.has(c),
+        dot: `var(--konvu-${c})`,
+      })
+    ).join("");
+    out.push(`<div class="rail-section"><span class="section-label">Control coverage</span>${covRows}</div>`);
+
+    if (PROPS.length) {
+      const propRows = PROPS.map((prop) =>
+        railRow({
+          group: "props",
+          value: prop,
+          label: propertyLabel(prop),
+          count: scoped.filter((r) => r.props.indexOf(prop) !== -1).length,
+          active: state.props.has(prop),
+          dot: `var(--konvu-prop-${prop}, var(--konvu-prop-default))`,
+        })
+      ).join("");
+      out.push(`<div class="rail-section"><span class="section-label">Security property</span>${propRows}</div>`);
+    }
+  }
+
+  document.getElementById("rail").innerHTML = out.join("");
+}
+
+function searchPlaceholder() {
+  if (state.view === "controls") return "Control or property…";
+  if (state.view === "urls") return "Path or module…";
+  return "URL, name, file…";
 }
 
 const COLUMNS = [
@@ -1258,7 +1337,8 @@ function renderUrls() {
   const tbody = document.getElementById("tbody");
   document.getElementById("empty").style.display = "none";
   document.getElementById("thead").innerHTML =
-    "<tr><th>Method</th><th>Path</th><th>Declared in</th><th>Attributed to</th></tr>";
+    "<tr><th style=\"width:90px\">Method</th><th>Path</th>" +
+    "<th style=\"width:200px\">Declared in</th><th style=\"width:270px\">Attributed to</th></tr>";
 
   const q = state.q.trim().toLowerCase();
   const rows = ROUTES.filter(
@@ -1279,14 +1359,25 @@ function renderUrls() {
     .map((r) => {
       const owners = ROUTE_INDEX.byRoute.get(r.id) || [];
       const seen = new Set();
-      const cells = [];
+      const all = [];
       for (const o of owners) {
         if (seen.has(o.assetId)) continue;
         seen.add(o.assetId);
         const a = ASSETS.find((x) => x.id === o.assetId);
         if (!a) continue;
+        all.push({ name: a.name, broad: o.broad });
+      }
+      // Specific attributions first, then at most two, so a route claimed by
+      // several groups stays one row high. The rest are named in the tooltip.
+      all.sort((x, y) => Number(x.broad) - Number(y.broad));
+      const shown = all.slice(0, 2);
+      const cells = shown.map(
+        (o) =>
+          `<span class="urlpill${o.broad ? " broad" : ""}" title="${esc(o.broad ? "Reached only through a catch-all token — not treated as coverage" : "Resolved from a specific token")}">${esc(o.name)}</span>`
+      );
+      if (all.length > shown.length) {
         cells.push(
-          `<span class="urlpill${o.broad ? " broad" : ""}" title="${esc(o.broad ? "Reached only through a catch-all token — not treated as coverage" : "Resolved from a specific token")}">${esc(a.name)}</span>`
+          `<span class="more" title="${esc(all.slice(2).map((o) => o.name).join(", "))}">+${all.length - shown.length}</span>`
         );
       }
       return (
@@ -1503,21 +1594,19 @@ function closePanel() {
 /* ------------------------------------------------------------------ wire -- */
 
 function render() {
-  if (state.view === "assets") { renderTableHead(); renderAssets(); }
+  if (isAssetView()) { renderTableHead(); renderAssets(); }
   else if (state.view === "controls") renderControls();
   else renderUrls();
+  document.getElementById("view-title").textContent = viewLabel();
 }
 
 function setView(v) {
   state.view = v;
   state.cursor = -1;
+  state.covs.clear();
+  state.props.clear();
   closePanelSilently();
-  for (const t of document.querySelectorAll(".tab")) {
-    t.setAttribute("aria-selected", String(t.dataset.view === v));
-  }
-  document.getElementById("rail").style.display = v === "assets" ? "" : "none";
-  const hint = { assets: "URL, name, file, control…", controls: "Control name or property…", urls: "Path, method, module…" };
-  document.getElementById("q").placeholder = hint[v];
+  renderRail();
   render();
 }
 
@@ -1526,24 +1615,28 @@ function closePanelSilently() {
   state.selected = null;
 }
 
-document.addEventListener("click", (e) => {
-  const tab = e.target.closest(".tab");
-  if (tab) return setView(tab.dataset.view);
-
-  const facet = e.target.closest(".facet");
-  if (facet) {
-    const set = state[facet.dataset.group];
-    const v = facet.dataset.value;
-    if (set.has(v)) set.delete(v); else set.add(v);
-    renderFacets();
-    render();
-    return;
+/** The repository scope, shown beside the page title the way the product does. */
+function renderScopeChip() {
+  const cb = DATA.codebase || {};
+  const vcs = cb.git || {};
+  const bits = [];
+  if (cb.name) bits.push(cb.name);
+  if (vcs.short_commit || vcs.commit) {
+    bits.push((vcs.branch ? vcs.branch + " @ " : "") + (vcs.short_commit || String(vcs.commit).slice(0, 8)));
   }
+  document.getElementById("scope-chip").textContent = bits.join("  ·  ");
+}
 
-  if (e.target.closest("#reset")) {
-    state.kinds.clear(); state.covs.clear(); state.props.clear();
-    state.q = ""; document.getElementById("q").value = "";
-    renderFacets(); render();
+document.addEventListener("click", (e) => {
+  const row = e.target.closest(".rrow");
+  if (row) {
+    if (row.dataset.nav) return setView(row.dataset.nav);
+    const set = state[row.dataset.group];
+    if (!set) return;
+    const v = row.dataset.value;
+    if (set.has(v)) set.delete(v); else set.add(v);
+    renderRail();
+    render();
     return;
   }
 
@@ -1565,10 +1658,12 @@ document.addEventListener("click", (e) => {
   }
 });
 
-document.getElementById("q").addEventListener("input", (e) => {
+/* The rail re-renders, so the search box is bound by delegation rather than
+ * by a handler on an element that gets replaced. */
+document.addEventListener("input", (e) => {
+  if (e.target.id !== "q") return;
   state.q = e.target.value;
   state.cursor = -1;
-  if (state.view === "assets") renderFacets();
   render();
 });
 
@@ -1612,9 +1707,17 @@ document.addEventListener("keydown", (e) => {
 /* ------------------------------------------------------------------ boot -- */
 
 renderHeader();
+renderScopeChip();
 renderNotices();
-renderFacets();
-setView("assets");
+/* Open on the densest asset type that has rows, so the first screen is never
+ * an empty table just because this repository exposes no endpoints. */
+const endpointsView = VIEWS.find((v) => v.value === "endpoint");
+const firstView =
+  viewCount(endpointsView) > 0
+    ? endpointsView
+    : VIEWS.filter((v) => v.kind && viewCount(v) > 0).sort((a, b) => viewCount(b) - viewCount(a))[0] ||
+      VIEWS[0];
+setView(firstView.value);
 </script>
 </body>
 </html>
