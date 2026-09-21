@@ -188,9 +188,10 @@ input.search::placeholder { color: var(--konvu-ink-faint); }
   font-weight: 500;
 }
 .facet .swatch {
-  width: 8px; height: 8px; border-radius: 2px; flex: none;
+  width: 6px; height: 6px; border-radius: 50%; flex: none;
   background: var(--konvu-mist-5);
 }
+.facet-icon { display: inline-flex; color: var(--konvu-purple-5); flex: none; }
 .facet .count { margin-left: auto; color: var(--konvu-ink-faint); font-variant-numeric: tabular-nums; }
 
 button.reset {
@@ -210,7 +211,10 @@ section.content { flex: 1; min-width: 0; display: flex; flex-direction: column; 
 
 /* min-width keeps the columns readable when the detail panel opens: the
  * scroller takes the overflow rather than the cells crushing. */
-table { width: 100%; min-width: 680px; border-collapse: separate; border-spacing: 0; }
+table { width: 100%; min-width: 760px; border-collapse: separate; border-spacing: 0; }
+thead th:nth-child(2) { width: 150px; }
+thead th:nth-child(3) { width: 130px; }
+thead th:nth-child(4) { width: 90px; }
 
 thead th {
   position: sticky; top: 0; z-index: 2;
@@ -230,6 +234,8 @@ thead th {
 thead th:hover { color: var(--konvu-ink-body); }
 thead th .arrow { opacity: 0.55; margin-left: 4px; }
 
+/* Row treatment from styles.module.css `.assetRow`: a mist-2 hairline, the
+ * near-white violet hover, and the deepPurple-3 focus ring. */
 tbody td {
   padding: 8px 12px;
   border-bottom: 1px solid var(--konvu-mist-2);
@@ -237,8 +243,12 @@ tbody td {
   font-size: var(--konvu-fs-sm);
 }
 tbody tr { cursor: pointer; }
-tbody tr:hover td { background: var(--konvu-mist-1); }
+tbody tr:hover td { background: var(--konvu-row-hover); }
 tbody tr[aria-selected="true"] td { background: var(--konvu-mist-2); }
+tbody tr:focus-visible {
+  outline: 2px solid var(--konvu-focus);
+  outline-offset: -2px;
+}
 
 .cell-name { color: var(--konvu-ink); font-weight: 500; font-size: var(--konvu-fs-base); }
 .cell-sub {
@@ -265,37 +275,82 @@ td.decl-cell .cell-sub {
 
 /* ----------------------------------------------------------------- chips -- */
 
+/* Presence is a dot plus a label, never a filled pill -- `PresenceTag` in
+ * components/mappedAssets/presence.tsx. Matching it is most of why this page
+ * reads as the same product. */
+.presence { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; white-space: nowrap; }
+.dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.presence .label { font-size: var(--konvu-fs-xs); }
+
+.p-present .dot { background: var(--konvu-present); }
+.p-partial .dot { background: var(--konvu-partial); }
+.p-absent  .dot { background: var(--konvu-absent); }
+.p-none    .dot { background: var(--konvu-none); }
+.p-present .label { color: var(--konvu-present); }
+.p-partial .label { color: var(--konvu-partial); }
+.p-absent  .label { color: var(--konvu-absent); }
+.p-none    .label { color: var(--konvu-none); }
+
+/* CoverageSummary: present / partial / absent counts, absent always rendered
+ * even at zero so a gap never hides behind a missing column. */
+.coverage { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+.coverage-item {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--konvu-mono);
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--konvu-count);
+}
+.coverage-item.zero { color: var(--konvu-count-zero); }
+.coverage-item.emphasis { font-weight: 600; }
+
+/* Asset kind reads as an icon plus a noun, the way `AssetKindIcon` does. */
+.kind { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.kind svg { flex: none; color: var(--konvu-purple-5); }
+.kind .label {
+  font-size: var(--konvu-fs-sm);
+  color: var(--konvu-ink-body);
+  white-space: nowrap;
+}
+
+/* styles.module.css `.method` */
+.method {
+  flex-shrink: 0;
+  min-width: 92px;
+  color: var(--konvu-method);
+  font-family: var(--konvu-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+.route-preview { display: flex; align-items: center; gap: 7px; margin-top: 4px; min-width: 0; }
+.route-preview .method { min-width: auto; }
+.route-preview .path {
+  font-family: var(--konvu-mono);
+  font-size: var(--konvu-fs-xs);
+  color: var(--konvu-gray-5);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.route-preview .more { font-size: var(--konvu-fs-xs); color: var(--konvu-ink-faint); flex: none; }
+
 .chip {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 1px 7px;
   border-radius: 999px;
-  border: 1px solid transparent;
+  border: 1px solid var(--konvu-border);
   font-size: var(--konvu-fs-xs);
   font-weight: 500;
   white-space: nowrap;
+  color: var(--konvu-ink-muted);
+  background: var(--konvu-mist-1);
 }
 .chip + .chip { margin-left: 4px; }
-
-.chip.present { color: var(--konvu-present-fg); background: var(--konvu-present-bg); border-color: var(--konvu-present-bd); }
-.chip.partial { color: var(--konvu-partial-fg); background: var(--konvu-partial-bg); border-color: var(--konvu-partial-bd); }
-.chip.absent  { color: var(--konvu-absent-fg);  background: var(--konvu-absent-bg);  border-color: var(--konvu-absent-bd); }
-.chip.none    { color: var(--konvu-none-fg);    background: var(--konvu-none-bg);    border-color: var(--konvu-none-bd); }
-
-.chip.endpoint { color: var(--konvu-kind-endpoint); background: var(--konvu-kind-endpoint-bg); }
-.chip.object   { color: var(--konvu-kind-object);   background: var(--konvu-kind-object-bg); }
-.chip.field    { color: var(--konvu-kind-field);    background: var(--konvu-kind-field-bg); }
-.chip.code     { color: var(--konvu-kind-code);     background: var(--konvu-kind-code-bg); }
-
 .chip.ambiguous {
   color: var(--konvu-ink-muted);
   background: transparent;
   border: var(--konvu-border-dashed);
-}
-.chip.method {
-  font-family: var(--konvu-mono);
-  color: var(--konvu-purple-6);
-  background: var(--konvu-purple-0);
-  min-width: 46px; justify-content: center;
 }
 
 /* ------------------------------------------------------------- empty row -- */
@@ -325,6 +380,10 @@ aside.panel.open { display: block; }
   border-bottom: 1px solid var(--konvu-border);
   padding: 14px 18px;
 }
+#panel-chips {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin-top: 2px;
+}
 .panel-head h2 {
   margin: 0 0 6px; font-size: var(--konvu-fs-h2); font-weight: 600;
   color: var(--konvu-ink); padding-right: 28px; line-height: 1.35;
@@ -338,31 +397,90 @@ aside.panel.open { display: block; }
 
 .panel-body { padding: 4px 18px 40px; }
 
-.sec { margin-top: 20px; }
+/* SectionCard.tsx: a 14px-radius bordered panel with an 18px/15px header and a
+ * 15px deep-purple heading. */
+.sec {
+  border: 1px solid var(--konvu-card-border);
+  border-radius: var(--konvu-radius-card);
+  overflow: hidden;
+  margin-top: 16px;
+}
 .sec > h4 {
-  margin: 0 0 8px;
-  font-size: var(--konvu-fs-xs);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 0;
+  padding: 15px 18px;
+  font-size: 15px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  color: var(--konvu-purple-7);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.sec > h4 .badge {
+  font-size: var(--konvu-fs-xs);
+  font-weight: 500;
+  color: var(--konvu-gray-5);
+  background: var(--konvu-gray-1);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.sec-body { padding: 0 18px 18px; }
+
+/* AssetOverview.tsx `HairlineGroup`. */
+.hair { border-top: 1px solid var(--konvu-hairline); padding-top: 12px; }
+.eyebrow {
+  font-size: var(--konvu-fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--konvu-ink-faint);
+  color: var(--konvu-method);
+  margin: 0 0 4px;
 }
 
 .kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; font-size: var(--konvu-fs-sm); }
 .kv dt { color: var(--konvu-ink-muted); }
 .kv dd { margin: 0; color: var(--konvu-ink-body); font-family: var(--konvu-mono); font-size: var(--konvu-fs-xs); word-break: break-all; }
 
-.prose { font-size: var(--konvu-fs-sm); line-height: 1.6; color: var(--konvu-ink-body); margin: 0; }
+.prose { font-size: var(--konvu-fs-sm); line-height: 1.55; color: var(--konvu-gray-7); margin: 0; }
 
+/* A control entry, accented by the security property it belongs to --
+ * styles.module.css `.propertyGroup` / `.propertyHeader`. */
 .card {
-  border: 1px solid var(--konvu-border);
-  border-radius: var(--konvu-radius-sm);
-  padding: 11px 13px;
-  margin-bottom: 9px;
-  background: var(--konvu-mist-0);
+  --control-accent: var(--konvu-prop-default);
+  border: 1px solid var(--konvu-hairline);
+  border-left: 3px solid var(--control-accent);
+  border-radius: var(--konvu-radius-sub);
+  overflow: hidden;
+  margin-bottom: 10px;
+  background: #fff;
 }
-.card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
-.card-head .title { font-weight: 600; color: var(--konvu-ink); font-size: var(--konvu-fs-sm); }
+.card[data-property="authorization"]    { --control-accent: var(--konvu-prop-authorization); }
+.card[data-property="authentication"]   { --control-accent: var(--konvu-prop-authentication); }
+.card[data-property="confidentiality"]  { --control-accent: var(--konvu-prop-confidentiality); }
+.card[data-property="integrity"]        { --control-accent: var(--konvu-prop-integrity); }
+.card[data-property="availability"]     { --control-accent: var(--konvu-prop-availability); }
+.card[data-property="non_repudiation"]  { --control-accent: var(--konvu-prop-non_repudiation); }
+
+.card-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  min-height: 34px;
+  padding: 8px 10px;
+  color: var(--control-accent);
+  background: color-mix(in srgb, var(--control-accent) 7%, white);
+  border-bottom: 1px solid color-mix(in srgb, var(--control-accent) 20%, white);
+}
+.card-head .title { font-weight: 600; color: var(--control-accent); font-size: var(--konvu-fs-sm); }
+.card-head .prop {
+  font-family: var(--konvu-font);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--control-accent);
+  opacity: 0.82;
+  margin-left: auto;
+}
+.card-body { padding: 10px 12px; }
 
 pre.quote {
   margin: 7px 0 0;
@@ -680,8 +798,19 @@ function assetBroadUrls(a) {
 
 /* ------------------------------------------------------------ derivation -- */
 
+/** `coverageOf` — present / partial / absent counts over a control's statuses. */
+function coverageOf(statuses) {
+  return {
+    present: statuses.filter((s) => s === "present").length,
+    partial: statuses.filter((s) => s === "partial").length,
+    absent: statuses.filter((s) => s === "absent").length,
+    total: statuses.length,
+  };
+}
+
 const VIEW_ROWS = ASSETS.map((a) => {
   const cov = assetCoverage(a);
+  const counts = coverageOf((a.controls || []).map((l) => l.status));
   const urls = assetUrls(a);
   const props = new Set();
   for (const l of a.controls || []) {
@@ -699,7 +828,7 @@ const VIEW_ROWS = ASSETS.map((a) => {
     }).join(" "),
   ].join(" ").toLowerCase();
 
-  return { asset: a, cov, urls, props: Array.from(props), haystack };
+  return { asset: a, cov, counts, urls, props: Array.from(props), haystack };
 });
 
 const KINDS = ["endpoint", "object", "field", "code"];
@@ -758,8 +887,125 @@ function chip(cls, text, title) {
   return `<span class="chip ${cls}"${title ? ` title="${esc(title)}"` : ""}>${esc(text)}</span>`;
 }
 
-function covChip(cov) {
-  return chip(cov, COV_LABEL[cov] || cov);
+/* --- product vocabulary ----------------------------------------------------
+ * These four mirror components/mappedAssets/presence.tsx one for one, so a row
+ * here reads the same as a row in the dashboard's inventory tables.
+ */
+
+/** `AssetKindIcon` — the same lucide glyphs at the same 1.7 stroke weight. */
+const KIND_ICON_PATHS = {
+  endpoint:
+    '<path d="m10.586 5.414-5.172 5.172"/><path d="m18.586 13.414-5.172 5.172"/><path d="M6 12h12"/>' +
+    '<circle cx="12" cy="20" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="20" cy="12" r="2"/><circle cx="4" cy="12" r="2"/>',
+  object:
+    '<path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"/>' +
+    '<path d="m7 16.5-4.74-2.85"/><path d="m7 16.5 5-3"/><path d="M7 16.5v5.17"/>' +
+    '<path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"/>' +
+    '<path d="m17 16.5-5-3"/><path d="m17 16.5 4.74-2.85"/><path d="M17 16.5v5.17"/>' +
+    '<path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"/>' +
+    '<path d="M12 8 7.26 5.15"/><path d="m12 8 4.74-2.85"/><path d="M12 13.5V8"/>',
+  field:
+    '<path d="M12 20h-1a2 2 0 0 1-2-2 2 2 0 0 1-2 2H6"/><path d="M13 8h7a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-7"/>' +
+    '<path d="M5 16H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h1"/><path d="M6 4h1a2 2 0 0 1 2 2 2 2 0 0 1 2-2h1"/><path d="M9 6v12"/>',
+  code:
+    '<path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/>' +
+    '<path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/>',
+};
+
+/** `assetKindLabels` in presence.tsx. */
+const KIND_LABEL = {
+  endpoint: "Endpoint group",
+  object: "Data object",
+  field: "Field",
+  code: "Code asset",
+};
+
+function kindIcon(kind, size) {
+  const paths = KIND_ICON_PATHS[kind];
+  if (!paths) return "";
+  return (
+    `<svg width="${size || 18}" height="${size || 18}" viewBox="0 0 24 24" fill="none" ` +
+    `stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+    paths + `</svg>`
+  );
+}
+
+function kindCell(kind) {
+  return (
+    `<span class="kind">${kindIcon(kind, 18)}` +
+    `<span class="label">${esc(KIND_LABEL[kind] || kind)}</span></span>`
+  );
+}
+
+/** `PresenceTag` — a dot and a capitalised label, never a filled pill. */
+function presenceTag(presence) {
+  const cls = presence === "none" ? "none" : presence;
+  return (
+    `<span class="presence p-${cls}"><span class="dot"></span>` +
+    `<span class="label">${esc(COV_LABEL[presence] || presence)}</span></span>`
+  );
+}
+
+/**
+ * `CoverageSummary` — present / partial / absent counts. Absent is always
+ * rendered, even at zero, so a gap never hides behind a missing column.
+ */
+function coverageSummary(counts, label) {
+  const title =
+    (label ? label + ": " : "") +
+    `${counts.present} present, ${counts.partial} partial, ${counts.absent} absent`;
+  const items = ["present", "partial", "absent"]
+    .map((p) => {
+      const n = counts[p] || 0;
+      const emphasis = p === "absent" && n > 0 ? " emphasis" : "";
+      return (
+        `<span class="coverage-item${n === 0 ? " zero" : ""}${emphasis}">` +
+        `<span class="dot p-${p}" style="background:var(--konvu-${p})"></span>${n}</span>`
+      );
+    })
+    .join("");
+  return `<span class="coverage" title="${esc(title)}" aria-label="${esc(title)}">${items}</span>`;
+}
+
+/**
+ * `SectionCard` — a 14px-radius bordered panel with a 15px deep-purple heading
+ * and an optional count badge. The panel is built from these so it reads like
+ * the repository overview rather than a stack of loose headings.
+ */
+function section(title, body, badge) {
+  if (!body) return "";
+  return (
+    `<div class="sec"><h4>${esc(title)}` +
+    (badge != null ? `<span class="badge">${esc(badge)}</span>` : "") +
+    `</h4><div class="sec-body">${body}</div></div>`
+  );
+}
+
+/** `propertyLabel` in data.ts. */
+function propertyLabel(property) {
+  if (!property) return "";
+  if (property === "non_repudiation") return "Non-repudiation";
+  return property.charAt(0).toUpperCase() + property.slice(1);
+}
+
+/** Security property rendered as the accent eyebrow, per styles.module.css. */
+function propertyCell(property) {
+  if (!property) return "—";
+  return (
+    `<span class="eyebrow" style="color:var(--konvu-prop-${esc(property)},var(--konvu-prop-default));margin:0">` +
+    `${esc(propertyLabel(property))}</span>`
+  );
+}
+
+/** `RoutePreview` — the first route of a group, with a count of the rest. */
+function routePreview(urls, method) {
+  if (!urls.length) return "";
+  return (
+    `<span class="route-preview"><span class="method">${esc(method || "route")}</span>` +
+    `<span class="path">${esc(urls[0])}</span>` +
+    (urls.length > 1 ? `<span class="more">+${urls.length - 1}</span>` : "") +
+    `</span>`
+  );
 }
 
 /** `languages` is a list of {name, files, lines}; older artifacts used strings. */
@@ -861,10 +1107,11 @@ function renderNotices() {
     `</summary><div class="caveat-body">${out.join("")}</div></details>`;
 }
 
-function facetButton(id, group, value, label, count, swatchVar) {
+function facetButton(id, group, value, label, count, swatchVar, icon) {
   const on = state[group].has(value);
   return (
     `<button class="facet" data-group="${group}" data-value="${esc(value)}" aria-pressed="${on}">` +
+    (icon ? `<span class="facet-icon">${icon}</span>` : "") +
     (swatchVar ? `<span class="swatch" style="background:${swatchVar}"></span>` : "") +
     `<span>${esc(label)}</span><span class="count">${count}</span></button>`
   );
@@ -875,7 +1122,7 @@ function renderFacets() {
   kindHost.innerHTML = KINDS
     .map((k) => {
       const n = VIEW_ROWS.filter((r) => r.asset.kind === k).length;
-      return n ? facetButton("k", "kinds", k, k, n, `var(--konvu-kind-${k})`) : "";
+      return n ? facetButton("k", "kinds", k, KIND_LABEL[k] || k, n, null, kindIcon(k, 14)) : "";
     })
     .join("");
 
@@ -883,7 +1130,7 @@ function renderFacets() {
   covHost.innerHTML = COVS
     .map((c) => {
       const n = VIEW_ROWS.filter((r) => r.cov === c).length;
-      const v = c === "none" ? "var(--konvu-none-fg)" : `var(--konvu-${c}-fg)`;
+      const v = `var(--konvu-${c})`;
       return n ? facetButton("c", "covs", c, COV_LABEL[c], n, v) : "";
     })
     .join("");
@@ -939,18 +1186,15 @@ function renderAssets() {
     .map((r, i) => {
       const a = r.asset;
       const n = (a.controls || []).length;
-      const urls = r.urls;
-      const urlLine = urls.length
-        ? `<div class="cell-sub">${esc(urls.slice(0, 3).join("  "))}${urls.length > 3 ? ` +${urls.length - 3}` : ""}</div>`
-        : "";
+      const method = (a.routes && a.routes[0] && a.routes[0].method) || "route";
       return (
-        `<tr data-i="${i}" data-id="${esc(a.id)}" aria-selected="${state.selected === a.id}">` +
+        `<tr data-i="${i}" data-id="${esc(a.id)}" tabindex="-1" aria-selected="${state.selected === a.id}">` +
         `<td><div class="cell-name">${esc(a.name)}</div>` +
         (a.ambiguous ? `<div style="margin-top:3px">${chip("ambiguous", "ambiguous", "The engine flagged this identification as ambiguous")}</div>` : "") +
-        urlLine +
+        routePreview(r.urls, method) +
         `</td>` +
-        `<td>${chip(a.kind, a.kind)}</td>` +
-        `<td>${covChip(r.cov)}</td>` +
+        `<td>${kindCell(a.kind)}</td>` +
+        `<td>${n ? coverageSummary(r.counts, a.name) : presenceTag("none")}</td>` +
         `<td style="font-variant-numeric:tabular-nums">${n || "—"}</td>` +
         `<td class="decl-cell"><span class="cell-sub" style="margin:0" title="${esc(a.decl || "")}">${esc(a.decl || "—")}</span></td>` +
         `</tr>`
@@ -963,7 +1207,8 @@ function renderControls() {
   const tbody = document.getElementById("tbody");
   document.getElementById("empty").style.display = "none";
   document.getElementById("thead").innerHTML =
-    "<tr><th>Control</th><th>Property</th><th>Presence</th><th>Assets</th><th>Implementations</th></tr>";
+    "<tr><th style=\"width:34%\">Control</th><th style=\"width:150px\">Property</th>" +
+    "<th style=\"width:130px\">Presence</th><th style=\"width:80px\">Assets</th><th>Implementations</th></tr>";
 
   const q = state.q.trim().toLowerCase();
 
@@ -984,7 +1229,8 @@ function renderControls() {
     }
     const impls = new Set();
     for (const { link } of links) for (const id of link.implementation_ids || []) impls.add(id);
-    return { c, links, presence, impls: Array.from(impls) };
+    const counts = coverageOf(links.map(({ link }) => link.status));
+    return { c, links, presence, counts, impls: Array.from(impls) };
   }).filter((r) => {
     if (!q) return true;
     return (r.c.name + " " + r.c.id + " " + (r.c.description || "") + " " + (r.c.property || ""))
@@ -997,10 +1243,10 @@ function renderControls() {
     .map(
       (r) =>
         `<tr data-control="${esc(r.c.id)}">` +
-        `<td><div class="cell-name">${esc(r.c.name || r.c.id)}</div>` +
-        `<div class="cell-sub">${esc(r.c.id)}</div></td>` +
-        `<td>${r.c.property ? chip("none", r.c.property.replace(/_/g, " ")) : "—"}</td>` +
-        `<td>${covChip(r.presence)}</td>` +
+        `<td class="decl-cell"><div class="cell-name">${esc(r.c.name || r.c.id)}</div>` +
+        `<div class="cell-sub" title="${esc(r.c.id)}">${esc(r.c.id)}</div></td>` +
+        `<td>${propertyCell(r.c.property)}</td>` +
+        `<td>${r.links.length ? coverageSummary(r.counts, r.c.name) : presenceTag("none")}</td>` +
         `<td style="font-variant-numeric:tabular-nums">${r.links.length || "—"}</td>` +
         `<td style="font-variant-numeric:tabular-nums">${r.impls.length || "—"}</td>` +
         `</tr>`
@@ -1045,7 +1291,7 @@ function renderUrls() {
       }
       return (
         `<tr data-route="${esc(r.id)}">` +
-        `<td>${chip("method", r.method || "—")}</td>` +
+        `<td><span class="method">${esc(r.method || "—")}</span></td>` +
         `<td><span class="mono" style="color:var(--konvu-ink)">${esc(r.path)}</span></td>` +
         `<td><span class="cell-sub" style="margin:0">${esc(r.module)}:${esc(r.line)}</span></td>` +
         `<td>${cells.length ? cells.join("") : `<span class="chip none">unattributed</span>`}</td>` +
@@ -1065,13 +1311,13 @@ function openAsset(id) {
 
   document.getElementById("panel-title").textContent = a.name;
   document.getElementById("panel-chips").innerHTML =
-    chip(a.kind, a.kind) + covChip(row.cov) +
+    kindCell(a.kind) + presenceTag(row.cov) +
     (a.ambiguous ? chip("ambiguous", "ambiguous") : "");
 
   const parts = [];
 
   if (a.description) {
-    parts.push(`<div class="sec"><p class="prose">${esc(a.description)}</p></div>`);
+    parts.push(section("What it is", `<div class="hair"><p class="prose">${esc(a.description)}</p></div>`));
   }
 
   const kv = [];
@@ -1082,43 +1328,51 @@ function openAsset(id) {
   if ((a.paths || []).length) kv.push(["Files", a.paths.join(", ")]);
   kv.push(["Asset id", a.id]);
   parts.push(
-    `<div class="sec"><h4>Identity</h4><dl class="kv">` +
-    kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("") +
-    `</dl></div>`
+    section(
+      "Identity",
+      `<div class="hair"><dl class="kv">` +
+        kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("") +
+        `</dl></div>`
+    )
   );
 
   if (a.quote) {
-    parts.push(`<div class="sec"><h4>Source</h4><pre class="quote">${esc(a.quote)}</pre></div>`);
+    parts.push(section("Source", `<pre class="quote">${esc(a.quote)}</pre>`));
   }
 
   const urls = row.urls, broad = assetBroadUrls(a);
   if (urls.length || broad.length) {
     parts.push(
-      `<div class="sec"><h4>Resolved URLs</h4>` +
-      urls.map((u) => `<span class="urlpill">${esc(u)}</span>`).join("") +
-      broad.map((u) => `<span class="urlpill broad" title="Reached only through a catch-all token">${esc(u)}</span>`).join("") +
-      (broad.length
-        ? `<p class="inline-note">Dashed URLs are reached only through a catch-all pattern in this asset's token list. ` +
-          `The baseline does not claim this asset covers them.</p>`
-        : "") +
-      `</div>`
+      section(
+        "Endpoints",
+        urls.map((u) => `<span class="urlpill">${esc(u)}</span>`).join("") +
+          broad.map((u) => `<span class="urlpill broad" title="Reached only through a catch-all token">${esc(u)}</span>`).join("") +
+          (broad.length
+            ? `<p class="inline-note">Dashed URLs are reached only through a catch-all pattern in this asset's token list. ` +
+              `The baseline does not claim this asset covers them.</p>`
+            : ""),
+        urls.length + broad.length
+      )
     );
   }
 
   if ((a.tokens || []).length) {
     parts.push(
-      `<div class="sec"><h4>Match patterns</h4><ul class="plain">` +
-      a.tokens.map((t) => `<li>${esc(t)}</li>`).join("") +
-      `</ul><p class="inline-note">The literal patterns the engine matched to identify this asset. ` +
-      `The schema does not rank them, so a precise pattern and a catch-all are indistinguishable here.</p></div>`
+      section(
+        "Match patterns",
+        `<ul class="plain">` +
+          a.tokens.map((t) => `<li>${esc(t)}</li>`).join("") +
+          `</ul><p class="inline-note">The literal patterns the engine matched to identify this asset. ` +
+          `The schema does not rank them, so a precise pattern and a catch-all are indistinguishable here.</p>`,
+        a.tokens.length
+      )
     );
   }
 
   const links = a.controls || [];
   if (links.length) {
     parts.push(
-      `<div class="sec"><h4>Controls (${links.length})</h4>` +
-      links.map((l) => {
+      section("Controls", links.map((l) => {
         const c = controlById.get(l.control_id) || {};
         const ev = (l.evidence || [])
           .map((e) =>
@@ -1134,26 +1388,27 @@ function openAsset(id) {
             return im ? `<span class="urlpill">${esc(im.name || id)}</span>` : "";
           }).join("");
         return (
-          `<div class="card"><div class="card-head">` +
+          `<div class="card" data-property="${esc(c.property || "")}"><div class="card-head">` +
           `<span class="title">${esc(c.name || l.control_id)}</span>` +
-          chip(RANK[l.status] === undefined ? "none" : l.status, l.status || "unknown") +
-          (c.property ? chip("none", c.property.replace(/_/g, " ")) : "") +
-          `</div>` +
+          presenceTag(RANK[l.status] === undefined ? "none" : l.status) +
+          (c.property ? `<span class="prop">${esc(propertyLabel(c.property))}</span>` : "") +
+          `</div><div class="card-body">` +
           (l.description ? `<p class="prose">${esc(l.description)}</p>` : "") +
           ev +
           (checked ? `<p class="inline-note" style="margin-top:9px"><b>Inspected:</b></p>${checked}` : "") +
           (impls ? `<div style="margin-top:8px">${impls}</div>` : "") +
-          `</div>`
+          `</div></div>`
         );
-      }).join("") +
-      `</div>`
+      }).join(""), links.length)
     );
   } else {
     parts.push(
-      `<div class="sec"><h4>Controls</h4>` +
-      `<div class="card"><p class="prose">The mapping linked no control to this asset.</p>` +
-      `<p class="inline-note">This records an absence of attribution, not an absence of protection. ` +
-      `A control may exist in the codebase without the engine connecting it here.</p></div></div>`
+      section(
+        "Controls",
+        `<div class="hair"><p class="prose">The mapping linked no control to this asset.</p>` +
+          `<p class="inline-note">This records an absence of attribution, not an absence of protection. ` +
+          `A control may exist in the codebase without the engine connecting it here.</p></div>`
+      )
     );
   }
 
@@ -1178,7 +1433,7 @@ function openControl(id) {
   state.selected = id;
   document.getElementById("panel-title").textContent = c.name || c.id;
   document.getElementById("panel-chips").innerHTML =
-    (c.property ? chip("none", c.property.replace(/_/g, " ")) : "");
+    (c.property ? `<span class="chip">${esc(propertyLabel(c.property))}</span>` : "");
 
   const covered = [];
   for (const a of ASSETS) {
@@ -1188,42 +1443,50 @@ function openControl(id) {
   }
   const obs = OBS_CONTROLS.filter((o) => (c.source_control_observation_ids || []).indexOf(o.id) !== -1);
 
+  const prop = esc(c.property || "");
   const parts = [];
-  if (c.description) parts.push(`<div class="sec"><p class="prose">${esc(c.description)}</p></div>`);
+  if (c.description) {
+    parts.push(section("What it is", `<div class="hair"><p class="prose">${esc(c.description)}</p></div>`));
+  }
 
   parts.push(
-    `<div class="sec"><h4>Observed implementations (${obs.length})</h4>` +
-    (obs.length
-      ? obs.map((o) =>
-          `<div class="card"><div class="card-head">` +
-          `<span class="title">${esc(o.id.replace(/^control-observation:/, ""))}</span>` +
-          chip(RANK[o.status] === undefined ? "none" : o.status, o.status || "unknown") +
-          `</div>` +
-          (o.description ? `<p class="prose">${esc(o.description)}</p>` : "") +
-          (o.decl ? `<div class="decl">${esc(o.decl)}</div>` : "") +
-          (o.quote ? `<pre class="quote">${esc(o.quote)}</pre>` : "") +
-          ((o.checked || []).length
-            ? `<p class="inline-note" style="margin-top:9px"><b>Inspected:</b></p>` +
-              `<ul class="checked">${o.checked.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`
-            : "") +
-          `</div>`
-        ).join("")
-      : `<div class="card"><p class="prose">No observation recorded.</p></div>`) +
-    `</div>`
+    section(
+      "Observed implementations",
+      obs.length
+        ? obs.map((o) =>
+            `<div class="card" data-property="${prop}"><div class="card-head">` +
+            `<span class="title">${esc(o.id.replace(/^control-observation:/, ""))}</span>` +
+            presenceTag(RANK[o.status] === undefined ? "none" : o.status) +
+            `</div><div class="card-body">` +
+            (o.description ? `<p class="prose">${esc(o.description)}</p>` : "") +
+            (o.decl ? `<div class="decl">${esc(o.decl)}</div>` : "") +
+            (o.quote ? `<pre class="quote">${esc(o.quote)}</pre>` : "") +
+            ((o.checked || []).length
+              ? `<p class="inline-note" style="margin-top:9px"><b>Inspected:</b></p>` +
+                `<ul class="checked">${o.checked.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`
+              : "") +
+            `</div></div>`
+          ).join("")
+        : `<div class="hair"><p class="prose">No observation recorded.</p></div>`,
+      obs.length
+    )
   );
 
   parts.push(
-    `<div class="sec"><h4>Assets linked (${covered.length})</h4>` +
-    (covered.length
-      ? covered.map(({ a, l }) =>
-          `<div class="card"><div class="card-head">` +
-          `<span class="title">${esc(a.name)}</span>` +
-          chip(a.kind, a.kind) +
-          chip(RANK[l.status] === undefined ? "none" : l.status, l.status || "unknown") +
-          `</div><div class="decl">${esc(a.decl || "")}</div></div>`
-        ).join("")
-      : `<div class="card"><p class="prose">No asset links this control.</p></div>`) +
-    `</div>`
+    section(
+      "Assets linked",
+      covered.length
+        ? covered.map(({ a, l }) =>
+            `<div class="card" data-property="${prop}"><div class="card-head">` +
+            `<span class="title">${esc(a.name)}</span>` +
+            presenceTag(RANK[l.status] === undefined ? "none" : l.status) +
+            `</div><div class="card-body">` +
+            kindCell(a.kind) +
+            `<div class="decl" style="margin-top:6px">${esc(a.decl || "")}</div></div></div>`
+          ).join("")
+        : `<div class="hair"><p class="prose">No asset links this control.</p></div>`,
+      covered.length
+    )
   );
 
   document.getElementById("panel-body").innerHTML = parts.join("");

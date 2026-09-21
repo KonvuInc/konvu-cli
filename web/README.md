@@ -43,6 +43,31 @@ which is populated on about 1 asset in 100.
 So the only thing shared is `tokens.css` — values, no runtime, no release
 coupling. Regenerate it when the dashboard palette moves.
 
+## Keeping the look identical
+
+The page is a deliberate reimplementation of the product's mapped-asset UI, not
+a lookalike. Every visual decision below is copied from a named source in
+`konvu-core/dashboard`, so the two can be diffed by reading rather than guessed
+at. When one of these changes in the dashboard, change it here.
+
+| Element | Source | Rule |
+|---|---|---|
+| Presence | `presence.tsx` `PresenceTag` / `presenceColor` | A 6px dot plus a capitalised label. present → malachiteGreen.6, partial → sunnyYellow.8, everything else → gray.5. **Never a filled pill.** |
+| Coverage | `presence.tsx` `CoverageSummary` | Three dot+count items, DM Mono 11px, gray.5 at zero. Absent always rendered even at zero, bold when non-zero. |
+| Asset kind | `presence.tsx` `AssetKindIcon` / `assetKindLabels` | A lucide glyph at stroke 1.7 in deepPurple-5 plus the product noun: Endpoint group, Data object, Field, Code asset. Kind carries an icon, never a colour. |
+| Security property | `styles.module.css` `.propertyAccent` | authorization → deepPurple-5, authentication → ghostBlue-8, confidentiality → frenchPink-8, integrity → malachiteGreen-6, availability → sunnyYellow-8, non-repudiation → royalBlue-5. |
+| Control card | `styles.module.css` `.propertyGroup` / `.propertyHeader` | 3px accent left border; header tinted `color-mix(accent 7%, white)` with `20%` hairlines, min-height 34px. |
+| Route | `styles.module.css` `.method` + `RoutePreview` | Method in DM Mono 10px/600 ghostBlue-8, path in mono gray.6 clamped to one line, then `+N`. |
+| Panel sections | `SectionCard.tsx` | 14px radius, `#E9E5F1` border, 18px/15px header, 15px/600 deepPurple-7 heading, optional count badge. |
+| Hairline group | `AssetOverview.tsx` `HairlineGroup` | `#EEEBF3` top border, 12px padding, uppercase 11px/700 ghostBlue-8 eyebrow. |
+| Rows | `styles.module.css` `.assetRow` | mist-2 hairline, `lch(99.35 0.25 282)` hover, 2px deepPurple-3 focus ring inset. |
+
+Two known departures, both deliberate. "No control linked" has no counterpart in
+the dashboard because the hosted graph does not produce it; it borrows the
+absent/gray.5 treatment so it never reads as a failure. And the `ambiguous`
+marker has no counterpart at all — `MappedAsset` cannot represent it — so it uses
+the dashed `borders.dashed` token rather than inventing a colour.
+
 ## What the page refuses to imply
 
 The artifact is thinner than a table makes it look, and rendering it silently

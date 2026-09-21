@@ -53,36 +53,40 @@
   --konvu-border-strong: #cac2db;
   --konvu-border-dashed: 1px dashed #ac9cce;
 
-  /* Control-presence tri-state. Derived from malachiteGreen / sunnyYellow /
-   * chiliPepperRed so present/partial/absent read the same as the dashboard's
-   * coverage chips. */
-  --konvu-present-fg: #287824;
-  --konvu-present-bg: #eef7ed;
-  --konvu-present-bd: #c4e3c2;
+  /* Control presence. `presenceColor()` in components/mappedAssets/presence.tsx
+   * maps present -> malachiteGreen.6, partial -> sunnyYellow.8, and everything
+   * else -> gray.5. The product renders these as a dot plus a label, never as a
+   * filled pill, so there are no background or border tokens here on purpose. */
+  --konvu-present: #368c30; /* malachiteGreen[6] */
+  --konvu-partial: #8d8007; /* sunnyYellow[8]    */
+  --konvu-absent: #737373;  /* gray[5]           */
+  --konvu-none: #737373;    /* gray[5]           */
 
-  --konvu-partial-fg: #8d6b07;
-  --konvu-partial-bg: #faf6e3;
-  --konvu-partial-bd: #ebe0ab;
+  /* Coverage counts: gray.5 at zero, gray.8 otherwise. */
+  --konvu-count-zero: #737373;
+  --konvu-count: #262626;
 
-  --konvu-absent-fg: #a60808;
-  --konvu-absent-bg: #fff0f0;
-  --konvu-absent-bd: #fadada;
+  /* Security-property accents — styles.module.css `.propertyAccent`. These are
+   * the product's semantic colors; asset kind carries an icon, not a color. */
+  --konvu-prop-default: #5730ab;         /* deepPurple[5]     */
+  --konvu-prop-authorization: #5730ab;   /* deepPurple[5]     */
+  --konvu-prop-authentication: #358d7e;  /* ghostBlue[8]      */
+  --konvu-prop-confidentiality: #af0832; /* frenchPink[8]     */
+  --konvu-prop-integrity: #368c30;       /* malachiteGreen[6] */
+  --konvu-prop-availability: #8d8007;    /* sunnyYellow[8]    */
+  --konvu-prop-non_repudiation: #3d5fd4; /* royalBlue[5]      */
 
-  /* "Nothing was linked here" — deliberately neutral, never red. An asset with
-   * no control links is an unknown, not a failure. */
-  --konvu-none-fg: #6e6386;
-  --konvu-none-bg: #f6f4f9;
-  --konvu-none-bd: #e7e3ee;
+  /* Route method — styles.module.css `.method`. */
+  --konvu-method: #358d7e; /* ghostBlue[8] */
 
-  /* Asset-kind accents. */
-  --konvu-kind-endpoint: #6b4fd6;
-  --konvu-kind-endpoint-bg: #efebfb;
-  --konvu-kind-object: #2e8c8c;
-  --konvu-kind-object-bg: #e4f1f1;
-  --konvu-kind-field: #c07a2e;
-  --konvu-kind-field-bg: #f7eddf;
-  --konvu-kind-code: #8d5aae;
-  --konvu-kind-code-bg: #f3eaf7;
+  /* Surfaces lifted verbatim from styles.module.css and SectionCard.tsx, which
+   * use literal hex rather than palette steps. */
+  --konvu-hairline: #eeebf3;      /* row separator inside cards   */
+  --konvu-card-border: #e9e5f1;   /* SubTable + SectionCard       */
+  --konvu-card-header: #faf9fc;   /* SubTable header band + hover */
+  --konvu-row-hover: lch(99.35 0.25 282);
+  --konvu-focus: #8f75c7;         /* deepPurple[3] focus outline  */
+  --konvu-chevron: #8b879a;
 
   /* Typography. theme.ts declares DM Sans / DM Mono but the dashboard ships no
    * @font-face and no webfont link, so both already resolve to the platform
@@ -100,8 +104,10 @@
   --konvu-fs-h2: 16px;
 
   --konvu-radius-sm: 6px;
-  --konvu-radius: 10px;
-  --konvu-radius-lg: 11px;
+  --konvu-radius: 10px;   /* Tooltip */
+  --konvu-radius-lg: 11px; /* Menu */
+  --konvu-radius-card: 14px; /* SectionCard */
+  --konvu-radius-sub: 8px;   /* SubTable */
 
   --konvu-shadow-soft: 0 1px 2px rgba(45, 18, 102, 0.04),
     0 4px 16px rgba(45, 18, 102, 0.06);
