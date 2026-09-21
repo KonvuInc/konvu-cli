@@ -1,0 +1,112 @@
+/*
+ * Konvu design tokens.
+ *
+ * Generated from konvu-core/dashboard/src/theme.ts. This is the ONLY thing the
+ * viewer shares with the dashboard: values, not components. Regenerate with
+ * `scripts/gen-tokens.py` when the dashboard palette moves; nothing here
+ * imports React, Mantine, or any dashboard code.
+ *
+ * Source of truth: theme.ts `deepPurple`, `mist`, `gray`, `malachiteGreen`,
+ * `chiliPepperRed`, `sunnyYellow`, `ink`, `borders`, `severityColors`.
+ */
+
+:root {
+  /* deepPurple — primary ramp. primaryColor: deepPurple, primaryShade: 6. */
+  --konvu-purple-0: #e4e1ea;
+  --konvu-purple-1: #cac2db;
+  --konvu-purple-2: #ac9cce;
+  --konvu-purple-3: #8f75c7;
+  --konvu-purple-4: #6f49c1;
+  --konvu-purple-5: #5730ab;
+  --konvu-purple-6: #412187;
+  --konvu-purple-7: #2d1266;
+  --konvu-purple-8: #180c31;
+  --konvu-purple-9: #0c0718;
+
+  /* mist — the neutral surface ramp the dashboard tables sit on. */
+  --konvu-mist-0: #fcfbfd;
+  --konvu-mist-1: #f6f4f9;
+  --konvu-mist-2: #f0eef5;
+  --konvu-mist-3: #e7e3ee;
+  --konvu-mist-4: #e3dfec;
+  --konvu-mist-5: #c6beda;
+  --konvu-mist-6: #a99fc0;
+  --konvu-mist-7: #8f82ab;
+  --konvu-mist-8: #6e6386;
+  --konvu-mist-9: #4a3d6b;
+
+  /* gray */
+  --konvu-gray-1: #f5f5f5;
+  --konvu-gray-2: #e5e5e5;
+  --konvu-gray-4: #a3a3a3;
+  --konvu-gray-5: #737373;
+  --konvu-gray-7: #404040;
+
+  /* ink — theme.ts `ink`, body/muted text over light surfaces. */
+  --konvu-ink: #2d1266;
+  --konvu-ink-body: rgba(45, 18, 102, 0.7);
+  --konvu-ink-muted: rgba(45, 18, 102, 0.5);
+  --konvu-ink-faint: rgba(45, 18, 102, 0.32);
+
+  /* borders — theme.ts `borders`. */
+  --konvu-border: #e4e1ea;
+  --konvu-border-strong: #cac2db;
+  --konvu-border-dashed: 1px dashed #ac9cce;
+
+  /* Control-presence tri-state. Derived from malachiteGreen / sunnyYellow /
+   * chiliPepperRed so present/partial/absent read the same as the dashboard's
+   * coverage chips. */
+  --konvu-present-fg: #287824;
+  --konvu-present-bg: #eef7ed;
+  --konvu-present-bd: #c4e3c2;
+
+  --konvu-partial-fg: #8d6b07;
+  --konvu-partial-bg: #faf6e3;
+  --konvu-partial-bd: #ebe0ab;
+
+  --konvu-absent-fg: #a60808;
+  --konvu-absent-bg: #fff0f0;
+  --konvu-absent-bd: #fadada;
+
+  /* "Nothing was linked here" — deliberately neutral, never red. An asset with
+   * no control links is an unknown, not a failure. */
+  --konvu-none-fg: #6e6386;
+  --konvu-none-bg: #f6f4f9;
+  --konvu-none-bd: #e7e3ee;
+
+  /* Asset-kind accents. */
+  --konvu-kind-endpoint: #6b4fd6;
+  --konvu-kind-endpoint-bg: #efebfb;
+  --konvu-kind-object: #2e8c8c;
+  --konvu-kind-object-bg: #e4f1f1;
+  --konvu-kind-field: #c07a2e;
+  --konvu-kind-field-bg: #f7eddf;
+  --konvu-kind-code: #8d5aae;
+  --konvu-kind-code-bg: #f3eaf7;
+
+  /* Typography. theme.ts declares DM Sans / DM Mono but the dashboard ships no
+   * @font-face and no webfont link, so both already resolve to the platform
+   * fallback. We declare the same families and spell out the fallback stack. */
+  --konvu-font: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --konvu-mono: "DM Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+    Consolas, "Liberation Mono", monospace;
+
+  /* 14px base — theme.ts sets `scale: 1 / (16 / 14)`. */
+  --konvu-fs-base: 14px;
+  --konvu-fs-sm: 12.5px;
+  --konvu-fs-xs: 11.5px;
+  --konvu-fs-h1: 20px;
+  --konvu-fs-h2: 16px;
+
+  --konvu-radius-sm: 6px;
+  --konvu-radius: 10px;
+  --konvu-radius-lg: 11px;
+
+  --konvu-shadow-soft: 0 1px 2px rgba(45, 18, 102, 0.04),
+    0 4px 16px rgba(45, 18, 102, 0.06);
+  --konvu-shadow-panel: 0 0 0 1px var(--konvu-border),
+    -8px 0 32px rgba(45, 18, 102, 0.1);
+
+  --konvu-row-h: 38px;
+}

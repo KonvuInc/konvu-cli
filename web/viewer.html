@@ -1,0 +1,1357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="referrer" content="no-referrer" />
+<title>Konvu Inventory</title>
+<style>
+/* @@TOKENS@@ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: var(--konvu-font);
+  font-size: var(--konvu-fs-base);
+  color: var(--konvu-ink-body);
+  background: var(--konvu-mist-1);
+  -webkit-font-smoothing: antialiased;
+}
+
+body { display: flex; flex-direction: column; overflow: hidden; }
+
+code, .mono { font-family: var(--konvu-mono); font-size: var(--konvu-fs-sm); }
+
+/* ---------------------------------------------------------------- header -- */
+
+header.top {
+  flex: none;
+  background: #fff;
+  border-bottom: 1px solid var(--konvu-border);
+  padding: 14px 20px 0;
+}
+
+.top-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+
+h1 {
+  margin: 0;
+  font-size: var(--konvu-fs-h1);
+  font-weight: 600;
+  color: var(--konvu-ink);
+  letter-spacing: -0.01em;
+}
+
+.repo-meta {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  font-size: var(--konvu-fs-sm);
+  color: var(--konvu-ink-muted);
+  margin-left: auto;
+}
+.repo-meta b { font-weight: 500; color: var(--konvu-ink-body); }
+
+.repo-summary {
+  margin: 6px 0 0;
+  font-size: var(--konvu-fs-sm);
+  line-height: 1.5;
+  color: var(--konvu-ink-muted);
+  max-width: 900px;
+}
+.repo-summary:empty { display: none; }
+
+.tabs { display: flex; gap: 2px; margin-top: 12px; }
+.tab {
+  appearance: none; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: var(--konvu-fs-base);
+  color: var(--konvu-ink-muted);
+  padding: 8px 14px 10px;
+  border-bottom: 2px solid transparent;
+}
+.tab:hover { color: var(--konvu-ink); }
+.tab[aria-selected="true"] {
+  color: var(--konvu-purple-6);
+  font-weight: 500;
+  border-bottom-color: var(--konvu-purple-6);
+}
+.tab .n {
+  font-size: var(--konvu-fs-xs);
+  color: var(--konvu-ink-faint);
+  margin-left: 5px;
+}
+
+/* --------------------------------------------------------------- notices -- */
+
+/* The honesty strip. Collapsed to one line by default so it never costs the
+ * table half a screen, but always present -- these caveats are not optional
+ * decoration, they are what keeps the table from reading as verified fact. */
+#notices { flex: none; }
+
+details.caveats {
+  margin: 10px 20px 0;
+  border: 1px solid var(--konvu-border);
+  border-radius: var(--konvu-radius-sm);
+  background: var(--konvu-mist-0);
+  font-size: var(--konvu-fs-sm);
+}
+details.caveats > summary {
+  cursor: pointer;
+  padding: 8px 14px;
+  list-style: none;
+  color: var(--konvu-ink-body);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+details.caveats > summary::-webkit-details-marker { display: none; }
+details.caveats > summary::before {
+  content: "▸";
+  color: var(--konvu-ink-faint);
+  font-size: 10px;
+}
+details.caveats[open] > summary::before { content: "▾"; }
+details.caveats > summary:hover { background: var(--konvu-mist-1); }
+details.caveats > summary b { color: var(--konvu-ink); font-weight: 600; }
+.caveat-body { padding: 2px 14px 12px 32px; }
+
+.notice {
+  padding: 7px 0;
+  font-size: var(--konvu-fs-sm);
+  line-height: 1.55;
+  color: var(--konvu-ink-muted);
+}
+.notice + .notice { border-top: 1px solid var(--konvu-mist-2); }
+.notice b { color: var(--konvu-ink-body); font-weight: 600; }
+.notice code {
+  background: var(--konvu-mist-2);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+/* ------------------------------------------------------------------ body -- */
+
+main { flex: 1; display: flex; min-height: 0; }
+
+aside.rail {
+  flex: none; width: 236px;
+  background: #fff;
+  border-right: 1px solid var(--konvu-border);
+  padding: 14px;
+  overflow-y: auto;
+}
+
+.rail h3 {
+  margin: 16px 0 7px;
+  font-size: var(--konvu-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--konvu-ink-faint);
+}
+.rail h3:first-child { margin-top: 0; }
+
+.search-wrap { position: relative; }
+input.search {
+  width: 100%;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--konvu-border-strong);
+  border-radius: var(--konvu-radius-sm);
+  background: var(--konvu-mist-0);
+  color: var(--konvu-ink);
+}
+input.search:focus {
+  outline: none;
+  border-color: var(--konvu-purple-4);
+  box-shadow: 0 0 0 3px rgba(111, 73, 193, 0.12);
+}
+input.search::placeholder { color: var(--konvu-ink-faint); }
+.search-hint {
+  font-size: var(--konvu-fs-xs);
+  color: var(--konvu-ink-faint);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+.facet {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: var(--konvu-fs-sm);
+  color: var(--konvu-ink-body);
+  border-radius: var(--konvu-radius-sm);
+  text-align: left;
+}
+.facet:hover { background: var(--konvu-mist-1); }
+.facet[aria-pressed="true"] {
+  background: var(--konvu-mist-2);
+  color: var(--konvu-ink);
+  font-weight: 500;
+}
+.facet .swatch {
+  width: 8px; height: 8px; border-radius: 2px; flex: none;
+  background: var(--konvu-mist-5);
+}
+.facet .count { margin-left: auto; color: var(--konvu-ink-faint); font-variant-numeric: tabular-nums; }
+
+button.reset {
+  margin-top: 14px; width: 100%;
+  font: inherit; font-size: var(--konvu-fs-sm);
+  padding: 6px;
+  border: 1px solid var(--konvu-border-strong);
+  border-radius: var(--konvu-radius-sm);
+  background: #fff; color: var(--konvu-ink-body); cursor: pointer;
+}
+button.reset:hover { background: var(--konvu-mist-1); }
+
+section.content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.scroll { flex: 1; overflow: auto; }
+
+/* ----------------------------------------------------------------- table -- */
+
+/* min-width keeps the columns readable when the detail panel opens: the
+ * scroller takes the overflow rather than the cells crushing. */
+table { width: 100%; min-width: 680px; border-collapse: separate; border-spacing: 0; }
+
+thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--konvu-mist-1);
+  border-bottom: 1px solid var(--konvu-border);
+  text-align: left;
+  font-size: var(--konvu-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--konvu-ink-faint);
+  padding: 9px 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+thead th:hover { color: var(--konvu-ink-body); }
+thead th .arrow { opacity: 0.55; margin-left: 4px; }
+
+tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--konvu-mist-2);
+  vertical-align: top;
+  font-size: var(--konvu-fs-sm);
+}
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: var(--konvu-mist-1); }
+tbody tr[aria-selected="true"] td { background: var(--konvu-mist-2); }
+
+.cell-name { color: var(--konvu-ink); font-weight: 500; font-size: var(--konvu-fs-base); }
+.cell-sub {
+  font-family: var(--konvu-mono);
+  font-size: var(--konvu-fs-xs);
+  color: var(--konvu-ink-muted);
+  margin-top: 2px;
+  word-break: break-all;
+}
+
+/* One line per declaration. A 90-character Go symbol wrapping to three lines
+ * makes 600 rows unscannable, which is the whole complaint this page answers.
+ * The full value is always in the panel and the title attribute. */
+td.decl-cell { max-width: 320px; }
+td.decl-cell .cell-sub {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+  direction: rtl;          /* keep the symbol, elide the leading path */
+  text-align: left;
+}
+
+/* ----------------------------------------------------------------- chips -- */
+
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: var(--konvu-fs-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.chip + .chip { margin-left: 4px; }
+
+.chip.present { color: var(--konvu-present-fg); background: var(--konvu-present-bg); border-color: var(--konvu-present-bd); }
+.chip.partial { color: var(--konvu-partial-fg); background: var(--konvu-partial-bg); border-color: var(--konvu-partial-bd); }
+.chip.absent  { color: var(--konvu-absent-fg);  background: var(--konvu-absent-bg);  border-color: var(--konvu-absent-bd); }
+.chip.none    { color: var(--konvu-none-fg);    background: var(--konvu-none-bg);    border-color: var(--konvu-none-bd); }
+
+.chip.endpoint { color: var(--konvu-kind-endpoint); background: var(--konvu-kind-endpoint-bg); }
+.chip.object   { color: var(--konvu-kind-object);   background: var(--konvu-kind-object-bg); }
+.chip.field    { color: var(--konvu-kind-field);    background: var(--konvu-kind-field-bg); }
+.chip.code     { color: var(--konvu-kind-code);     background: var(--konvu-kind-code-bg); }
+
+.chip.ambiguous {
+  color: var(--konvu-ink-muted);
+  background: transparent;
+  border: var(--konvu-border-dashed);
+}
+.chip.method {
+  font-family: var(--konvu-mono);
+  color: var(--konvu-purple-6);
+  background: var(--konvu-purple-0);
+  min-width: 46px; justify-content: center;
+}
+
+/* ------------------------------------------------------------- empty row -- */
+
+.empty {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--konvu-ink-muted);
+}
+.empty h4 { margin: 0 0 6px; font-size: var(--konvu-fs-h2); color: var(--konvu-ink); font-weight: 600; }
+.empty p { margin: 0; font-size: var(--konvu-fs-sm); line-height: 1.6; }
+
+/* ----------------------------------------------------------------- panel -- */
+
+aside.panel {
+  flex: none; width: 520px;
+  background: #fff;
+  box-shadow: var(--konvu-shadow-panel);
+  overflow-y: auto;
+  display: none;
+}
+aside.panel.open { display: block; }
+
+.panel-head {
+  position: sticky; top: 0; z-index: 3;
+  background: #fff;
+  border-bottom: 1px solid var(--konvu-border);
+  padding: 14px 18px;
+}
+.panel-head h2 {
+  margin: 0 0 6px; font-size: var(--konvu-fs-h2); font-weight: 600;
+  color: var(--konvu-ink); padding-right: 28px; line-height: 1.35;
+}
+.panel-close {
+  position: absolute; top: 12px; right: 14px;
+  border: 0; background: none; cursor: pointer;
+  font-size: 18px; line-height: 1; color: var(--konvu-ink-faint); padding: 4px;
+}
+.panel-close:hover { color: var(--konvu-ink); }
+
+.panel-body { padding: 4px 18px 40px; }
+
+.sec { margin-top: 20px; }
+.sec > h4 {
+  margin: 0 0 8px;
+  font-size: var(--konvu-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--konvu-ink-faint);
+}
+
+.kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; font-size: var(--konvu-fs-sm); }
+.kv dt { color: var(--konvu-ink-muted); }
+.kv dd { margin: 0; color: var(--konvu-ink-body); font-family: var(--konvu-mono); font-size: var(--konvu-fs-xs); word-break: break-all; }
+
+.prose { font-size: var(--konvu-fs-sm); line-height: 1.6; color: var(--konvu-ink-body); margin: 0; }
+
+.card {
+  border: 1px solid var(--konvu-border);
+  border-radius: var(--konvu-radius-sm);
+  padding: 11px 13px;
+  margin-bottom: 9px;
+  background: var(--konvu-mist-0);
+}
+.card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.card-head .title { font-weight: 600; color: var(--konvu-ink); font-size: var(--konvu-fs-sm); }
+
+pre.quote {
+  margin: 7px 0 0;
+  padding: 8px 10px;
+  background: var(--konvu-purple-8);
+  color: #e9e4f5;
+  border-radius: var(--konvu-radius-sm);
+  font-family: var(--konvu-mono);
+  font-size: var(--konvu-fs-xs);
+  line-height: 1.55;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.decl {
+  font-family: var(--konvu-mono);
+  font-size: var(--konvu-fs-xs);
+  color: var(--konvu-purple-6);
+  word-break: break-all;
+}
+
+ul.checked { margin: 7px 0 0; padding-left: 16px; font-size: var(--konvu-fs-xs); line-height: 1.6; color: var(--konvu-ink-muted); }
+ul.checked li { margin-bottom: 3px; }
+ul.checked li::marker { color: var(--konvu-mist-6); }
+
+ul.plain { margin: 0; padding-left: 15px; font-size: var(--konvu-fs-xs); line-height: 1.7; color: var(--konvu-ink-body); font-family: var(--konvu-mono); }
+ul.plain li { word-break: break-all; }
+
+.urlpill {
+  display: inline-block;
+  font-family: var(--konvu-mono);
+  font-size: var(--konvu-fs-xs);
+  background: var(--konvu-purple-0);
+  color: var(--konvu-purple-7);
+  border-radius: var(--konvu-radius-sm);
+  padding: 2px 7px;
+  margin: 0 4px 4px 0;
+}
+.urlpill.broad { background: var(--konvu-mist-2); color: var(--konvu-ink-muted); border: var(--konvu-border-dashed); }
+
+.inline-note {
+  font-size: var(--konvu-fs-xs);
+  color: var(--konvu-ink-muted);
+  line-height: 1.55;
+  margin: 6px 0 0;
+}
+
+.footer-note {
+  flex: none;
+  border-top: 1px solid var(--konvu-border);
+  background: #fff;
+  padding: 7px 20px;
+  font-size: var(--konvu-fs-xs);
+  color: var(--konvu-ink-faint);
+  display: flex; gap: 16px; flex-wrap: wrap;
+}
+kbd {
+  font-family: var(--konvu-mono);
+  font-size: 10.5px;
+  border: 1px solid var(--konvu-border-strong);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 0 4px;
+  background: var(--konvu-mist-0);
+  color: var(--konvu-ink-body);
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-row">
+    <h1 id="repo-name">Inventory</h1>
+    <div class="repo-meta" id="repo-meta"></div>
+  </div>
+  <p class="repo-summary" id="repo-summary"></p>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-view="assets" aria-selected="true">Assets <span class="n" id="n-assets"></span></button>
+    <button class="tab" role="tab" data-view="controls" aria-selected="false">Controls <span class="n" id="n-controls"></span></button>
+    <button class="tab" role="tab" data-view="urls" aria-selected="false">URLs <span class="n" id="n-urls"></span></button>
+  </div>
+</header>
+
+<div id="notices"></div>
+
+<main>
+  <aside class="rail" id="rail">
+    <h3>Search</h3>
+    <div class="search-wrap">
+      <input class="search" id="q" type="search" placeholder="URL, name, file, control…" autocomplete="off" spellcheck="false" />
+    </div>
+    <p class="search-hint" id="search-hint">Searches names, declarations, file paths, control names, and resolved URLs.</p>
+
+    <h3>Kind</h3>
+    <div id="facet-kind"></div>
+
+    <h3>Control coverage</h3>
+    <div id="facet-cov"></div>
+
+    <h3>Security property</h3>
+    <div id="facet-prop"></div>
+
+    <button class="reset" id="reset">Clear filters</button>
+  </aside>
+
+  <section class="content">
+    <div class="scroll" id="scroll">
+      <table id="tbl">
+        <thead id="thead"></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty" id="empty" style="display:none"></div>
+    </div>
+  </section>
+
+  <aside class="panel" id="panel" aria-live="polite">
+    <div class="panel-head">
+      <button class="panel-close" id="panel-close" title="Close (Esc)">&times;</button>
+      <h2 id="panel-title"></h2>
+      <div id="panel-chips"></div>
+    </div>
+    <div class="panel-body" id="panel-body"></div>
+  </aside>
+</main>
+
+<div class="footer-note">
+  <span><kbd>/</kbd> search</span>
+  <span><kbd>j</kbd> <kbd>k</kbd> move</span>
+  <span><kbd>Enter</kbd> open</span>
+  <span><kbd>Esc</kbd> close</span>
+  <span id="foot-count"></span>
+</div>
+
+<script id="baseline-data" type="application/json">/* @@BASELINE@@ */</script>
+<script>
+"use strict";
+
+/* ===========================================================================
+ * Konvu inventory viewer.
+ *
+ * Reads one baseline.json (schema_version 1) inlined above and renders it.
+ * No framework, no network, no storage. Everything below is derivation over
+ * the artifact -- nothing is asserted that the baseline does not contain.
+ * ======================================================================== */
+
+const DATA = JSON.parse(document.getElementById("baseline-data").textContent);
+
+const ASSETS = DATA.assets || [];
+const CONTROLS = DATA.controls || [];
+const IMPLS = DATA.implementations || [];
+const ROUTES = DATA.routes || [];
+const OBS_CONTROLS = (DATA.observations && DATA.observations.controls) || [];
+
+const controlById = new Map(CONTROLS.map((c) => [c.id, c]));
+const implById = new Map(IMPLS.map((i) => [i.id, i]));
+
+/* ------------------------------------------------------------------ util -- */
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+function el(html) {
+  const t = document.createElement("template");
+  t.innerHTML = html.trim();
+  return t.content.firstElementChild;
+}
+
+const RANK = { absent: 0, partial: 1, present: 2 };
+
+/* Repository-wide presence for one asset: "none" when the mapping linked no
+ * control at all -- which is an unknown, not a failure -- otherwise the
+ * weakest status recorded across its links. */
+function assetCoverage(a) {
+  const links = a.controls || [];
+  if (!links.length) return "none";
+  let worst = "present";
+  for (const l of links) {
+    const s = RANK[l.status] === undefined ? "partial" : l.status;
+    if (RANK[s] < RANK[worst]) worst = s;
+  }
+  return worst;
+}
+
+/* --------------------------------------------------- token -> URL joining --
+ *
+ * Endpoint assets carry `tokens[]`: literal regex fragments the engine matched
+ * on. `routes[]` is a separate collection of literal paths. Joining them is
+ * what makes "search for /api/v1/users" find the group that covers it.
+ *
+ * The join is only sound when a token is specific. A token list frequently
+ * ends in a bare catch-all (`@main\.route\(`, `http\.NewRequest\(`) that
+ * matches every route in the repo. Attributing all of them to that asset would
+ * assert "public home covers /admin", which the baseline does not claim. So a
+ * token that resolves to more than BROAD_RATIO of all routes is kept, but
+ * marked broad and never counted as coverage.
+ */
+
+const BROAD_RATIO = 0.4;
+const MAX_ALTERNATIVES = 32;
+
+/**
+ * Expand regex alternation groups into concrete strings.
+ * `/(a|b|c)` -> `/a`, `/b`, `/c`. Bounded, because a token is attacker-shaped
+ * only in the sense that it comes from a generated artifact, but a pathological
+ * nest should not hang the page.
+ */
+function expandAlternations(s) {
+  let out = [s];
+  for (let depth = 0; depth < 4; depth++) {
+    let changed = false;
+    const next = [];
+    for (const v of out) {
+      const m = v.match(/\(([^()]*)\)/);
+      if (!m) { next.push(v); continue; }
+      changed = true;
+      for (const opt of m[1].split("|")) {
+        next.push(v.slice(0, m.index) + opt + v.slice(m.index + m[0].length));
+      }
+    }
+    out = next.slice(0, MAX_ALTERNATIVES);
+    if (!changed) break;
+  }
+  return out;
+}
+
+/**
+ * Pull literal path fragments out of one regex-ish token.
+ *
+ * Tokens look like `@main\.route\("/(password-reminder|reset-password)`. The
+ * useful part is the path literal, which may carry an alternation group and
+ * Flask/Django-style `<param>` segments that appear verbatim in `routes[].path`
+ * too, so they compare directly.
+ */
+function literalPaths(token) {
+  if (typeof token !== "string" || token.indexOf("/") === -1) return [];
+  const plain = token.replace(/\\(.)/g, "$1"); // `\.` -> `.`
+  const out = [];
+  const re = /\/[A-Za-z0-9_\-./{}<>:*()|]*/g;
+  let m;
+  while ((m = re.exec(plain)) !== null) {
+    for (const variant of expandAlternations(m[0])) {
+      // Cut at a regex quantifier and drop a trailing slash, but keep bare "/"
+      // -- it is the root route, and it is matched exactly, never as a prefix.
+      let frag = variant.replace(/[*?+].*$/, "");
+      if (frag.length > 1) frag = frag.replace(/\/+$/, "");
+      if (frag === "/" || frag.length > 1) out.push(frag);
+    }
+  }
+  return out;
+}
+
+/**
+ * Does a route path belong to this literal fragment?
+ *
+ * Bare "/" matches only the root route. Anything else matches itself or a path
+ * beneath it, so `/<project_id>/members` covers `/<project_id>/members/add`.
+ */
+function routeMatches(routePath, frag) {
+  if (!routePath || !frag) return false;
+  if (frag === "/") return routePath === "/";
+  return routePath === frag || routePath.startsWith(frag + "/") || routePath.startsWith(frag);
+}
+
+function buildRouteIndex() {
+  const byAsset = new Map(); // assetId -> {urls:Set, broad:Set}
+  const byRoute = new Map(); // routeId -> [{assetId, broad}]
+
+  for (const a of ASSETS) {
+    const tokens = a.tokens || [];
+    const urls = new Set();
+    const broad = new Set();
+
+    // Explicit routes[] on the asset are authoritative; no inference needed.
+    for (const r of a.routes || []) {
+      if (r && r.path) urls.add(r.path);
+    }
+
+    for (const tok of tokens) {
+      const frags = literalPaths(tok);
+      if (!frags.length) continue;
+      const hits = [];
+      for (const r of ROUTES) {
+        if (frags.some((f) => routeMatches(r.path, f))) hits.push(r);
+      }
+      if (!hits.length) continue;
+      const isBroad = ROUTES.length > 0 && hits.length / ROUTES.length > BROAD_RATIO;
+      for (const r of hits) {
+        (isBroad ? broad : urls).add(r.path);
+        if (!byRoute.has(r.id)) byRoute.set(r.id, []);
+        byRoute.get(r.id).push({ assetId: a.id, broad: isBroad });
+      }
+    }
+    // A URL the asset declares outright is never also "reached via a catch-all":
+    // authoritative attribution wins over the inferred kind.
+    for (const u of urls) broad.delete(u);
+
+    if (urls.size || broad.size) byAsset.set(a.id, { urls, broad });
+  }
+  return { byAsset, byRoute };
+}
+
+const ROUTE_INDEX = buildRouteIndex();
+
+function assetUrls(a) {
+  const e = ROUTE_INDEX.byAsset.get(a.id);
+  return e ? Array.from(e.urls) : [];
+}
+function assetBroadUrls(a) {
+  const e = ROUTE_INDEX.byAsset.get(a.id);
+  return e ? Array.from(e.broad) : [];
+}
+
+/* ------------------------------------------------------------ derivation -- */
+
+const VIEW_ROWS = ASSETS.map((a) => {
+  const cov = assetCoverage(a);
+  const urls = assetUrls(a);
+  const props = new Set();
+  for (const l of a.controls || []) {
+    const c = controlById.get(l.control_id);
+    if (c && c.property) props.add(c.property);
+  }
+  const haystack = [
+    a.name, a.decl, a.description, a.id,
+    (a.paths || []).join(" "),
+    (a.tokens || []).join(" "),
+    urls.join(" "),
+    (a.controls || []).map((l) => {
+      const c = controlById.get(l.control_id);
+      return (c && c.name) || l.control_id;
+    }).join(" "),
+  ].join(" ").toLowerCase();
+
+  return { asset: a, cov, urls, props: Array.from(props), haystack };
+});
+
+const KINDS = ["endpoint", "object", "field", "code"];
+const COVS = ["present", "partial", "absent", "none"];
+const PROPS = Array.from(new Set(CONTROLS.map((c) => c.property).filter(Boolean))).sort();
+
+const COV_LABEL = {
+  present: "Present",
+  partial: "Partial",
+  absent: "Absent",
+  none: "No control linked",
+};
+
+/* ------------------------------------------------------------------ state -- */
+
+const state = {
+  view: "assets",
+  q: "",
+  kinds: new Set(),
+  covs: new Set(),
+  props: new Set(),
+  sort: { key: "name", dir: 1 },
+  selected: null,
+  cursor: -1,
+};
+
+function filtered() {
+  const q = state.q.trim().toLowerCase();
+  const terms = q ? q.split(/\s+/) : [];
+  let rows = VIEW_ROWS.filter((r) => {
+    if (state.kinds.size && !state.kinds.has(r.asset.kind)) return false;
+    if (state.covs.size && !state.covs.has(r.cov)) return false;
+    if (state.props.size && !r.props.some((p) => state.props.has(p))) return false;
+    for (const t of terms) if (r.haystack.indexOf(t) === -1) return false;
+    return true;
+  });
+
+  const { key, dir } = state.sort;
+  rows = rows.slice().sort((x, y) => {
+    let a, b;
+    if (key === "kind") { a = x.asset.kind; b = y.asset.kind; }
+    else if (key === "cov") { a = RANK[x.cov] === undefined ? -1 : RANK[x.cov]; b = RANK[y.cov] === undefined ? -1 : RANK[y.cov]; }
+    else if (key === "controls") { a = (x.asset.controls || []).length; b = (y.asset.controls || []).length; }
+    else if (key === "decl") { a = x.asset.decl || ""; b = y.asset.decl || ""; }
+    else { a = (x.asset.name || "").toLowerCase(); b = (y.asset.name || "").toLowerCase(); }
+    if (a < b) return -1 * dir;
+    if (a > b) return 1 * dir;
+    return 0;
+  });
+  return rows;
+}
+
+/* ------------------------------------------------------------- rendering -- */
+
+function chip(cls, text, title) {
+  return `<span class="chip ${cls}"${title ? ` title="${esc(title)}"` : ""}>${esc(text)}</span>`;
+}
+
+function covChip(cov) {
+  return chip(cov, COV_LABEL[cov] || cov);
+}
+
+/** `languages` is a list of {name, files, lines}; older artifacts used strings. */
+function languageNames(list) {
+  if (!Array.isArray(list)) return [];
+  return list.map((l) => (typeof l === "string" ? l : l && l.name)).filter(Boolean);
+}
+
+function renderHeader() {
+  const cb = DATA.codebase || {};
+  const run = DATA.run || {};
+  const vcs = cb.git || {};
+  document.getElementById("repo-name").textContent = cb.name || "Inventory";
+  document.title = (cb.name ? cb.name + " — " : "") + "Konvu Inventory";
+
+  const bits = [];
+  if (run.status) bits.push(`<span><b>${esc(run.status)}</b></span>`);
+
+  // Provenance first: a map is only meaningful against the commit it read.
+  if (vcs.short_commit || vcs.commit) {
+    const sha = vcs.short_commit || String(vcs.commit).slice(0, 8);
+    bits.push(
+      `<span title="Mapped against this commit">` +
+      (vcs.branch ? `${esc(vcs.branch)} @ ` : "") +
+      `<b class="mono">${esc(sha)}</b></span>`
+    );
+  }
+  if (vcs.dirty) {
+    bits.push(
+      `<span class="chip partial" title="The working tree had uncommitted changes when this map ran, so it does not describe any commit exactly.">uncommitted changes</span>`
+    );
+  }
+
+  const langs = languageNames(cb.languages);
+  if (langs.length) bits.push(`<span>${esc(langs.join(", "))}</span>`);
+
+  bits.push(`<span><b>${ASSETS.length}</b> assets</span>`);
+  bits.push(`<span><b>${CONTROLS.length}</b> controls</span>`);
+  if (ROUTES.length) bits.push(`<span><b>${ROUTES.length}</b> routes</span>`);
+  if (run.duration_seconds) {
+    bits.push(`<span>${Math.round(run.duration_seconds / 60)} min</span>`);
+  }
+  if (run.cost && run.cost.display) bits.push(`<span>${esc(run.cost.display)}</span>`);
+  document.getElementById("repo-meta").innerHTML = bits.join("");
+
+  if (cb.summary) {
+    document.getElementById("repo-summary").textContent = cb.summary;
+  }
+
+  document.getElementById("n-assets").textContent = ASSETS.length;
+  document.getElementById("n-controls").textContent = CONTROLS.length;
+  document.getElementById("n-urls").textContent = ROUTES.length;
+}
+
+/* The honesty strip. Both notices exist because a table that renders these
+ * silently is worse than a terminal that cannot render them at all. */
+function renderNotices() {
+  const host = document.getElementById("notices");
+  const out = [];
+  const tags = [];
+
+  const unlinked = VIEW_ROWS.filter((r) => r.cov === "none").length;
+  if (unlinked) {
+    const pct = Math.round((unlinked / VIEW_ROWS.length) * 100);
+    tags.push(`<b>${pct}%</b> unlinked`);
+    out.push(
+      `<div class="notice"><b>${unlinked} of ${VIEW_ROWS.length} assets (${pct}%) have no control linked.</b> ` +
+      `That is the mapping recording no protection it could attribute here, not a finding that the asset is unprotected. ` +
+      `Filter to <em>No control linked</em> to see them.</div>`
+    );
+  }
+
+  const amb = ASSETS.filter((a) => a.ambiguous).length;
+  if (amb) {
+    const pct = Math.round((amb / ASSETS.length) * 100);
+    tags.push(`<b>${pct}%</b> ambiguous`);
+    out.push(
+      `<div class="notice"><b>${amb} of ${ASSETS.length} assets (${pct}%) are flagged <code>ambiguous</code> by the engine.</b> ` +
+      `The baseline carries no per-asset record of what was individually inspected versus covered by a group pattern, ` +
+      `so treat identification as a lead to verify, not a verified fact.</div>`
+    );
+  }
+
+  const broadAssets = ASSETS.filter((a) => assetBroadUrls(a).length).length;
+  if (broadAssets) {
+    tags.push(`<b>${broadAssets}</b> catch-all`);
+    out.push(
+      `<div class="notice"><b>${broadAssets} asset(s) carry a catch-all token</b> that matches most routes in the repository. ` +
+      `URLs reached only through such a token are shown dashed and are never counted as coverage.</div>`
+    );
+  }
+
+  if (!out.length) { host.innerHTML = ""; return; }
+
+  host.innerHTML =
+    `<details class="caveats"><summary>` +
+    `<span>How much of this is verified</span>` +
+    tags.map((t) => `<span class="chip none">${t}</span>`).join("") +
+    `</summary><div class="caveat-body">${out.join("")}</div></details>`;
+}
+
+function facetButton(id, group, value, label, count, swatchVar) {
+  const on = state[group].has(value);
+  return (
+    `<button class="facet" data-group="${group}" data-value="${esc(value)}" aria-pressed="${on}">` +
+    (swatchVar ? `<span class="swatch" style="background:${swatchVar}"></span>` : "") +
+    `<span>${esc(label)}</span><span class="count">${count}</span></button>`
+  );
+}
+
+function renderFacets() {
+  const kindHost = document.getElementById("facet-kind");
+  kindHost.innerHTML = KINDS
+    .map((k) => {
+      const n = VIEW_ROWS.filter((r) => r.asset.kind === k).length;
+      return n ? facetButton("k", "kinds", k, k, n, `var(--konvu-kind-${k})`) : "";
+    })
+    .join("");
+
+  const covHost = document.getElementById("facet-cov");
+  covHost.innerHTML = COVS
+    .map((c) => {
+      const n = VIEW_ROWS.filter((r) => r.cov === c).length;
+      const v = c === "none" ? "var(--konvu-none-fg)" : `var(--konvu-${c}-fg)`;
+      return n ? facetButton("c", "covs", c, COV_LABEL[c], n, v) : "";
+    })
+    .join("");
+
+  const propHost = document.getElementById("facet-prop");
+  propHost.innerHTML = PROPS
+    .map((p) => {
+      const n = VIEW_ROWS.filter((r) => r.props.indexOf(p) !== -1).length;
+      return n ? facetButton("p", "props", p, p.replace(/_/g, " "), n, null) : "";
+    })
+    .join("") || `<p class="search-hint">No controls carry a property.</p>`;
+}
+
+const COLUMNS = [
+  { key: "name", label: "Asset" },
+  { key: "kind", label: "Kind" },
+  { key: "cov", label: "Coverage" },
+  { key: "controls", label: "Controls" },
+  { key: "decl", label: "Declared at" },
+];
+
+function renderTableHead() {
+  document.getElementById("thead").innerHTML =
+    "<tr>" +
+    COLUMNS.map((c) => {
+      const active = state.sort.key === c.key;
+      const arrow = active ? `<span class="arrow">${state.sort.dir > 0 ? "↑" : "↓"}</span>` : "";
+      return `<th data-key="${c.key}">${esc(c.label)}${arrow}</th>`;
+    }).join("") +
+    "</tr>";
+}
+
+function renderAssets() {
+  const rows = filtered();
+  const tbody = document.getElementById("tbody");
+  const empty = document.getElementById("empty");
+
+  document.getElementById("foot-count").textContent =
+    `${rows.length} of ${VIEW_ROWS.length} assets`;
+
+  if (!rows.length) {
+    tbody.innerHTML = "";
+    empty.style.display = "";
+    empty.innerHTML =
+      `<h4>Nothing matches</h4><p>No asset matches these filters. ` +
+      `If you searched a URL, it may be covered by a group pattern rather than named directly &mdash; ` +
+      `check the <b>URLs</b> tab, which resolves patterns to concrete routes.</p>`;
+    return;
+  }
+  empty.style.display = "none";
+
+  tbody.innerHTML = rows
+    .map((r, i) => {
+      const a = r.asset;
+      const n = (a.controls || []).length;
+      const urls = r.urls;
+      const urlLine = urls.length
+        ? `<div class="cell-sub">${esc(urls.slice(0, 3).join("  "))}${urls.length > 3 ? ` +${urls.length - 3}` : ""}</div>`
+        : "";
+      return (
+        `<tr data-i="${i}" data-id="${esc(a.id)}" aria-selected="${state.selected === a.id}">` +
+        `<td><div class="cell-name">${esc(a.name)}</div>` +
+        (a.ambiguous ? `<div style="margin-top:3px">${chip("ambiguous", "ambiguous", "The engine flagged this identification as ambiguous")}</div>` : "") +
+        urlLine +
+        `</td>` +
+        `<td>${chip(a.kind, a.kind)}</td>` +
+        `<td>${covChip(r.cov)}</td>` +
+        `<td style="font-variant-numeric:tabular-nums">${n || "—"}</td>` +
+        `<td class="decl-cell"><span class="cell-sub" style="margin:0" title="${esc(a.decl || "")}">${esc(a.decl || "—")}</span></td>` +
+        `</tr>`
+      );
+    })
+    .join("");
+}
+
+function renderControls() {
+  const tbody = document.getElementById("tbody");
+  document.getElementById("empty").style.display = "none";
+  document.getElementById("thead").innerHTML =
+    "<tr><th>Control</th><th>Property</th><th>Presence</th><th>Assets</th><th>Implementations</th></tr>";
+
+  const q = state.q.trim().toLowerCase();
+
+  const rows = CONTROLS.map((c) => {
+    const links = [];
+    for (const a of ASSETS) {
+      for (const l of a.controls || []) {
+        if (l.control_id === c.id) links.push({ asset: a, link: l });
+      }
+    }
+    let presence = "none";
+    if (links.length) {
+      presence = "present";
+      for (const { link } of links) {
+        const s = RANK[link.status] === undefined ? "partial" : link.status;
+        if (RANK[s] < RANK[presence]) presence = s;
+      }
+    }
+    const impls = new Set();
+    for (const { link } of links) for (const id of link.implementation_ids || []) impls.add(id);
+    return { c, links, presence, impls: Array.from(impls) };
+  }).filter((r) => {
+    if (!q) return true;
+    return (r.c.name + " " + r.c.id + " " + (r.c.description || "") + " " + (r.c.property || ""))
+      .toLowerCase().indexOf(q) !== -1;
+  });
+
+  document.getElementById("foot-count").textContent = `${rows.length} of ${CONTROLS.length} controls`;
+
+  tbody.innerHTML = rows
+    .map(
+      (r) =>
+        `<tr data-control="${esc(r.c.id)}">` +
+        `<td><div class="cell-name">${esc(r.c.name || r.c.id)}</div>` +
+        `<div class="cell-sub">${esc(r.c.id)}</div></td>` +
+        `<td>${r.c.property ? chip("none", r.c.property.replace(/_/g, " ")) : "—"}</td>` +
+        `<td>${covChip(r.presence)}</td>` +
+        `<td style="font-variant-numeric:tabular-nums">${r.links.length || "—"}</td>` +
+        `<td style="font-variant-numeric:tabular-nums">${r.impls.length || "—"}</td>` +
+        `</tr>`
+    )
+    .join("");
+}
+
+function renderUrls() {
+  const tbody = document.getElementById("tbody");
+  document.getElementById("empty").style.display = "none";
+  document.getElementById("thead").innerHTML =
+    "<tr><th>Method</th><th>Path</th><th>Declared in</th><th>Attributed to</th></tr>";
+
+  const q = state.q.trim().toLowerCase();
+  const rows = ROUTES.filter(
+    (r) => !q || (r.path + " " + r.module + " " + r.method).toLowerCase().indexOf(q) !== -1
+  );
+
+  document.getElementById("foot-count").textContent = `${rows.length} of ${ROUTES.length} routes`;
+
+  if (!rows.length) {
+    tbody.innerHTML = "";
+    document.getElementById("empty").style.display = "";
+    document.getElementById("empty").innerHTML =
+      `<h4>No route matches</h4><p>No declared route matches that text.</p>`;
+    return;
+  }
+
+  tbody.innerHTML = rows
+    .map((r) => {
+      const owners = ROUTE_INDEX.byRoute.get(r.id) || [];
+      const seen = new Set();
+      const cells = [];
+      for (const o of owners) {
+        if (seen.has(o.assetId)) continue;
+        seen.add(o.assetId);
+        const a = ASSETS.find((x) => x.id === o.assetId);
+        if (!a) continue;
+        cells.push(
+          `<span class="urlpill${o.broad ? " broad" : ""}" title="${esc(o.broad ? "Reached only through a catch-all token — not treated as coverage" : "Resolved from a specific token")}">${esc(a.name)}</span>`
+        );
+      }
+      return (
+        `<tr data-route="${esc(r.id)}">` +
+        `<td>${chip("method", r.method || "—")}</td>` +
+        `<td><span class="mono" style="color:var(--konvu-ink)">${esc(r.path)}</span></td>` +
+        `<td><span class="cell-sub" style="margin:0">${esc(r.module)}:${esc(r.line)}</span></td>` +
+        `<td>${cells.length ? cells.join("") : `<span class="chip none">unattributed</span>`}</td>` +
+        `</tr>`
+      );
+    })
+    .join("");
+}
+
+/* ------------------------------------------------------------ side panel -- */
+
+function openAsset(id) {
+  const row = VIEW_ROWS.find((r) => r.asset.id === id);
+  if (!row) return;
+  const a = row.asset;
+  state.selected = id;
+
+  document.getElementById("panel-title").textContent = a.name;
+  document.getElementById("panel-chips").innerHTML =
+    chip(a.kind, a.kind) + covChip(row.cov) +
+    (a.ambiguous ? chip("ambiguous", "ambiguous") : "");
+
+  const parts = [];
+
+  if (a.description) {
+    parts.push(`<div class="sec"><p class="prose">${esc(a.description)}</p></div>`);
+  }
+
+  const kv = [];
+  if (a.decl) kv.push(["Declared at", a.decl]);
+  if (a.must_list_at) kv.push(["Listed at", a.must_list_at]);
+  if (a.origin) kv.push(["Origin", a.origin]);
+  if (a.parent) kv.push(["Parent", a.parent]);
+  if ((a.paths || []).length) kv.push(["Files", a.paths.join(", ")]);
+  kv.push(["Asset id", a.id]);
+  parts.push(
+    `<div class="sec"><h4>Identity</h4><dl class="kv">` +
+    kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("") +
+    `</dl></div>`
+  );
+
+  if (a.quote) {
+    parts.push(`<div class="sec"><h4>Source</h4><pre class="quote">${esc(a.quote)}</pre></div>`);
+  }
+
+  const urls = row.urls, broad = assetBroadUrls(a);
+  if (urls.length || broad.length) {
+    parts.push(
+      `<div class="sec"><h4>Resolved URLs</h4>` +
+      urls.map((u) => `<span class="urlpill">${esc(u)}</span>`).join("") +
+      broad.map((u) => `<span class="urlpill broad" title="Reached only through a catch-all token">${esc(u)}</span>`).join("") +
+      (broad.length
+        ? `<p class="inline-note">Dashed URLs are reached only through a catch-all pattern in this asset's token list. ` +
+          `The baseline does not claim this asset covers them.</p>`
+        : "") +
+      `</div>`
+    );
+  }
+
+  if ((a.tokens || []).length) {
+    parts.push(
+      `<div class="sec"><h4>Match patterns</h4><ul class="plain">` +
+      a.tokens.map((t) => `<li>${esc(t)}</li>`).join("") +
+      `</ul><p class="inline-note">The literal patterns the engine matched to identify this asset. ` +
+      `The schema does not rank them, so a precise pattern and a catch-all are indistinguishable here.</p></div>`
+    );
+  }
+
+  const links = a.controls || [];
+  if (links.length) {
+    parts.push(
+      `<div class="sec"><h4>Controls (${links.length})</h4>` +
+      links.map((l) => {
+        const c = controlById.get(l.control_id) || {};
+        const ev = (l.evidence || [])
+          .map((e) =>
+            (e.decl ? `<div class="decl">${esc(e.decl)}</div>` : "") +
+            (e.quote ? `<pre class="quote">${esc(e.quote)}</pre>` : "")
+          ).join("");
+        const checked = (l.checked || []).length
+          ? `<ul class="checked">${l.checked.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`
+          : "";
+        const impls = (l.implementation_ids || [])
+          .map((id) => {
+            const im = implById.get(id);
+            return im ? `<span class="urlpill">${esc(im.name || id)}</span>` : "";
+          }).join("");
+        return (
+          `<div class="card"><div class="card-head">` +
+          `<span class="title">${esc(c.name || l.control_id)}</span>` +
+          chip(RANK[l.status] === undefined ? "none" : l.status, l.status || "unknown") +
+          (c.property ? chip("none", c.property.replace(/_/g, " ")) : "") +
+          `</div>` +
+          (l.description ? `<p class="prose">${esc(l.description)}</p>` : "") +
+          ev +
+          (checked ? `<p class="inline-note" style="margin-top:9px"><b>Inspected:</b></p>${checked}` : "") +
+          (impls ? `<div style="margin-top:8px">${impls}</div>` : "") +
+          `</div>`
+        );
+      }).join("") +
+      `</div>`
+    );
+  } else {
+    parts.push(
+      `<div class="sec"><h4>Controls</h4>` +
+      `<div class="card"><p class="prose">The mapping linked no control to this asset.</p>` +
+      `<p class="inline-note">This records an absence of attribution, not an absence of protection. ` +
+      `A control may exist in the codebase without the engine connecting it here.</p></div></div>`
+    );
+  }
+
+  document.getElementById("panel-body").innerHTML = parts.join("");
+  document.getElementById("panel").classList.add("open");
+  markSelected();
+}
+
+/* Highlight the open row without re-rendering the table: a full render at 600
+ * rows throws away scroll position and the row you just clicked jumps away. */
+function markSelected() {
+  for (const tr of document.querySelectorAll("tbody tr")) {
+    const id = tr.dataset.id || tr.dataset.control;
+    if (id && id === state.selected) tr.setAttribute("aria-selected", "true");
+    else tr.removeAttribute("aria-selected");
+  }
+}
+
+function openControl(id) {
+  const c = controlById.get(id);
+  if (!c) return;
+  state.selected = id;
+  document.getElementById("panel-title").textContent = c.name || c.id;
+  document.getElementById("panel-chips").innerHTML =
+    (c.property ? chip("none", c.property.replace(/_/g, " ")) : "");
+
+  const covered = [];
+  for (const a of ASSETS) {
+    for (const l of a.controls || []) {
+      if (l.control_id === c.id) covered.push({ a, l });
+    }
+  }
+  const obs = OBS_CONTROLS.filter((o) => (c.source_control_observation_ids || []).indexOf(o.id) !== -1);
+
+  const parts = [];
+  if (c.description) parts.push(`<div class="sec"><p class="prose">${esc(c.description)}</p></div>`);
+
+  parts.push(
+    `<div class="sec"><h4>Observed implementations (${obs.length})</h4>` +
+    (obs.length
+      ? obs.map((o) =>
+          `<div class="card"><div class="card-head">` +
+          `<span class="title">${esc(o.id.replace(/^control-observation:/, ""))}</span>` +
+          chip(RANK[o.status] === undefined ? "none" : o.status, o.status || "unknown") +
+          `</div>` +
+          (o.description ? `<p class="prose">${esc(o.description)}</p>` : "") +
+          (o.decl ? `<div class="decl">${esc(o.decl)}</div>` : "") +
+          (o.quote ? `<pre class="quote">${esc(o.quote)}</pre>` : "") +
+          ((o.checked || []).length
+            ? `<p class="inline-note" style="margin-top:9px"><b>Inspected:</b></p>` +
+              `<ul class="checked">${o.checked.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`
+            : "") +
+          `</div>`
+        ).join("")
+      : `<div class="card"><p class="prose">No observation recorded.</p></div>`) +
+    `</div>`
+  );
+
+  parts.push(
+    `<div class="sec"><h4>Assets linked (${covered.length})</h4>` +
+    (covered.length
+      ? covered.map(({ a, l }) =>
+          `<div class="card"><div class="card-head">` +
+          `<span class="title">${esc(a.name)}</span>` +
+          chip(a.kind, a.kind) +
+          chip(RANK[l.status] === undefined ? "none" : l.status, l.status || "unknown") +
+          `</div><div class="decl">${esc(a.decl || "")}</div></div>`
+        ).join("")
+      : `<div class="card"><p class="prose">No asset links this control.</p></div>`) +
+    `</div>`
+  );
+
+  document.getElementById("panel-body").innerHTML = parts.join("");
+  document.getElementById("panel").classList.add("open");
+  markSelected();
+}
+
+function closePanel() {
+  document.getElementById("panel").classList.remove("open");
+  state.selected = null;
+  markSelected();
+}
+
+/* ------------------------------------------------------------------ wire -- */
+
+function render() {
+  if (state.view === "assets") { renderTableHead(); renderAssets(); }
+  else if (state.view === "controls") renderControls();
+  else renderUrls();
+}
+
+function setView(v) {
+  state.view = v;
+  state.cursor = -1;
+  closePanelSilently();
+  for (const t of document.querySelectorAll(".tab")) {
+    t.setAttribute("aria-selected", String(t.dataset.view === v));
+  }
+  document.getElementById("rail").style.display = v === "assets" ? "" : "none";
+  const hint = { assets: "URL, name, file, control…", controls: "Control name or property…", urls: "Path, method, module…" };
+  document.getElementById("q").placeholder = hint[v];
+  render();
+}
+
+function closePanelSilently() {
+  document.getElementById("panel").classList.remove("open");
+  state.selected = null;
+}
+
+document.addEventListener("click", (e) => {
+  const tab = e.target.closest(".tab");
+  if (tab) return setView(tab.dataset.view);
+
+  const facet = e.target.closest(".facet");
+  if (facet) {
+    const set = state[facet.dataset.group];
+    const v = facet.dataset.value;
+    if (set.has(v)) set.delete(v); else set.add(v);
+    renderFacets();
+    render();
+    return;
+  }
+
+  if (e.target.closest("#reset")) {
+    state.kinds.clear(); state.covs.clear(); state.props.clear();
+    state.q = ""; document.getElementById("q").value = "";
+    renderFacets(); render();
+    return;
+  }
+
+  if (e.target.closest("#panel-close")) return closePanel();
+
+  const th = e.target.closest("thead th[data-key]");
+  if (th) {
+    const key = th.dataset.key;
+    if (state.sort.key === key) state.sort.dir *= -1;
+    else state.sort = { key, dir: 1 };
+    render();
+    return;
+  }
+
+  const tr = e.target.closest("tbody tr");
+  if (tr) {
+    if (tr.dataset.id) openAsset(tr.dataset.id);
+    else if (tr.dataset.control) openControl(tr.dataset.control);
+  }
+});
+
+document.getElementById("q").addEventListener("input", (e) => {
+  state.q = e.target.value;
+  state.cursor = -1;
+  if (state.view === "assets") renderFacets();
+  render();
+});
+
+document.addEventListener("keydown", (e) => {
+  const inField = e.target.tagName === "INPUT";
+  if (e.key === "Escape") {
+    if (inField) { e.target.blur(); return; }
+    closePanel();
+    return;
+  }
+  if (inField) return;
+
+  if (e.key === "/") { e.preventDefault(); document.getElementById("q").focus(); return; }
+
+  const rows = Array.from(document.querySelectorAll("tbody tr"));
+  if (!rows.length) return;
+
+  if (e.key === "j" || e.key === "ArrowDown") {
+    e.preventDefault();
+    state.cursor = Math.min(state.cursor + 1, rows.length - 1);
+  } else if (e.key === "k" || e.key === "ArrowUp") {
+    e.preventDefault();
+    state.cursor = Math.max(state.cursor - 1, 0);
+  } else if (e.key === "Enter") {
+    const r = rows[state.cursor];
+    if (r) {
+      if (r.dataset.id) openAsset(r.dataset.id);
+      else if (r.dataset.control) openControl(r.dataset.control);
+    }
+    return;
+  } else return;
+
+  for (const r of rows) r.removeAttribute("aria-selected");
+  const cur = rows[state.cursor];
+  if (cur) {
+    cur.setAttribute("aria-selected", "true");
+    cur.scrollIntoView({ block: "nearest" });
+  }
+});
+
+/* ------------------------------------------------------------------ boot -- */
+
+renderHeader();
+renderNotices();
+renderFacets();
+setView("assets");
+</script>
+</body>
+</html>
