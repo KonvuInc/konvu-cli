@@ -83,6 +83,26 @@ aside.rail::-webkit-scrollbar { width: 6px; }
 aside.rail::-webkit-scrollbar-track { background: transparent; }
 aside.rail::-webkit-scrollbar-thumb { background: rgba(45, 18, 102, 0.18); border-radius: 3px; }
 
+/* The rail's own header: its label, and the collapse control pushed right. */
+.rail-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 0 2px 6px;
+}
+.rail-header-label {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--konvu-rail-section-label);
+}
+.collapse-button {
+  width: 22px; height: 22px; margin-right: -2px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: 6px; background: transparent;
+  color: var(--konvu-rail-well-label); cursor: pointer;
+}
+.collapse-button:hover {
+  background: var(--konvu-rail-well-button-hover);
+  color: var(--konvu-rail-ink);
+}
+
 /* `.scopeWell` — the scope sitting above the filters, recessed one level. */
 .well {
   border-radius: 10px;
@@ -184,22 +204,6 @@ section.card {
   flex-shrink: 0;
 }
 
-/* PageHeader right slot. One line with an ellipsis: the summary is context,
- * not content, and must never push the title around. */
-.repo-summary {
-  margin: 0;
-  min-width: 0;
-  flex: 0 1 auto;
-  font-size: var(--konvu-fs-sm);
-  line-height: 1.4;
-  color: var(--konvu-ink-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-align: right;
-  max-width: 46%;
-}
-.repo-summary:empty { display: none; }
 
 /* `.scopeChip` — inert while the rail is open, so the scope stays readable. */
 .scope-chip {
@@ -217,7 +221,7 @@ section.card {
   white-space: nowrap;
 }
 
-.search-wrap { position: relative; }
+.search-wrap { position: relative; flex: 0 1 280px; min-width: 0; }
 
 .content-scroll { flex: 1; overflow: auto; }
 
@@ -381,11 +385,6 @@ td.decl-cell .cell-sub {
   background: var(--konvu-mist-1);
 }
 .chip + .chip { margin-left: 4px; }
-.chip.ambiguous {
-  color: var(--konvu-ink-muted);
-  background: transparent;
-  border: var(--konvu-border-dashed);
-}
 
 /* ------------------------------------------------------------- empty row -- */
 
@@ -476,6 +475,28 @@ aside.panel.open { display: block; }
 
 .prose { font-size: var(--konvu-fs-sm); line-height: 1.55; color: var(--konvu-gray-7); margin: 0; }
 
+/* AssetOverview prints the location under the description, in dimmed mono. */
+.location {
+  margin: 6px 0 0;
+  font-family: var(--konvu-mono);
+  font-size: var(--konvu-fs-xs);
+  color: var(--konvu-ink-faint);
+  overflow-wrap: anywhere;
+}
+
+/* A hairline-separated list row inside a section card. */
+.route-row {
+  display: flex; align-items: center; gap: 16px;
+  min-height: 38px; padding-top: 4px;
+  border-top: 1px solid var(--konvu-hairline);
+}
+.route-row .mono { overflow-wrap: anywhere; min-width: 0; }
+.protects-name {
+  font-size: var(--konvu-fs-sm); font-weight: 600; color: var(--konvu-purple-7);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.route-row .presence { margin-left: auto; }
+
 /* A control entry, accented by the security property it belongs to --
  * styles.module.css `.propertyGroup` / `.propertyHeader`. */
 .card {
@@ -558,7 +579,6 @@ ul.plain li { word-break: break-all; }
   padding: 2px 7px;
   margin: 0 4px 4px 0;
 }
-.urlpill.broad { background: var(--konvu-mist-2); color: var(--konvu-ink-muted); border: var(--konvu-border-dashed); }
 
 .inline-note {
   font-size: var(--konvu-fs-xs);
@@ -567,33 +587,9 @@ ul.plain li { word-break: break-all; }
   margin: 6px 0 0;
 }
 
-.footer-note {
-  flex: none;
-  border-top: 1px solid var(--konvu-border);
-  background: #fff;
-  padding: 7px 20px;
-  font-size: var(--konvu-fs-xs);
-  color: var(--konvu-ink-faint);
-  display: flex; gap: 16px; flex-wrap: wrap;
-}
-kbd {
-  font-family: var(--konvu-mono);
-  font-size: 10.5px;
-  border: 1px solid var(--konvu-border-strong);
-  border-bottom-width: 2px;
-  border-radius: 3px;
-  padding: 0 4px;
-  background: var(--konvu-mist-0);
-  color: var(--konvu-ink-body);
-}
 </style>
 </head>
 <body>
-
-<header class="brand">
-  <h1 id="repo-name">Inventory</h1>
-  <div class="brand-meta" id="repo-meta"></div>
-</header>
 
 <main>
   <aside class="rail" id="rail"></aside>
@@ -601,13 +597,14 @@ kbd {
   <section class="card">
     <div class="page-header">
       <div class="left">
-        <h2 id="view-title">Inventory</h2>
+        <h2>Inventory</h2>
         <span class="scope-chip" id="scope-chip"></span>
+        <div class="search-wrap">
+          <input class="search" id="q" type="search" placeholder="Search"
+                 autocomplete="off" spellcheck="false" />
+        </div>
       </div>
-      <p class="repo-summary" id="repo-summary"></p>
     </div>
-
-    <div id="notices"></div>
 
     <div class="content-scroll" id="scroll">
       <table id="tbl">
@@ -627,14 +624,6 @@ kbd {
     <div class="panel-body" id="panel-body"></div>
   </aside>
 </main>
-
-<div class="footer-note">
-  <span><kbd>/</kbd> search</span>
-  <span><kbd>j</kbd> <kbd>k</kbd> move</span>
-  <span><kbd>Enter</kbd> open</span>
-  <span><kbd>Esc</kbd> close</span>
-  <span id="foot-count"></span>
-</div>
 
 <script id="baseline-data" type="application/json">/* @@BASELINE@@ */</script>
 <script>
@@ -937,16 +926,15 @@ const COV_LABEL = {
  * (InventoryAssetRail `SECURITY_GRAPH_ASSET_TYPES`): an asset type is where you
  * navigate to, not a filter you tick. Coverage and property remain filters.
  */
+/**
+ * The asset types, exactly as `SECURITY_GRAPH_ASSET_TYPES` lists them. Fields
+ * are folded into the data object that owns them, and nothing else is offered:
+ * this page shows the inventory the product shows, and no more.
+ */
 const VIEWS = [
   { value: "endpoint", label: "Endpoints", kind: "endpoint" },
   { value: "object", label: "Data objects", kind: "object" },
   { value: "controls", label: "Controls" },
-  // Local-only. The hosted graph lists neither, but the baseline carries both
-  // and dropping rows the artifact contains would be the wrong kind of
-  // faithfulness. Fields are NOT a destination: like the product, they are
-  // folded into the data object that owns them.
-  { value: "code", label: "Code assets", kind: "code" },
-  { value: "urls", label: "URLs" },
 ];
 
 const state = {
@@ -1140,191 +1128,32 @@ function languageNames(list) {
   return list.map((l) => (typeof l === "string" ? l : l && l.name)).filter(Boolean);
 }
 
-function renderHeader() {
-  const cb = DATA.codebase || {};
-  const run = DATA.run || {};
-  const vcs = cb.git || {};
-  document.getElementById("repo-name").textContent = cb.name || "Inventory";
-  document.title = (cb.name ? cb.name + " — " : "") + "Konvu Inventory";
-
-  const bits = [];
-  if (run.status) bits.push(`<span><b>${esc(run.status)}</b></span>`);
-
-  // Provenance first: a map is only meaningful against the commit it read.
-  if (vcs.short_commit || vcs.commit) {
-    const sha = vcs.short_commit || String(vcs.commit).slice(0, 8);
-    bits.push(
-      `<span title="Mapped against this commit">` +
-      (vcs.branch ? `${esc(vcs.branch)} @ ` : "") +
-      `<b class="mono">${esc(sha)}</b></span>`
-    );
-  }
-  if (vcs.dirty) {
-    bits.push(
-      `<span class="chip partial" title="The working tree had uncommitted changes when this map ran, so it does not describe any commit exactly.">uncommitted changes</span>`
-    );
-  }
-
-  const langs = languageNames(cb.languages);
-  if (langs.length) bits.push(`<span>${esc(langs.join(", "))}</span>`);
-
-  bits.push(`<span><b>${ASSETS.length}</b> assets</span>`);
-  bits.push(`<span><b>${CONTROLS.length}</b> controls</span>`);
-  if (ROUTES.length) bits.push(`<span><b>${ROUTES.length}</b> routes</span>`);
-  if (run.duration_seconds) {
-    bits.push(`<span>${Math.round(run.duration_seconds / 60)} min</span>`);
-  }
-  if (run.cost && run.cost.display) bits.push(`<span>${esc(run.cost.display)}</span>`);
-  document.getElementById("repo-meta").innerHTML = bits.join("");
-
-  if (cb.summary) {
-    const summaryEl = document.getElementById("repo-summary");
-    summaryEl.textContent = cb.summary;
-    summaryEl.title = cb.summary;
-  }
-
-}
-
-/* The honesty strip. Both notices exist because a table that renders these
- * silently is worse than a terminal that cannot render them at all. */
-function renderNotices() {
-  const host = document.getElementById("notices");
-  const out = [];
-  const tags = [];
-
-  const unlinked = VIEW_ROWS.filter((r) => r.cov === "none").length;
-  if (unlinked) {
-    const pct = Math.round((unlinked / VIEW_ROWS.length) * 100);
-    tags.push(`<b>${pct}%</b> unlinked`);
-    out.push(
-      `<div class="notice"><b>${unlinked} of ${VIEW_ROWS.length} assets (${pct}%) have no control linked.</b> ` +
-      `That is the mapping recording no protection it could attribute here, not a finding that the asset is unprotected. ` +
-      `Filter to <em>No control linked</em> to see them.</div>`
-    );
-  }
-
-  const amb = ASSETS.filter((a) => a.ambiguous).length;
-  if (amb) {
-    const pct = Math.round((amb / ASSETS.length) * 100);
-    tags.push(`<b>${pct}%</b> ambiguous`);
-    out.push(
-      `<div class="notice"><b>${amb} of ${ASSETS.length} assets (${pct}%) are flagged <code>ambiguous</code> by the engine.</b> ` +
-      `The baseline carries no per-asset record of what was individually inspected versus covered by a group pattern, ` +
-      `so treat identification as a lead to verify, not a verified fact.</div>`
-    );
-  }
-
-  const unimplemented = unimplementedControls().length;
-  if (unimplemented) {
-    tags.push(`<b>${unimplemented}</b> unimplemented`);
-    out.push(
-      `<div class="notice"><b>${unimplemented} of ${CONTROLS.length} controls have no implementation in the code.</b> ` +
-      `The Controls view lists only implemented ones, as the product does: a control nothing implements is an ` +
-      `expectation the code fails, which is a finding rather than an asset. They are named here so the omission is visible.</div>`
-    );
-  }
-
-  const broadAssets = ASSETS.filter((a) => assetBroadUrls(a).length).length;
-  if (broadAssets) {
-    tags.push(`<b>${broadAssets}</b> catch-all`);
-    out.push(
-      `<div class="notice"><b>${broadAssets} asset(s) carry a catch-all token</b> that matches most routes in the repository. ` +
-      `URLs reached only through such a token are shown dashed and are never counted as coverage.</div>`
-    );
-  }
-
-  if (!out.length) { host.innerHTML = ""; return; }
-
-  host.innerHTML =
-    `<details class="caveats"><summary>` +
-    `<span>How much of this is verified</span>` +
-    tags.map((t) => `<span class="chip none">${t}</span>`).join("") +
-    `</summary><div class="caveat-body">${out.join("")}</div></details>`;
-}
-
-/** One rail row: a label, an optional icon, and its count on the right. */
-function railRow(opts) {
-  const dead = opts.count === 0 && !opts.active;
-  return (
-    `<button class="rrow${opts.active ? " active" : ""}${dead ? " dead" : ""}"` +
-    ` data-nav="${opts.nav || ""}" data-group="${opts.group || ""}" data-value="${esc(opts.value)}"` +
-    (dead ? " disabled" : "") +
-    `><span class="rlabel">` +
-    (opts.icon || "") +
-    (opts.dot ? `<span class="dot" style="background:${opts.dot}"></span>` : "") +
-    `<span class="rname">${esc(opts.label)}</span></span>` +
-    `<span class="count">${opts.count}</span></button>`
-  );
-}
 
 /**
- * The left rail. Asset types are destinations in a scope well; coverage and
- * security property are filters in labelled sections below, which is the
- * arrangement InventoryAssetRail and TriageRail use.
+ * The left rail, as `InventoryAssetRail` renders it: a "Filters" header with a
+ * collapse control, and one "Asset type" section of plain rows. No counts, no
+ * icons and no filter sections -- the product has none of them here.
  */
 function renderRail() {
-  const out = [];
+  const rows = VIEWS.map(
+    (v) =>
+      `<button class="rrow${state.view === v.value ? " active" : ""}" data-nav="${v.value}"` +
+      ` aria-pressed="${state.view === v.value}" type="button">` +
+      `<span class="rlabel"><span class="rname">${esc(v.label)}</span></span></button>`
+  ).join("");
 
-  out.push(
-    `<div class="well"><div class="well-header"><span class="well-label">Asset type</span></div>` +
-    VIEWS.map((v) =>
-      railRow({
-        nav: v.value,
-        value: v.value,
-        label: v.label,
-        count: viewCount(v),
-        active: state.view === v.value,
-        icon: v.kind ? kindIcon(v.kind, 14) : "",
-      })
-    ).join("") +
-    `</div>`
-  );
-
-  out.push(
-    `<div class="search-wrap"><input class="search" id="q" type="search" ` +
-    `placeholder="${esc(searchPlaceholder())}" autocomplete="off" spellcheck="false" ` +
-    `value="${esc(state.q)}" /></div>`
-  );
-
-  if (isAssetView()) {
-    const kind = currentKind();
-    const scoped = VIEW_ROWS.filter((r) => !kind || r.asset.kind === kind);
-
-    const covRows = COVS.map((c) =>
-      railRow({
-        group: "covs",
-        value: c,
-        label: COV_LABEL[c],
-        count: scoped.filter((r) => r.cov === c).length,
-        active: state.covs.has(c),
-        dot: `var(--konvu-${c})`,
-      })
-    ).join("");
-    out.push(`<div class="rail-section"><span class="section-label">Control coverage</span>${covRows}</div>`);
-
-    if (PROPS.length) {
-      const propRows = PROPS.map((prop) =>
-        railRow({
-          group: "props",
-          value: prop,
-          label: propertyLabel(prop),
-          count: scoped.filter((r) => r.props.indexOf(prop) !== -1).length,
-          active: state.props.has(prop),
-          dot: `var(--konvu-prop-${prop}, var(--konvu-prop-default))`,
-        })
-      ).join("");
-      out.push(`<div class="rail-section"><span class="section-label">Security property</span>${propRows}</div>`);
-    }
-  }
-
-  document.getElementById("rail").innerHTML = out.join("");
+  document.getElementById("rail").innerHTML =
+    `<div class="rail-header"><span class="rail-header-label">Filters</span>` +
+    `<button class="collapse-button" id="rail-collapse" aria-label="Collapse filters" ` +
+    `title="Collapse filters" type="button">` +
+    `<svg width="14" height="14" viewBox="0 0 15 15" fill="currentColor" aria-hidden="true">` +
+    `<path fill-rule="evenodd" d="M8.84 3.135a.5.5 0 0 1 .025.707L6.436 6.5l2.429 2.658a.5.5 0 1 1-.732.677l-2.75-3a.5.5 0 0 1 0-.677l2.75-3a.5.5 0 0 1 .707-.023Z"/>` +
+    `<path fill-rule="evenodd" d="M5.34 3.135a.5.5 0 0 1 .025.707L2.936 6.5l2.429 2.658a.5.5 0 1 1-.732.677l-2.75-3a.5.5 0 0 1 0-.677l2.75-3a.5.5 0 0 1 .707-.023Z"/>` +
+    `</svg></button></div>` +
+    `<div class="rail-section"><div class="section-label">Asset type</div>${rows}</div>`;
 }
 
-function searchPlaceholder() {
-  if (state.view === "controls") return "Control or property…";
-  if (state.view === "urls") return "Path or module…";
-  return "URL, name, file…";
-}
+
 
 /* --- tables ----------------------------------------------------------------
  * The product does not render one generic asset table: each asset type has its
@@ -1352,7 +1181,6 @@ function tableSpec() {
           value: (r) => (r.asset.name || "").toLowerCase(),
           cell: (r) =>
             `<div class="cell-name cap">${esc(r.asset.name)}</div>` +
-            (r.asset.ambiguous ? `<div style="margin-top:3px">${chip("ambiguous", "ambiguous")}</div>` : "") +
             routePreview(r.urls, (r.asset.routes && r.asset.routes[0] && r.asset.routes[0].method) || "route"),
         },
         {
@@ -1379,7 +1207,6 @@ function tableSpec() {
           value: (r) => (r.group.model.name || "").toLowerCase(),
           cell: (r) =>
             `<div class="cell-name">${esc(r.group.model.name)}</div>` +
-            (r.group.model.ambiguous ? `<div style="margin-top:3px">${chip("ambiguous", "ambiguous")}</div>` : "") +
             `<div class="cell-sub" title="${esc(r.group.model.decl || "")}">${esc(r.group.model.decl || "")}</div>`,
         },
         {
@@ -1416,7 +1243,6 @@ function tableSpec() {
           value: (r) => (r.asset.name || "").toLowerCase(),
           cell: (r) =>
             `<div class="cell-name">${esc(r.asset.name)}</div>` +
-            (r.asset.ambiguous ? `<div style="margin-top:3px">${chip("ambiguous", "ambiguous")}</div>` : "") +
             `<div class="cell-sub" title="${esc(r.asset.decl || "")}">${esc(r.asset.decl || "")}</div>`,
         },
         {
@@ -1663,7 +1489,6 @@ function renderTable() {
       .join("") +
     "</tr>";
 
-  document.getElementById("foot-count").textContent = `${rows.length} of ${total} ${spec.itemLabel}`;
 
   const empty = document.getElementById("empty");
   const tbody = document.getElementById("tbody");
@@ -1691,196 +1516,189 @@ function renderTable() {
 
 /* ------------------------------------------------------------ side panel -- */
 
+/**
+ * The asset panel, as `AssetOverview` + the Controls tab render it: what the
+ * asset is with its location, the endpoints it exposes, and the controls
+ * covering it. Nothing else -- the product shows no ids, no match patterns and
+ * no raw source on this surface.
+ */
 function openAsset(id) {
-  const row = VIEW_ROWS.find((r) => r.asset.id === id);
+  // On the data-object view a row IS a group, and the model's own id is also a
+  // plain asset in VIEW_ROWS, so the group has to win or the panel loses the
+  // fields and the rolled-up coverage the table just showed.
+  const row = groupRowById(id) || VIEW_ROWS.find((r) => r.asset.id === id);
   if (!row) return;
-  const a = row.asset;
+  const a = row.asset || row.group.model;
+  const group = row.group;
   state.selected = id;
 
   document.getElementById("panel-title").textContent = a.name;
   document.getElementById("panel-chips").innerHTML =
-    kindCell(a.kind) + presenceTag(row.cov) +
-    (a.ambiguous ? chip("ambiguous", "ambiguous") : "");
+    kindCell(a.kind) + presenceTag(row.cov);
 
   const parts = [];
 
-  if (a.description) {
-    parts.push(section("What it is", `<div class="hair"><p class="prose">${esc(a.description)}</p></div>`));
-  }
-
-  const kv = [];
-  if (a.decl) kv.push(["Declared at", a.decl]);
-  if (a.must_list_at) kv.push(["Listed at", a.must_list_at]);
-  if (a.origin) kv.push(["Origin", a.origin]);
-  if (a.parent) kv.push(["Parent", a.parent]);
-  if ((a.paths || []).length) kv.push(["Files", a.paths.join(", ")]);
-  kv.push(["Asset id", a.id]);
   parts.push(
     section(
-      "Identity",
-      `<div class="hair"><dl class="kv">` +
-        kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("") +
-        `</dl></div>`
+      "What it is",
+      `<div class="hair"><p class="prose">${esc(a.description || "")}</p>` +
+        `<p class="location">${esc(a.decl || "")}</p></div>`
     )
   );
 
-  if (a.quote) {
-    parts.push(section("Source", `<pre class="quote">${esc(a.quote)}</pre>`));
-  }
-
-  const urls = row.urls, broad = assetBroadUrls(a);
-  if (urls.length || broad.length) {
+  const urls = row.urls || assetUrls(a);
+  if (a.kind === "endpoint" && urls.length) {
     parts.push(
       section(
         "Endpoints",
-        urls.map((u) => `<span class="urlpill">${esc(u)}</span>`).join("") +
-          broad.map((u) => `<span class="urlpill broad" title="Reached only through a catch-all token">${esc(u)}</span>`).join("") +
-          (broad.length
-            ? `<p class="inline-note">Dashed URLs are reached only through a catch-all pattern in this asset's token list. ` +
-              `The baseline does not claim this asset covers them.</p>`
-            : ""),
-        urls.length + broad.length
+        urls
+          .map(
+            (u) =>
+              `<div class="route-row"><span class="method">route</span>` +
+              `<span class="mono">${esc(u)}</span></div>`
+          )
+          .join(""),
+        urls.length
       )
     );
   }
 
-  if ((a.tokens || []).length) {
+  if (group && group.fields.length) {
     parts.push(
       section(
-        "Match patterns",
-        `<ul class="plain">` +
-          a.tokens.map((t) => `<li>${esc(t)}</li>`).join("") +
-          `</ul><p class="inline-note">The literal patterns the engine matched to identify this asset. ` +
-          `The schema does not rank them, so a precise pattern and a catch-all are indistinguishable here.</p>`,
-        a.tokens.length
+        "Fields",
+        group.fields
+          .map(
+            (f) =>
+              `<div class="route-row"><span class="mono">${esc(f.name)}</span>` +
+              ((f.controls || []).length ? presenceTag(worstOf(f.controls.map((l) => l.status))) : "") +
+              `</div>`
+          )
+          .join(""),
+        group.fields.length
       )
     );
   }
 
-  const links = a.controls || [];
-  if (links.length) {
-    parts.push(
-      section("Controls", links.map((l) => {
-        const c = controlById.get(l.control_id) || {};
-        const ev = (l.evidence || [])
-          .map((e) =>
-            (e.decl ? `<div class="decl">${esc(e.decl)}</div>` : "") +
-            (e.quote ? `<pre class="quote">${esc(e.quote)}</pre>` : "")
-          ).join("");
-        const checked = (l.checked || []).length
-          ? `<ul class="checked">${l.checked.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`
-          : "";
-        const impls = (l.implementation_ids || [])
-          .map((id) => {
-            const im = implById.get(id);
-            return im ? `<span class="urlpill">${esc(im.name || id)}</span>` : "";
-          }).join("");
-        return (
-          `<div class="card" data-property="${esc(c.property || "")}"><div class="card-head">` +
-          `<span class="title">${esc(c.name || l.control_id)}</span>` +
-          presenceTag(RANK[l.status] === undefined ? "none" : l.status) +
-          (c.property ? `<span class="prop">${esc(propertyLabel(c.property))}</span>` : "") +
-          `</div><div class="card-body">` +
-          (l.description ? `<p class="prose">${esc(l.description)}</p>` : "") +
-          ev +
-          (checked ? `<p class="inline-note" style="margin-top:9px"><b>Inspected:</b></p>${checked}` : "") +
-          (impls ? `<div style="margin-top:8px">${impls}</div>` : "") +
-          `</div></div>`
-        );
-      }).join(""), links.length)
-    );
-  } else {
-    parts.push(
-      section(
-        "Controls",
-        `<div class="hair"><p class="prose">The mapping linked no control to this asset.</p>` +
-          `<p class="inline-note">This records an absence of attribution, not an absence of protection. ` +
-          `A control may exist in the codebase without the engine connecting it here.</p></div>`
-      )
-    );
-  }
+  const links = group
+    ? [...(group.model.controls || []), ...group.fields.flatMap((f) => f.controls || [])]
+    : a.controls || [];
+
+  parts.push(
+    section(
+      "Controls",
+      links.length
+        ? links
+            .map((l) => {
+              const c = controlById.get(l.control_id) || {};
+              const ev = (l.evidence || [])
+                .map(
+                  (e) =>
+                    (e.decl ? `<div class="decl">${esc(e.decl)}</div>` : "") +
+                    (e.quote ? `<pre class="quote">${esc(e.quote)}</pre>` : "")
+                )
+                .join("");
+              return (
+                `<div class="card" data-property="${esc(c.property || "")}"><div class="card-head">` +
+                `<span class="title">${esc(c.name || l.control_id)}</span>` +
+                presenceTag(RANK[l.status] === undefined ? "none" : l.status) +
+                (c.property ? `<span class="prop">${esc(propertyLabel(c.property))}</span>` : "") +
+                `</div><div class="card-body">` +
+                (l.description ? `<p class="prose">${esc(l.description)}</p>` : "") +
+                ev +
+                `</div></div>`
+              );
+            })
+            .join("")
+        : `<div class="hair"><p class="prose">No control covers this asset.</p></div>`,
+      links.length || undefined
+    )
+  );
 
   document.getElementById("panel-body").innerHTML = parts.join("");
   document.getElementById("panel").classList.add("open");
   markSelected();
 }
 
-/** Route a row to its panel: controls have their own, everything else is an asset. */
-function openRow(id) {
-  if (state.view === "controls") return openControl(id);
-  if (state.view === "urls") return;
-  openAsset(id);
+/** Data-object rows are groups, so they are not in VIEW_ROWS by model id. */
+function groupRowById(id) {
+  if (state.view !== "object") return null;
+  return baseRows().find((r) => r.id === id) || null;
 }
 
 /* Highlight the open row without re-rendering the table: a full render at 600
  * rows throws away scroll position and the row you just clicked jumps away. */
 function markSelected() {
   for (const tr of document.querySelectorAll("tbody tr")) {
-    const id = tr.dataset.id || tr.dataset.control;
+    const id = tr.dataset.id;
     if (id && id === state.selected) tr.setAttribute("aria-selected", "true");
     else tr.removeAttribute("aria-selected");
   }
 }
 
+/**
+ * The control panel: Overview and Protects, the two tabs the product gives a
+ * control.
+ */
 function openControl(id) {
   const c = controlById.get(id);
   if (!c) return;
   state.selected = id;
-  document.getElementById("panel-title").textContent = c.name || c.id;
-  document.getElementById("panel-chips").innerHTML =
-    (c.property ? `<span class="chip">${esc(propertyLabel(c.property))}</span>` : "");
 
   const covered = [];
   for (const a of ASSETS) {
-    for (const l of a.controls || []) {
-      if (l.control_id === c.id) covered.push({ a, l });
-    }
+    for (const l of a.controls || []) if (l.control_id === c.id) covered.push({ a, l });
   }
-  const obs = OBS_CONTROLS.filter((o) => (c.source_control_observation_ids || []).indexOf(o.id) !== -1);
+
+  document.getElementById("panel-title").textContent = c.name || c.id;
+  document.getElementById("panel-chips").innerHTML =
+    (c.property ? `<span class="plain-prop">${esc(propertyLabel(c.property))}</span>` : "") +
+    presenceTag(covered.length ? worstOf(covered.map(({ l }) => l.status)) : "absent");
 
   const prop = esc(c.property || "");
   const parts = [];
-  if (c.description) {
-    parts.push(section("What it is", `<div class="hair"><p class="prose">${esc(c.description)}</p></div>`));
-  }
+
+  parts.push(
+    section("What it is", `<div class="hair"><p class="prose">${esc(c.description || "")}</p></div>`)
+  );
 
   parts.push(
     section(
-      "Observed implementations",
-      obs.length
-        ? obs.map((o) =>
+      "Implementations",
+      implementationsFor(c)
+        .map(
+          (im) =>
             `<div class="card" data-property="${prop}"><div class="card-head">` +
-            `<span class="title">${esc(o.id.replace(/^control-observation:/, ""))}</span>` +
-            presenceTag(RANK[o.status] === undefined ? "none" : o.status) +
-            `</div><div class="card-body">` +
-            (o.description ? `<p class="prose">${esc(o.description)}</p>` : "") +
-            (o.decl ? `<div class="decl">${esc(o.decl)}</div>` : "") +
-            (o.quote ? `<pre class="quote">${esc(o.quote)}</pre>` : "") +
-            ((o.checked || []).length
-              ? `<p class="inline-note" style="margin-top:9px"><b>Inspected:</b></p>` +
-                `<ul class="checked">${o.checked.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`
-              : "") +
+            `<span class="title">${esc(im.name || im.id)}</span></div><div class="card-body">` +
+            (im.description ? `<p class="prose">${esc(im.description)}</p>` : "") +
+            (im.anchors || [])
+              .map(
+                (an) =>
+                  (an.decl ? `<div class="decl">${esc(an.decl)}</div>` : "") +
+                  (an.quote ? `<pre class="quote">${esc(an.quote)}</pre>` : "")
+              )
+              .join("") +
             `</div></div>`
-          ).join("")
-        : `<div class="hair"><p class="prose">No observation recorded.</p></div>`,
-      obs.length
+        )
+        .join(""),
+      implementationsFor(c).length
     )
   );
 
   parts.push(
     section(
-      "Assets linked",
+      "Protects",
       covered.length
-        ? covered.map(({ a, l }) =>
-            `<div class="card" data-property="${prop}"><div class="card-head">` +
-            `<span class="title">${esc(a.name)}</span>` +
-            presenceTag(RANK[l.status] === undefined ? "none" : l.status) +
-            `</div><div class="card-body">` +
-            kindCell(a.kind) +
-            `<div class="decl" style="margin-top:6px">${esc(a.decl || "")}</div></div></div>`
-          ).join("")
+        ? covered
+            .map(
+              ({ a, l }) =>
+                `<div class="route-row"><span class="protects-name">${esc(a.name)}</span>` +
+                presenceTag(RANK[l.status] === undefined ? "none" : l.status) +
+                `</div>`
+            )
+            .join("")
         : `<div class="hair"><p class="prose">No asset links this control.</p></div>`,
-      covered.length
+      covered.length || undefined
     )
   );
 
@@ -1895,11 +1713,18 @@ function closePanel() {
   markSelected();
 }
 
+/** Route a row to its panel: controls have their own, everything else is an asset. */
+function openRow(id) {
+  if (state.view === "controls") return openControl(id);
+  if (state.view === "urls") return;
+  openAsset(id);
+}
+
+
 /* ------------------------------------------------------------------ wire -- */
 
 function render() {
   renderTable();
-  document.getElementById("view-title").textContent = viewLabel();
 }
 
 function setView(v) {
@@ -1918,16 +1743,11 @@ function closePanelSilently() {
   state.selected = null;
 }
 
-/** The repository scope, shown beside the page title the way the product does. */
+/** `InventoryScopeChip` — what this inventory is scoped to. */
 function renderScopeChip() {
   const cb = DATA.codebase || {};
-  const vcs = cb.git || {};
-  const bits = [];
-  if (cb.name) bits.push(cb.name);
-  if (vcs.short_commit || vcs.commit) {
-    bits.push((vcs.branch ? vcs.branch + " @ " : "") + (vcs.short_commit || String(vcs.commit).slice(0, 8)));
-  }
-  document.getElementById("scope-chip").textContent = bits.join("  ·  ");
+  document.title = (cb.name ? cb.name + " — " : "") + "Konvu Inventory";
+  document.getElementById("scope-chip").textContent = cb.name || "";
 }
 
 document.addEventListener("click", (e) => {
@@ -2004,9 +1824,7 @@ document.addEventListener("keydown", (e) => {
 
 /* ------------------------------------------------------------------ boot -- */
 
-renderHeader();
 renderScopeChip();
-renderNotices();
 /* Open on the densest asset type that has rows, so the first screen is never
  * an empty table just because this repository exposes no endpoints. */
 const endpointsView = VIEWS.find((v) => v.value === "endpoint");

@@ -130,43 +130,29 @@ absent/gray.5 treatment so it never reads as a failure. And the `ambiguous`
 marker has no counterpart at all — `MappedAsset` cannot represent it — so it uses
 the dashed `borders.dashed` token rather than inventing a colour.
 
-## What the page refuses to imply
+## What is deliberately not here
 
-The artifact is thinner than a table makes it look, and rendering it silently
-would be worse than a terminal that cannot render it at all. Three deliberate
-behaviours:
+The page shows the inventory the product shows, and no more. Everything below
+was built at some point and then removed, because the main product UI has no
+counterpart for it. Each is a real loss, recorded so nobody re-adds it by
+accident or removes the note without knowing the cost.
 
-- **"No control linked" is its own state**, neutral, never red, and counted in
-  the header strip. It records an absence of attribution, not an absence of
-  protection.
-- **`ambiguous` is surfaced per row.** It is set on ~90% of assets, so it cannot
-  serve as a verified/unverified signal — the page says so rather than hiding it.
-- **Catch-all tokens never count as coverage.** See below.
+| Removed | Why it is gone | What it cost |
+|---|---|---|
+| Run banner (status, commit, languages, counts, duration, spend) | The product has no such bar; `PageHeader` carries a title and a scope chip. | Provenance is no longer visible, including `git.dirty`, which said the map described no commit exactly. |
+| "How much of this is verified" strip | No counterpart in the product. | The reader is no longer told that ~79% of assets have no control linked and ~90% are flagged `ambiguous`. |
+| `ambiguous` marker on rows | `MappedAsset` cannot represent it, so the product never shows it. | The engine's own uncertainty signal is invisible; identification now reads as fact. |
+| URLs view and the catch-all marking | Not an asset type in the product. | Searching a literal path no longer finds the group covering it, which was the customer's second complaint. The token→route join still runs, feeding the route preview and the Endpoints count. |
+| Code assets destination | `SECURITY_GRAPH_ASSET_TYPES` lists endpoints, data objects and controls only. | 10-15 code assets per baseline are unreachable. |
+| Rail counts, icons, coverage and property filters | `InventoryAssetRail` has none: a "Filters" header and a plain "Asset type" list. | No facet counts, and no way to filter to the gaps. |
+| Panel: identity block, match patterns, raw source | `AssetOverview` shows what it is, its location, its endpoints and its controls. | Token patterns and asset ids are no longer inspectable. |
+| Keyboard hint footer | Not in the product. | The `j`/`k`/`/`/`Esc` bindings still work, they are just undocumented on screen. |
 
-## URL search, and the join behind it
+If any of these should come back, the argument is the same one that put them
+there: the artifact is thinner than a table makes it look, and the hosted graph
+does not carry the caveats this one does.
 
-Searching a literal path is the second thing the customer asked for: groups store
-regex patterns, so a real URL looks like a miss even when covered.
-
-The page resolves it. Endpoint assets carry `tokens[]` (regex fragments) and
-`routes[]` is a separate collection of literal paths; `literalPaths()` expands
-alternation groups (`/(password-reminder|reset-password)` → two paths) and joins
-them. On the `ihatemoney` baseline that resolves **15 of 17 endpoint assets** and
-attributes **28 of 29 routes**.
-
-The join is only sound when a token is specific. Token lists frequently end in a
-bare catch-all (`@main\.route\(`, `restful_api\.add_resource\(`) that would
-attribute every route in the repository to one asset — asserting "public home
-covers /admin", which the baseline does not claim. A token resolving to more than
-`BROAD_RATIO` of all routes is kept but marked broad, rendered dashed, and never
-counted as coverage.
-
-**This is a workaround for a schema gap.** `tokens[]` mixes a precise pattern and
-a fallback with nothing to distinguish them. One field ranking token specificity
-would turn this heuristic into a sound index and let the page state group
-membership as fact. Until then the dashed styling is the honest rendering.
-
-## Security
+## Security## Security
 
 `quote` and `decl` are verbatim source from the user's repository. Two
 consequences the code handles:
