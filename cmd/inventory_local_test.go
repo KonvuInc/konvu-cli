@@ -111,9 +111,9 @@ func TestRunInventoryListNeedsNoHostedAccount(t *testing.T) {
 			return []baseline.RunEntry{inventoryRun("run-1", path, baseline.StatusCompleted, "abcdef123", false)}, nil
 		},
 		hostedConfigured: func() bool { return false },
-		fetchHosted: func() (map[string]any, map[string]any, error) {
+		fetchHosted: func() (map[string]any, map[string]any, map[string]any, error) {
 			fetched = true
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		},
 	}
 	command, stdout, _ := inventoryTestCommand()
@@ -143,8 +143,8 @@ func TestRunInventoryListKeepsLocalResultsWhenHostedFails(t *testing.T) {
 			return []baseline.RunEntry{inventoryRun("run-1", path, baseline.StatusCompleted, "abcdef123", false)}, nil
 		},
 		hostedConfigured: func() bool { return true },
-		fetchHosted: func() (map[string]any, map[string]any, error) {
-			return nil, nil, errors.New("offline")
+		fetchHosted: func() (map[string]any, map[string]any, map[string]any, error) {
+			return nil, nil, nil, errors.New("offline")
 		},
 	}
 	command, stdout, stderr := inventoryTestCommand()
@@ -166,7 +166,7 @@ func TestInventoryHostedEntriesUseStableSelectorAndProfileFacet(t *testing.T) {
 	profiles := map[string]any{"profiles": []any{map[string]any{
 		"vcs_repository_id": "repo-1", "threat_profile_score": float64(92), "threat_profile_tier": "crown_jewel",
 	}}}
-	entries := inventoryHostedEntries(coverage, profiles)
+	entries := inventoryHostedEntries(coverage, profiles, nil)
 	if len(entries) != 1 {
 		t.Fatalf("entries = %d, want 1", len(entries))
 	}
@@ -202,7 +202,7 @@ func TestFetchInventoryHostedProfilesIncludesProfilesOutsideRanking(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	entries := inventoryHostedEntries(coverage, profileData)
+	entries := inventoryHostedEntries(coverage, profileData, nil)
 	if got := len(entries); got != 3 {
 		t.Fatalf("entries = %d, want 3", got)
 	}
@@ -364,10 +364,10 @@ func TestInventoryTUIIncludesAndOpensHostedRepository(t *testing.T) {
 				return []baseline.RunEntry{inventoryRun("local-run", path, baseline.StatusCompleted, "abcdef123", false)}, nil
 			},
 			hostedConfigured: func() bool { return true },
-			fetchHosted: func() (map[string]any, map[string]any, error) {
+			fetchHosted: func() (map[string]any, map[string]any, map[string]any, error) {
 				return map[string]any{"repositories": []any{map[string]any{
 					"id": "hosted-repo", "url": "github:acme/api",
-				}}}, map[string]any{}, nil
+				}}}, map[string]any{}, nil, nil
 			},
 		},
 		pick: func(options []output.InventoryRepositoryOption, _ int) (int, bool, error) {

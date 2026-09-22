@@ -23,7 +23,9 @@ const inventoryEmptyState = "No local Security Context Graphs yet. Run `konvu in
 type inventoryListDependencies struct {
 	listLocal        func() ([]baseline.RunEntry, error)
 	hostedConfigured func() bool
-	fetchHosted      func() (map[string]any, map[string]any, error)
+	// fetchHosted returns coverage, Threat Profiles, and hosted graph runs. The
+	// graph map is never the reason the call fails: see fetchInventoryHostedGraphs.
+	fetchHosted func() (map[string]any, map[string]any, map[string]any, error)
 }
 
 type inventoryTUIDependencies struct {
@@ -75,15 +77,20 @@ func runInventoryTUI(cmd *cobra.Command) error {
 			client := api.NewClient("", "")
 			defer client.Close()
 			profile, err := client.Get(threatProfileRepoPath+repositoryID, nil)
-			if err != nil {
-				if inventoryIsNoThreatProfileError(err) {
-					return output.BrowseInventoryRepositoryDetail(
-						inventoryNoThreatProfileDetailText(repository),
-					)
-				}
+			noProfile := err != nil && inventoryIsNoThreatProfileError(err)
+			if err != nil && !noProfile {
 				return output.BaselineWorkspaceQuit, inventoryHostedError(err)
 			}
-			return output.BrowseInventoryRepositoryDetail(inventoryHostedDetailText(profile))
+			graph, err := fetchInventoryHostedGraph(client, repositoryID)
+			if err != nil {
+				return output.BaselineWorkspaceQuit, inventoryHostedError(err)
+			}
+			text := inventoryHostedDetailText(profile)
+			if noProfile {
+				text = inventoryNoThreatProfileDetailText(repository)
+			}
+			text += inventoryHostedGraphDetailText(inventoryHostedGraphValue(graph))
+			return output.BrowseInventoryRepositoryDetail(text)
 		},
 	})
 }
@@ -115,6 +122,7 @@ func executeInventoryTUI(cmd *cobra.Command, deps inventoryTUIDependencies) erro
 			option.Source = "local"
 			option.Updated = inventoryRunTimestamp(latestRun)
 		}
+		hosted := getMap(entry, "hosted")
 		if graph := getMap(local, "graph"); len(graph) > 0 {
 			counts := getMap(graph, "counts")
 			option.SecurityGraph = inventoryGraphDisplay(graph)
@@ -122,9 +130,10 @@ func executeInventoryTUI(cmd *cobra.Command, deps inventoryTUIDependencies) erro
 			option.Controls = fmt.Sprint(intOf(counts["controls"]))
 		} else if len(local) == 0 {
 			option.Source = "hosted"
-			option.SecurityGraph = "Not mapped"
+			option.SecurityGraph = inventoryHostedGraphDisplay(hosted)
+			option.Updated = inventoryRunTimestamp(getMap(hosted, "latest_run"))
 		}
-		if profile := getMap(getMap(entry, "hosted"), "threat_profile"); len(profile) > 0 {
+		if profile := getMap(hosted, "threat_profile"); len(profile) > 0 {
 			option.ThreatProfile = inventoryThreatProfileDisplay(profile)
 			if option.Updated == "" {
 				option.Updated = getStr(profile, "updated_at")
@@ -279,16 +288,21 @@ func loadInventoryEntries(deps inventoryListDependencies) ([]any, map[string]any
 		return nil, nil, nil, inventoryLocalError(err)
 	}
 	entries := inventoryLocalEntries(runs)
-	sources := map[string]any{"local": "ok", "hosted": "not_configured"}
+	sources := map[string]any{"local": "ok", "hosted": "not_configured", "hosted_graph": "not_configured"}
 	var hostedErr error
 	if deps.hostedConfigured() {
-		coverage, summary, err := deps.fetchHosted()
+		coverage, summary, graphs, err := deps.fetchHosted()
 		if err != nil {
 			sources["hosted"] = "unavailable"
+			sources["hosted_graph"] = "unavailable"
 			hostedErr = err
 		} else {
 			sources["hosted"] = "ok"
-			entries = append(entries, inventoryHostedEntries(coverage, summary)...)
+			sources["hosted_graph"] = "ok"
+			if unavailable, _ := getBool(graphs, "unavailable"); unavailable {
+				sources["hosted_graph"] = "unavailable"
+			}
+			entries = append(entries, inventoryHostedEntries(coverage, summary, graphs)...)
 		}
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
@@ -387,7 +401,7 @@ func inventoryMappingStatusDisplay(run map[string]any) string {
 	return orDefault(getStr(run, "status"), "—")
 }
 
-func inventoryHostedEntries(coverage, profileData map[string]any) []any {
+func inventoryHostedEntries(coverage, profileData, graphData map[string]any) []any {
 	profiles := make(map[string]map[string]any)
 	for _, value := range getSlice(profileData, "profiles") {
 		profile, ok := value.(map[string]any)
@@ -398,6 +412,7 @@ func inventoryHostedEntries(coverage, profileData map[string]any) []any {
 			profiles[id] = profile
 		}
 	}
+	graphs := getMap(graphData, "graphs")
 
 	entries := make([]any, 0)
 	for _, value := range getSlice(coverage, inventoryRepositoriesKey) {
@@ -419,8 +434,12 @@ func inventoryHostedEntries(coverage, profileData map[string]any) []any {
 			},
 			"hosted": map[string]any{},
 		}
+		hosted := getMap(entry, "hosted")
 		if profile := profiles[id]; profile != nil {
-			entry["hosted"] = map[string]any{"threat_profile": inventoryThreatProfileSummary(profile)}
+			hosted["threat_profile"] = inventoryThreatProfileSummary(profile)
+		}
+		for key, value := range inventoryHostedGraphFacet(getMap(graphs, id)) {
+			hosted[key] = value
 		}
 		entries = append(entries, entry)
 	}
@@ -453,6 +472,10 @@ func writeInventoryListTable(writer io.Writer, entries []any) error {
 				if updated := getStr(profile, "updated_at"); updated != "" {
 					row["updated"] = updated
 				}
+			}
+			row["security_graph"] = inventoryHostedGraphDisplay(hosted)
+			if updated := inventoryRunTimestamp(getMap(hosted, "latest_run")); updated != "" {
+				row["updated"] = updated
 			}
 		}
 		if local := getMap(entry, "local"); len(local) > 0 {
@@ -515,6 +538,19 @@ func inventoryGraphDisplay(graph map[string]any) string {
 	return commit + " · " + status
 }
 
+// inventoryHostedGraphDisplay reads a hosted facet the way inventoryGraphDisplay
+// reads a local one: a ready graph, else the latest run's state, else the honest
+// "Not mapped".
+func inventoryHostedGraphDisplay(hosted map[string]any) string {
+	if graph := getMap(hosted, "graph"); len(graph) > 0 {
+		return inventoryGraphDisplay(graph)
+	}
+	if run := getMap(hosted, "latest_run"); len(run) > 0 {
+		return inventoryMappingStatusDisplay(run)
+	}
+	return "Not mapped"
+}
+
 func inventoryGraphStatus(status baseline.Status) string {
 	if status == baseline.StatusCompleted {
 		return "ready"
@@ -530,24 +566,27 @@ func inventoryHostedConfigured() bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
-func fetchInventoryHosted() (map[string]any, map[string]any, error) {
+func fetchInventoryHosted() (map[string]any, map[string]any, map[string]any, error) {
 	client := api.NewClient("", "")
 	defer client.Close()
 	coverage, err := client.Get(coverageConfigPath, nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	summary, err := client.Get(threatProfileSummaryPath, nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	profiles, err := fetchInventoryHostedProfiles(coverage, summary, func(repositoryID string) (map[string]any, error) {
 		return client.Get(threatProfileRepoPath+repositoryID, nil)
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return coverage, profiles, nil
+	graphs := fetchInventoryHostedGraphs(coverage, func(repositoryID string) (map[string]any, error) {
+		return fetchInventoryHostedGraphJob(client, repositoryID)
+	})
+	return coverage, profiles, graphs, nil
 }
 
 type inventoryProfileFetchResult struct {

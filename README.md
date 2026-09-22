@@ -508,7 +508,7 @@ Severities are `CRITICAL`, `HIGH`, `MEDIUM` (alias for `MODERATE`), `LOW`. `--al
 
 ### `konvu inventory` — Understand repositories and their security context
 
-Inventory combines locally generated Security Context Graphs with hosted Konvu Threat Profiles. Local mapping and exploration do not require a Konvu account. When credentials are configured, hosted repositories and profiles are added to the same listing. Aliased as `konvu inv`.
+Inventory combines locally generated Security Context Graphs with hosted Konvu Threat Profiles and the Security Context Graphs Konvu has mapped for your repositories. Local mapping and exploration do not require a Konvu account. When credentials are configured, hosted repositories, their profiles, and their mapping state are added to the same listing. Aliased as `konvu inv`.
 
 ```bash
 # Open the combined local and hosted repository picker in an interactive terminal
@@ -525,9 +525,12 @@ konvu inventory map history
 konvu inventory map show <run-id>
 konvu inventory map diff <base-run> <head-run>
 
-# Show a local graph by path or a hosted Threat Profile by repository selector
+# Show a local graph by path, or a hosted repository's Threat Profile and Security Context Graph
 konvu inventory show .
 konvu inventory show github:org/repo
+
+# Pull the full hosted graph (assets, controls, implementations) as JSON
+konvu inventory show github:org/repo --fields security_context_graph -o json
 
 # Machine-readable output for scripting
 konvu inventory list -o json
@@ -544,7 +547,7 @@ konvu inventory show org/repo --fields threat_profile_score,threat_profile_tier,
 
 Inventory navigation uses the same pattern as findings: Up/Down selects a repository, Enter or Right opens it, Left or Escape returns to the repository list, and Q quits. If hosted data is unavailable, local repositories remain usable and table output prints a warning; JSON reports the hosted source as `unavailable`.
 
-For hosted profiles, `show` exits 3 (not found) when the repository has not been mapped in Konvu yet. Its Threat Profile appears after mapping. The `threat_profile_tier` field is a stable slug (`crown_jewel`, `key_asset`, `standard`, `peripheral`); `threat_profile_tier_label` carries the human-readable version.
+For hosted repositories, `show` exits 3 (not found) only when Konvu holds neither a Threat Profile nor a Security Context Graph for it. The JSON response carries the graph under `security_context_graph` (`status` is `ready` or `not_mapped`; a ready graph adds `commit`, `engine_version`, `counts`, and the full `graph`). In `list`, a hosted repository's `security_graph` column shows its mapping state (`ready`, `running`, `failed`, or `Not mapped`) and the JSON entry carries `hosted.graph` / `hosted.latest_run`, mirroring the local facet. The `threat_profile_tier` field is a stable slug (`crown_jewel`, `key_asset`, `standard`, `peripheral`); `threat_profile_tier_label` carries the human-readable version.
 
 ### `konvu skills path` — Locate bundled skills
 

@@ -29,8 +29,8 @@ var inventoryCmd = &cobra.Command{
 	Aliases: []string{"inv"},
 	Short:   "Understand repositories and their security context",
 	Long: `Explore repository security context from local Security Context Graphs and
-hosted repository Threat Profiles. Local mapping and exploration work without a
-Konvu account.
+hosted repository Threat Profiles and Security Context Graphs. Local mapping and
+exploration work without a Konvu account.
 
 In an interactive terminal, run without a subcommand to open the combined
 repository browser. When piped, or when -o or -q is set, it prints the same
@@ -68,14 +68,17 @@ var inventoryShowCmd = &cobra.Command{
 	Use:   "show <target>",
 	Short: "Show the security context available for one repository",
 	Long: `Show a local Security Context Graph by filesystem path, without requiring a
-Konvu account. For a hosted repository URL or ID, show its Konvu Threat Profile:
-score, tier, classification, summary, attributes, provenance, and evidence.
+Konvu account. For a hosted repository URL or ID, show its Konvu Threat Profile
+(score, tier, classification, summary, attributes, provenance, evidence) and, once
+Konvu has mapped it, its Security Context Graph. With -o json the response carries
+the full graph under security_context_graph: assets, controls, implementations.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth failed`,
 	Example: `  konvu inventory show .
   konvu inventory show github:org/repo
   konvu inventory show org/repo -o json
-  konvu inventory show org/repo --fields threat_profile_score,threat_profile_tier -o json`,
+  konvu inventory show org/repo --fields threat_profile_score,threat_profile_tier -o json
+  konvu inventory show org/repo --fields security_context_graph -o json`,
 	RunE: runInventoryShow,
 }
 
@@ -194,10 +197,25 @@ func runInventoryShow(cmd *cobra.Command, args []string) error {
 	repos, _ := fetchCoverage(client, format)
 	ids := resolveRepoIDsOrExit(repos, args, format)
 
+	// The two hosted facets come from different services and either may be
+	// missing on its own; only a repository with neither is "not mapped".
 	data, err := client.Get(threatProfileRepoPath+ids[0], nil)
+	noProfile := err != nil && inventoryIsNoThreatProfileError(err)
+	if err != nil && !noProfile {
+		handleInventoryError(err, format)
+	}
+	graph, err := fetchInventoryHostedGraph(client, ids[0])
 	if err != nil {
 		handleInventoryError(err, format)
 	}
+	if noProfile && graph == nil {
+		handleInventoryError(inventoryNoThreatProfileError(), format)
+	}
+	if noProfile {
+		data = inventoryHostedIdentity(repos, ids[0])
+	}
+	graphValue := inventoryHostedGraphValue(graph)
+	data["security_context_graph"] = graphValue
 
 	if format == output.JSON {
 		if fields != "" {
@@ -207,8 +225,27 @@ func runInventoryShow(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	renderInventoryShow(data)
-	return nil
+	if noProfile {
+		fmt.Printf("\nThreat Profile: %s\n\nNo Threat Profile yet. Konvu builds it as it analyzes the repository.\n", getStr(data, "repo_url"))
+	} else {
+		renderInventoryShow(data)
+	}
+	return output.WriteString(cmd.OutOrStdout(), inventoryHostedGraphDetailText(graphValue))
+}
+
+// inventoryHostedIdentity is the JSON root of `inventory show` for a hosted
+// repository that has a graph but no Threat Profile yet: the same identity keys
+// a profile response carries, so the shape stays stable for --fields.
+func inventoryHostedIdentity(repos []any, repositoryID string) map[string]any {
+	data := map[string]any{"vcs_repository_id": repositoryID, "repo_url": ""}
+	for _, value := range repos {
+		repository, ok := value.(map[string]any)
+		if ok && getStr(repository, "id") == repositoryID {
+			data["repo_url"] = getStr(repository, "url")
+			break
+		}
+	}
+	return data
 }
 
 // splitFields parses a comma-separated --fields value, trimming blanks.
