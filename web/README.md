@@ -98,6 +98,26 @@ on `name` alone pairs nothing and the Version tables column is dead in every
 row. `objectKey()` prefers the declared symbol and falls back to the name, which
 reproduces the product's behaviour under both naming conventions.
 
+### The side panel
+
+`AssetPanel` and `ControlPanel` are a tabbed drawer, not a scroll of sections.
+
+| Element | Source | Rule |
+|---|---|---|
+| Drawer | `AssetSidePanel` | 48% wide clamped to 460-720, inset 12px, 14px radius, deepPurple-8 scrim at 20%, slide-left 280ms `cubic-bezier(.22,.61,.36,1)`. |
+| Header | `SidePanelHeader` | 18px/20px/8px. `PanelTitle` is 18px/600 capitalised deepPurple-7 with a light deepPurple kind badge, then `RepositoryRow`, then a facts row. |
+| Facts | `factLabel` | DM Mono, 0.02em, `#8A8399`: CONTROLS with the coverage spread, ENDPOINTS with the route count. |
+| Tabs | `ManifestAnalysisModalContent.module.css` | 26px gap, 24px gutter, `#e4e1ea` rule. 14px/400 `#2d1266b3`; active `#2d1266`/600 with a 2px frenchPink underline; counts in DM Mono 11px on `#f3f1f7` pills. |
+| Body | `SidePanelBody` | 20px/24px/32px, scrolled. |
+| Sub-tables | `SubTable` | Rounded card, `#faf9fc` header band, 7px/12px grid rows on `#EEEBF3` hairlines, a row opens what it names. |
+| Protects | `ProtectsList` | Two-column grid at 2px/28px, capped at 6 with a "Show all" toggle, empty copy verbatim. |
+
+Asset tabs are Overview, the relation named for the kind (Data objects for an
+endpoint, Fields for an object) and Controls. A control gets Overview and
+Protects. Clicking through an asset's Controls tab opens that control's panel,
+and a Protects row opens that asset's, so the graph is walkable in both
+directions the way the product walks it.
+
 ### Shell and navigation
 
 The page is laid out as the app shell, not as a standalone document:

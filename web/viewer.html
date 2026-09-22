@@ -454,43 +454,122 @@ td.decl-cell .cell-sub {
 
 /* ----------------------------------------------------------------- panel -- */
 
-aside.panel {
-  flex: none; width: 520px;
-  background: #fff;
-  box-shadow: var(--konvu-shadow-panel);
-  overflow-y: auto;
-  display: none;
+/* ------------------------------------------------------------ side panel --
+ * `AssetSidePanel`'s drawer: 48% wide between 460 and 720, inset 12px from the
+ * viewport, 14px radius, over a deep-purple scrim, sliding in from the right.
+ */
+.scrim {
+  position: fixed; inset: 0; z-index: 40;
+  background: var(--konvu-purple-8);
+  opacity: 0; pointer-events: none;
+  transition: opacity 280ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
-aside.panel.open { display: block; }
+.scrim.open { opacity: 0.2; pointer-events: auto; }
 
-.panel-head {
-  position: sticky; top: 0; z-index: 3;
-  background: #fff;
-  border-bottom: 1px solid var(--konvu-border);
-  padding: 14px 18px;
+aside.panel {
+  position: fixed; top: 12px; right: 12px; bottom: 12px; z-index: 50;
+  width: 48%; min-width: 460px; max-width: 720px;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: #fff; border-radius: 14px;
+  box-shadow: 0 16px 48px rgba(24, 12, 49, 0.18);
+  transform: translateX(calc(100% + 24px));
+  transition: transform 280ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
-#panel-chips {
-  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  margin-top: 2px;
-}
-.kind-label { font-size: var(--konvu-fs-sm); color: var(--konvu-ink-muted); }
-.fact { display: inline-flex; align-items: center; gap: 6px; }
-.fact-label {
-  font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--konvu-ink-faint);
-}
+aside.panel.open { transform: translateX(0); }
+
+.panel-head { flex: none; position: relative; padding: 18px 20px 8px; }
+.panel-title-row { display: flex; align-items: center; gap: 10px; padding-right: 28px; }
 .panel-head h2 {
-  margin: 0 0 6px; font-size: var(--konvu-fs-h2); font-weight: 600;
-  color: var(--konvu-ink); padding-right: 28px; line-height: 1.35;
+  margin: 0;
+  font-size: 18px; font-weight: 600; line-height: 1.25;
+  color: var(--konvu-purple-7); text-transform: capitalize;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The kind badge beside the title: Mantine variant="light" color="deepPurple". */
+.kind-badge {
+  flex-shrink: 0; padding: 2px 8px; border-radius: 999px;
+  background: var(--konvu-purple-0); color: var(--konvu-purple-6);
+  font-size: var(--konvu-fs-xs); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.02em;
+}
+.repo-row {
+  display: flex; align-items: center; gap: 7px; margin-top: 10px;
+  font-size: 13px; color: var(--konvu-gray-8);
 }
 .panel-close {
-  position: absolute; top: 12px; right: 14px;
+  position: absolute; top: 16px; right: 16px;
   border: 0; background: none; cursor: pointer;
   font-size: 18px; line-height: 1; color: var(--konvu-ink-faint); padding: 4px;
 }
 .panel-close:hover { color: var(--konvu-ink); }
 
-.panel-body { padding: 4px 18px 40px; }
+#panel-chips {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 10px;
+}
+.fact { display: inline-flex; align-items: center; gap: 6px; }
+/* factLabel(): DM Mono, 0.02em, #8A8399. */
+.fact-label {
+  font-family: var(--konvu-mono); font-size: var(--konvu-fs-xs);
+  letter-spacing: 0.02em; color: #8a8399;
+}
+
+/* The tab strip's bottom border is the header/content divide. */
+.panel-tabs {
+  flex: none; display: flex; flex-wrap: nowrap; gap: 26px;
+  width: 100%; padding: 0 24px; overflow: hidden;
+  border-bottom: 1px solid #e4e1ea; margin-top: 10px;
+}
+.ptab {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 0 11px; color: #2d1266b3;
+  font-family: inherit; font-size: 14px; font-weight: 400; line-height: 20px;
+  white-space: nowrap; background: transparent; border: 0; border-radius: 0;
+  box-shadow: inset 0 -2px transparent;
+  transition: color 120ms ease, box-shadow 120ms ease; cursor: pointer;
+}
+.ptab[data-active] { color: #2d1266; font-weight: 600; box-shadow: inset 0 -2px #ff7397; }
+.ptab:not([data-active]):hover { color: #2d1266; box-shadow: inset 0 -2px #e4e1ea; }
+.ptab:focus-visible { outline: 2px solid #ff7397; outline-offset: 2px; }
+.ptab .count {
+  padding: 1px 6px; color: #2d1266b3;
+  font-family: var(--konvu-mono); font-size: 11px; font-weight: 400; line-height: 16px;
+  background: #f3f1f7; border-radius: 999px;
+}
+
+.panel-body { flex: 1; overflow-y: auto; padding: 20px 24px 32px; }
+
+/* SubTable: a rounded card, a tinted header band, hairline-separated grid rows. */
+.subtable { overflow: hidden; border: 1px solid var(--konvu-card-border); border-radius: var(--konvu-radius-sub); }
+.subtable-header {
+  display: grid; align-items: center; padding: 9px 12px;
+  background: var(--konvu-card-header); border-bottom: 1px solid var(--konvu-card-border);
+  font-size: var(--konvu-fs-xs); font-weight: 500; color: var(--konvu-ink-body);
+}
+.subtable-row { display: grid; align-items: center; padding: 7px 12px; cursor: pointer; }
+.subtable-row + .subtable-row { border-top: 1px solid var(--konvu-hairline); }
+.subtable-row:hover { background: var(--konvu-card-header); }
+.subtable-row:focus-visible { outline: 2px solid var(--konvu-focus); outline-offset: -2px; }
+.subtable-row > * { min-width: 0; }
+.subtable-empty { padding: 12px 0; font-size: var(--konvu-fs-sm); color: var(--konvu-ink-faint); }
+
+.st-name { font-weight: 600; font-size: var(--konvu-fs-sm); color: var(--konvu-purple-7); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-dim { color: var(--konvu-ink-faint); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--konvu-ink-faint); text-transform: capitalize; }
+.chevron { color: var(--konvu-gray-5); flex: none; }
+
+/* ProtectsList: the status split, then the names in two columns. */
+.protects-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 28px; }
+.protects-row {
+  display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 4px;
+  border: 0; background: none; cursor: pointer; font: inherit; text-align: left; width: 100%;
+}
+.protects-row:hover { background: #faf9fd; }
+.protects-more {
+  margin-top: 10px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: var(--konvu-fs-sm); font-weight: 600;
+  color: var(--konvu-purple-6); padding: 0;
+}
+.protects-more:hover { text-decoration: underline; }
 
 /* SectionCard.tsx: a 14px-radius bordered panel with an 18px/15px header and a
  * 15px deep-purple heading. */
@@ -688,15 +767,23 @@ ul.plain li { word-break: break-all; }
     </div>
   </section>
 
-  <aside class="panel" id="panel" aria-live="polite">
-    <div class="panel-head">
-      <button class="panel-close" id="panel-close" title="Close (Esc)">&times;</button>
-      <h2 id="panel-title"></h2>
-      <div id="panel-chips"></div>
-    </div>
-    <div class="panel-body" id="panel-body"></div>
-  </aside>
 </main>
+
+<div class="scrim" id="scrim"></div>
+
+<aside class="panel" id="panel" aria-live="polite">
+  <div class="panel-head">
+    <button class="panel-close" id="panel-close" title="Close (Esc)">&times;</button>
+    <div class="panel-title-row">
+      <h2 id="panel-title"></h2>
+      <span class="kind-badge" id="panel-kind"></span>
+    </div>
+    <div class="repo-row" id="panel-repo"></div>
+    <div id="panel-chips"></div>
+  </div>
+  <div class="panel-tabs" id="panel-tabs" role="tablist"></div>
+  <div class="panel-body" id="panel-body"></div>
+</aside>
 
 <script id="baseline-data" type="application/json">/* @@BASELINE@@ */</script>
 <script>
@@ -1612,47 +1699,189 @@ function renderTable() {
  * covering it. Nothing else -- the product shows no ids, no match patterns and
  * no raw source on this surface.
  */
+/* --- the side panel -------------------------------------------------------
+ * `AssetPanel` and `ControlPanel`: a header naming what this is and where it
+ * came from, a tab strip, and one tab body at a time. Assets get Overview,
+ * Relations and Controls; a control gets Overview and Protects.
+ */
+
+const panelState = { node: null, tab: "overview", expandedProtects: false };
+
+/** `SubTable` — a rounded card, a tinted header band, hairline grid rows. */
+function subTable(columns, rows, emptyMessage) {
+  if (!rows.length) {
+    return `<p class="subtable-empty">${esc(emptyMessage || "Nothing to show.")}</p>`;
+  }
+  const grid = columns.map((c) => c.width).join(" ");
+  return (
+    `<div class="subtable">` +
+    `<div class="subtable-header" style="grid-template-columns:${grid}">` +
+    columns.map((c) => `<span>${esc(c.label || "")}</span>`).join("") +
+    `</div>` +
+    rows
+      .map(
+        (r) =>
+          `<div class="subtable-row" style="grid-template-columns:${grid}"` +
+          (r.open ? ` role="button" tabindex="0" data-open="${esc(r.open)}"` : "") +
+          `>` +
+          columns.map((c) => `<div>${r.cells[c.key] || ""}</div>`).join("") +
+          `</div>`
+      )
+      .join("") +
+    `</div>`
+  );
+}
+
+const CHEVRON =
+  '<svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" ' +
+  'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ' +
+  'aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
+
+const GITHUB_ICON =
+  '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+  '<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 ' +
+  '0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 ' +
+  '1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 ' +
+  '0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 ' +
+  '2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 ' +
+  '0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>';
+
+/** `assetRelations` — what this asset relates to, named for its kind. */
+function assetRelations(asset, group) {
+  if (asset.kind === "endpoint") {
+    const controlIds = new Set((asset.controls || []).map((l) => l.control_id));
+    return {
+      label: "Data objects",
+      assets: ASSETS.filter(
+        (o) => o.kind === "object" && (o.controls || []).some((l) => controlIds.has(l.control_id))
+      ),
+    };
+  }
+  if (asset.kind === "object") {
+    const fields = group ? group.fields : childFields(asset.id);
+    return {
+      label: "Fields",
+      // Fields carrying controls first: those are the ones worth reviewing.
+      assets: [...fields].sort((a, b) => (b.controls || []).length - (a.controls || []).length),
+    };
+  }
+  return { label: "Related", assets: [] };
+}
+
 function openAsset(id) {
-  // On the data-object view a row IS a group, and the model's own id is also a
-  // plain asset in VIEW_ROWS, so the group has to win or the panel loses the
-  // fields and the rolled-up coverage the table just showed.
+  const row = groupRowById(id) || VIEW_ROWS.find((r) => r.asset.id === id);
+  if (!row) return;
+  panelState.node = { kind: "asset", id };
+  panelState.tab = "overview";
+  panelState.expandedProtects = false;
+  state.selected = id;
+  renderPanel();
+}
+
+function openControl(id) {
+  if (!controlById.get(id)) return;
+  panelState.node = { kind: "control", id };
+  panelState.tab = "overview";
+  panelState.expandedProtects = false;
+  state.selected = id;
+  renderPanel();
+}
+
+/** Data-object rows are groups, so they are not in VIEW_ROWS by model id. */
+function groupRowById(id) {
+  if (state.view !== "object") return null;
+  return baseRows().find((r) => r.id === id) || null;
+}
+
+function renderPanel() {
+  const node = panelState.node;
+  if (!node) return;
+  if (node.kind === "control") renderControlPanel(controlById.get(node.id));
+  else renderAssetPanel(node.id);
+
+  document.getElementById("panel").classList.add("open");
+  document.getElementById("scrim").classList.add("open");
+  markSelected();
+}
+
+function tabStrip(tabs) {
+  return tabs
+    .map(
+      (t) =>
+        `<button class="ptab" data-tab="${t.value}" role="tab"` +
+        (panelState.tab === t.value ? " data-active" : "") +
+        `>${esc(t.label)}` +
+        (t.count ? `<span class="count" aria-hidden="true">${t.count}</span>` : "") +
+        `</button>`
+    )
+    .join("");
+}
+
+function panelHeader(title, kindLabel, facts) {
+  document.getElementById("panel-title").textContent = title;
+  document.getElementById("panel-kind").textContent = kindLabel;
+  document.getElementById("panel-repo").innerHTML =
+    GITHUB_ICON + `<span>${esc((DATA.codebase || {}).name || "")}</span>`;
+  document.getElementById("panel-chips").innerHTML = facts.join("");
+}
+
+function renderAssetPanel(id) {
   const row = groupRowById(id) || VIEW_ROWS.find((r) => r.asset.id === id);
   if (!row) return;
   const a = row.asset || row.group.model;
   const group = row.group;
-  state.selected = id;
+  const urls = row.urls || assetUrls(a);
+  const relations = assetRelations(a, group);
 
-  document.getElementById("panel-title").textContent = a.name;
-
-  // `PanelTitle` names the kind, then a facts row carries CONTROLS coverage and,
-  // for an endpoint group, its endpoint count. No presence tag: the panel header
-  // shows the spread, not a single worst-case verdict.
-  const facts = [`<span class="kind-label">${esc(KIND_LABEL[a.kind] || a.kind)}</span>`];
+  const facts = [];
   if (row.counts.total > 0) {
     facts.push(
-      `<span class="fact"><span class="fact-label">Controls</span>` +
-        `${coverageSummary(row.counts, a.name)}</span>`
+      `<span class="fact"><span class="fact-label">CONTROLS</span>` +
+        coverageSummary(row.counts, a.name) + `</span>`
     );
   }
+  if (a.kind === "endpoint") {
+    facts.push(
+      `<span class="fact"><span class="fact-label">ENDPOINTS</span>` +
+        `<span class="num">${urls.length}</span></span>`
+    );
+  }
+  panelHeader(a.name, KIND_LABEL[a.kind] || a.kind, facts);
 
-  const parts = [];
+  const links = group
+    ? [...(group.model.controls || []), ...group.fields.flatMap((f) => f.controls || [])]
+    : a.controls || [];
 
-  parts.push(
+  document.getElementById("panel-tabs").innerHTML = tabStrip([
+    { value: "overview", label: "Overview" },
+    ...(relations.assets.length
+      ? [{ value: "relations", label: relations.label, count: relations.assets.length }]
+      : []),
+    { value: "controls", label: "Controls", count: links.length || 0 },
+  ]);
+
+  const body = document.getElementById("panel-body");
+
+  if (panelState.tab === "relations") {
+    body.innerHTML = relationsTable(a, relations);
+    return;
+  }
+  if (panelState.tab === "controls") {
+    body.innerHTML = controlsTable(links, a);
+    return;
+  }
+
+  // Overview — `AssetOverview`.
+  const kindNoun = a.kind === "endpoint" ? "endpoint group" : a.kind;
+  const parts = [
+    `<p class="overview-lede">This overview profiles the ${esc(kindNoun)} Konvu found when it ` +
+      `mapped ${esc((DATA.codebase || {}).name || "this repository")}.</p>`,
     section(
       "What it is",
       `<div class="hair"><p class="prose">${esc(a.description || "")}</p>` +
         `<p class="location">${esc(a.decl || "")}</p></div>`
-    )
-  );
-
-  const urls = row.urls || assetUrls(a);
-  if (a.kind === "endpoint") {
-    facts.push(
-      `<span class="fact"><span class="fact-label">Endpoints</span>` +
-        `<span class="num">${urls.length}</span></span>`
-    );
-  }
-  document.getElementById("panel-chips").innerHTML = facts.join("");
+    ),
+  ];
 
   if (a.kind === "endpoint" && urls.length) {
     parts.push(
@@ -1670,67 +1899,160 @@ function openAsset(id) {
     );
   }
 
-  if (group && group.fields.length) {
+  if (group && group.versionTables.length) {
     parts.push(
       section(
-        "Fields",
-        group.fields
-          .map(
-            (f) =>
-              `<div class="route-row"><span class="mono">${esc(f.name)}</span>` +
-              ((f.controls || []).length ? presenceTag(worstOf(f.controls.map((l) => l.status))) : "") +
-              `</div>`
-          )
+        "Version tables",
+        group.versionTables
+          .map((t) => `<div class="route-row"><span class="mono">${esc(t.name)}</span></div>`)
           .join(""),
-        group.fields.length
+        group.versionTables.length
       )
     );
   }
 
-  const links = group
-    ? [...(group.model.controls || []), ...group.fields.flatMap((f) => f.controls || [])]
-    : a.controls || [];
-
-  parts.push(
-    section(
-      "Controls",
-      links.length
-        ? links
-            .map((l) => {
-              const c = controlById.get(l.control_id) || {};
-              const ev = (l.evidence || [])
-                .map(
-                  (e) =>
-                    (e.decl ? `<div class="decl">${esc(e.decl)}</div>` : "") +
-                    (e.quote ? `<pre class="quote">${esc(e.quote)}</pre>` : "")
-                )
-                .join("");
-              return (
-                `<div class="card" data-property="${esc(c.property || "")}"><div class="card-head">` +
-                `<span class="title">${esc(c.name || l.control_id)}</span>` +
-                presenceTag(RANK[l.status] === undefined ? "none" : l.status) +
-                (c.property ? `<span class="prop">${esc(propertyLabel(c.property))}</span>` : "") +
-                `</div><div class="card-body">` +
-                (l.description ? `<p class="prose">${esc(l.description)}</p>` : "") +
-                ev +
-                `</div></div>`
-              );
-            })
-            .join("")
-        : `<div class="hair"><p class="prose">No control covers this asset.</p></div>`,
-      links.length || undefined
-    )
-  );
-
-  document.getElementById("panel-body").innerHTML = parts.join("");
-  document.getElementById("panel").classList.add("open");
-  markSelected();
+  body.innerHTML = parts.join("");
 }
 
-/** Data-object rows are groups, so they are not in VIEW_ROWS by model id. */
-function groupRowById(id) {
-  if (state.view !== "object") return null;
-  return baseRows().find((r) => r.id === id) || null;
+function relationsTable(asset, relations) {
+  const isEndpoint = asset.kind === "endpoint";
+  const columns = [
+    { key: "asset", label: relations.label.replace(/s$/, ""), width: "minmax(0, 1fr)" },
+    { key: "count", label: isEndpoint ? "Fields" : "Controls", width: "80px" },
+    { key: "coverage", label: "Coverage", width: "150px" },
+    { key: "open", label: "", width: "20px" },
+  ];
+  const rows = relations.assets.map((related) => {
+    const counts = coverageOf((related.controls || []).map((l) => l.status));
+    const n = isEndpoint ? childFields(related.id).length : (related.controls || []).length;
+    return {
+      open: related.id,
+      cells: {
+        asset:
+          `<span class="kind">${kindIcon(related.kind, 16)}` +
+          `<span class="st-name">${esc(related.name)}</span></span>`,
+        count: `<span class="num">${n}</span>`,
+        coverage: coverageSummary(counts, related.name),
+        open: CHEVRON,
+      },
+    };
+  });
+  return subTable(columns, rows, "Nothing related.");
+}
+
+function controlsTable(links, asset) {
+  const columns = [
+    { key: "control", label: "Control", width: "minmax(0, 1fr)" },
+    { key: "property", label: "Property", width: "120px" },
+    { key: "status", label: "Status", width: "96px" },
+    { key: "open", label: "", width: "20px" },
+  ];
+  // Property order first, then name, so it reads like a coverage checklist.
+  const sorted = [...links].sort((l, r) => {
+    const lc = controlById.get(l.control_id) || {};
+    const rc = controlById.get(r.control_id) || {};
+    const byProp = PROPERTY_ORDER.indexOf(lc.property) - PROPERTY_ORDER.indexOf(rc.property);
+    return byProp !== 0 ? byProp : (lc.name || "").localeCompare(rc.name || "");
+  });
+  const rows = sorted.map((l) => {
+    const c = controlById.get(l.control_id) || {};
+    return {
+      open: l.control_id,
+      cells: {
+        control: `<span class="st-name">${esc(c.name || l.control_id)}</span>`,
+        property: `<span class="st-dim">${esc(propertyLabel(c.property))}</span>`,
+        status:
+          `<span class="st-status"><span class="dot" style="background:var(--konvu-${
+            RANK[l.status] === undefined ? "absent" : l.status
+          })"></span>${esc(l.status || "")}</span>`,
+        open: CHEVRON,
+      },
+    };
+  });
+  const label = asset.kind === "endpoint" ? "endpoint group" : asset.kind;
+  return subTable(columns, rows, `No controls detected on this ${label}.`);
+}
+
+/** How many protected assets to show before the rest go behind a toggle. */
+const ASSET_CAP = 6;
+
+function renderControlPanel(c) {
+  if (!c) return;
+  const covered = [];
+  for (const a of ASSETS) {
+    for (const l of a.controls || []) if (l.control_id === c.id) covered.push({ a, l });
+  }
+  const impls = implementationsFor(c);
+
+  panelHeader(c.name || c.id, "Control", [
+    `<span class="fact"><span class="fact-label">PROPERTY</span>` +
+      `<span class="st-dim">${esc(propertyLabel(c.property))}</span></span>`,
+    `<span class="fact"><span class="fact-label">STATUS</span>` +
+      presenceTag(controlPresence(covered.map(({ l }) => l.status), c)) + `</span>`,
+  ]);
+
+  document.getElementById("panel-tabs").innerHTML = tabStrip([
+    { value: "overview", label: "Overview" },
+    { value: "protects", label: "Protects", count: covered.length || 0 },
+  ]);
+
+  const body = document.getElementById("panel-body");
+
+  if (panelState.tab === "protects") {
+    if (!covered.length) {
+      body.innerHTML =
+        `<p class="subtable-empty">This control is not linked to any asset in the repository.</p>`;
+      return;
+    }
+    const shown = panelState.expandedProtects ? covered : covered.slice(0, ASSET_CAP);
+    body.innerHTML =
+      `<div class="protects-grid">` +
+      shown
+        .map(
+          ({ a, l }) =>
+            `<button class="protects-row" data-open-asset="${esc(a.id)}" type="button">` +
+            `<span class="dot" style="background:var(--konvu-${
+              RANK[l.status] === undefined ? "absent" : l.status
+            })"></span>` +
+            `<span class="st-name">${esc(a.name)}</span></button>`
+        )
+        .join("") +
+      `</div>` +
+      (covered.length > ASSET_CAP
+        ? `<button class="protects-more" id="protects-more" type="button">` +
+          (panelState.expandedProtects
+            ? "Show fewer"
+            : `Show all ${covered.length}`) +
+          `</button>`
+        : "");
+    return;
+  }
+
+  body.innerHTML = [
+    section("What it is", `<div class="hair"><p class="prose">${esc(c.description || "")}</p></div>`),
+    section(
+      "Implementations",
+      impls.length
+        ? impls
+            .map(
+              (im) =>
+                `<div class="card" data-property="${esc(c.property || "")}"><div class="card-head">` +
+                `<span class="title">${esc(im.name || im.id)}</span></div><div class="card-body">` +
+                (im.description ? `<p class="prose">${esc(im.description)}</p>` : "") +
+                (im.anchors || [])
+                  .map(
+                    (an) =>
+                      (an.decl ? `<div class="decl">${esc(an.decl)}</div>` : "") +
+                      (an.quote ? `<pre class="quote">${esc(an.quote)}</pre>` : "")
+                  )
+                  .join("") +
+                `</div></div>`
+            )
+            .join("")
+        : `<p class="subtable-empty">Nothing in the code implements this control.</p>`,
+      impls.length || undefined
+    ),
+  ].join("");
 }
 
 /* Highlight the open row without re-rendering the table: a full render at 600
@@ -1743,82 +2065,10 @@ function markSelected() {
   }
 }
 
-/**
- * The control panel: Overview and Protects, the two tabs the product gives a
- * control.
- */
-function openControl(id) {
-  const c = controlById.get(id);
-  if (!c) return;
-  state.selected = id;
-
-  const covered = [];
-  for (const a of ASSETS) {
-    for (const l of a.controls || []) if (l.control_id === c.id) covered.push({ a, l });
-  }
-
-  document.getElementById("panel-title").textContent = c.name || c.id;
-  document.getElementById("panel-chips").innerHTML =
-    `<span class="kind-label">Control</span>` +
-    (c.property ? `<span class="fact"><span class="fact-label">Property</span>` +
-      `<span class="plain-prop">${esc(propertyLabel(c.property))}</span></span>` : "") +
-    `<span class="fact"><span class="fact-label">Status</span>` +
-    presenceTag(controlPresence(covered.map(({ l }) => l.status), c)) + `</span>`;
-
-  const prop = esc(c.property || "");
-  const parts = [];
-
-  parts.push(
-    section("What it is", `<div class="hair"><p class="prose">${esc(c.description || "")}</p></div>`)
-  );
-
-  parts.push(
-    section(
-      "Implementations",
-      implementationsFor(c)
-        .map(
-          (im) =>
-            `<div class="card" data-property="${prop}"><div class="card-head">` +
-            `<span class="title">${esc(im.name || im.id)}</span></div><div class="card-body">` +
-            (im.description ? `<p class="prose">${esc(im.description)}</p>` : "") +
-            (im.anchors || [])
-              .map(
-                (an) =>
-                  (an.decl ? `<div class="decl">${esc(an.decl)}</div>` : "") +
-                  (an.quote ? `<pre class="quote">${esc(an.quote)}</pre>` : "")
-              )
-              .join("") +
-            `</div></div>`
-        )
-        .join(""),
-      implementationsFor(c).length
-    )
-  );
-
-  parts.push(
-    section(
-      "Protects",
-      covered.length
-        ? covered
-            .map(
-              ({ a, l }) =>
-                `<div class="route-row"><span class="protects-name">${esc(a.name)}</span>` +
-                presenceTag(RANK[l.status] === undefined ? "none" : l.status) +
-                `</div>`
-            )
-            .join("")
-        : `<div class="hair"><p class="prose">No asset links this control.</p></div>`,
-      covered.length || undefined
-    )
-  );
-
-  document.getElementById("panel-body").innerHTML = parts.join("");
-  document.getElementById("panel").classList.add("open");
-  markSelected();
-}
-
 function closePanel() {
   document.getElementById("panel").classList.remove("open");
+  document.getElementById("scrim").classList.remove("open");
+  panelState.node = null;
   state.selected = null;
   markSelected();
 }
@@ -1850,6 +2100,8 @@ function setView(v) {
 
 function closePanelSilently() {
   document.getElementById("panel").classList.remove("open");
+  document.getElementById("scrim").classList.remove("open");
+  panelState.node = null;
   state.selected = null;
 }
 
@@ -1873,7 +2125,30 @@ document.addEventListener("click", (e) => {
     return;
   }
 
-  if (e.target.closest("#panel-close")) return closePanel();
+  if (e.target.closest("#panel-close") || e.target.id === "scrim") return closePanel();
+
+  const ptab = e.target.closest(".ptab");
+  if (ptab) {
+    panelState.tab = ptab.dataset.tab;
+    panelState.expandedProtects = false;
+    renderPanel();
+    return;
+  }
+
+  if (e.target.closest("#protects-more")) {
+    panelState.expandedProtects = !panelState.expandedProtects;
+    renderPanel();
+    return;
+  }
+
+  const protects = e.target.closest("[data-open-asset]");
+  if (protects) return openAsset(protects.dataset.openAsset);
+
+  const stRow = e.target.closest(".subtable-row[data-open]");
+  if (stRow) {
+    const id = stRow.dataset.open;
+    return controlById.get(id) ? openControl(id) : openAsset(id);
+  }
 
   const th = e.target.closest("thead th[data-key]");
   if (th) {
