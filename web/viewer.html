@@ -225,43 +225,99 @@ section.card {
 
 .content-scroll { flex: 1; overflow: auto; }
 
+/* TriageTableFooter + InfiniteScrollFooter: a sticky footer on the card's own
+ * surface, reporting how much of the table is loaded, with the table's
+ * keyboard shortcuts on the right. */
+.table-footer {
+  flex: none;
+  position: sticky; bottom: 0;
+  padding: 18px;
+  background: var(--konvu-card-bg);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+  transition: box-shadow 0.2s ease;
+}
+.table-footer.scrolled { box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.08); }
+.footer-left { display: flex; align-items: center; gap: 12px; }
+.footer-count {
+  font-family: var(--konvu-mono);
+  font-size: var(--konvu-fs-sm);
+  color: var(--konvu-ink-faint);
+}
+.footer-count b { font-weight: 500; color: var(--konvu-purple-9); }
+.footer-track {
+  width: 120px; height: 4px; border-radius: 2px;
+  background: var(--konvu-gray-3); overflow: hidden; flex-shrink: 0;
+}
+.footer-fill {
+  height: 100%; border-radius: 2px;
+  background: var(--konvu-nav-active);
+  transition: width 200ms ease;
+}
+.footer-shortcuts { display: flex; align-items: center; gap: 12px; }
+.shortcut { display: inline-flex; align-items: center; gap: 5px; font-size: var(--konvu-fs-xs); color: var(--konvu-ink-faint); }
+kbd {
+  font-family: var(--konvu-mono);
+  font-size: 10.5px;
+  border: 1px solid var(--konvu-border-strong);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 0 4px;
+  background: var(--konvu-mist-0);
+  color: var(--konvu-ink-body);
+}
+
 /* ----------------------------------------------------------------- table -- */
 
-/* min-width keeps the columns readable when the detail panel opens: the
- * scroller takes the overflow rather than the cells crushing. */
-table { width: 100%; min-width: 760px; border-collapse: separate; border-spacing: 0; }
-thead th:nth-child(2) { width: 150px; }
-thead th:nth-child(3) { width: 130px; }
-thead th:nth-child(4) { width: 90px; }
+/* InventoryTable's own geometry: a fixed layout at a 1200px floor, so columns
+ * keep their sizes and the scroller takes the overflow. */
+table {
+  width: 100%;
+  min-width: 1200px;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
 
+/* The header band is the card's own surface, not a tint, and the column title
+ * is ordinary 14px text with a caret -- FilterableTableHeader, not a small-caps
+ * label. */
 thead th {
-  position: sticky; top: 0; z-index: 2;
-  background: var(--konvu-mist-1);
-  border-bottom: 1px solid var(--konvu-border);
+  position: sticky; top: 0; z-index: 10;
+  background: var(--konvu-card-bg);
   text-align: left;
-  font-size: var(--konvu-fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--konvu-ink-faint);
-  padding: 9px 12px;
+  font-size: var(--konvu-fs-base);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--konvu-gray-8);
+  padding: 11px 11px 11px;
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
 }
-thead th:hover { color: var(--konvu-ink-body); }
-thead th .arrow { opacity: 0.55; margin-left: 4px; }
+thead th:first-child { padding-left: 24px; }
+thead th[aria-sort] { color: var(--konvu-purple-7); font-weight: 600; }
+thead th .th-inner {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; width: 100%;
+}
+thead th .caret { flex: none; color: var(--konvu-gray-5); }
+thead th[aria-sort] .caret { color: var(--konvu-purple-7); }
 
-/* Row treatment from styles.module.css `.assetRow`: a mist-2 hairline, the
- * near-white violet hover, and the deepPurple-3 focus ring. */
+/* Cell metrics from InventoryTable: a 60px row floor, 9px padding with a 24px
+ * first-column inset, middle-aligned, on a deepPurple-0 hairline. */
 tbody td {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--konvu-mist-2);
-  vertical-align: top;
+  height: auto;
+  min-height: 60px;
+  padding: 9px 9px 9px 11px;
+  border-bottom: 1px solid var(--konvu-purple-0);
+  vertical-align: middle;
   font-size: var(--konvu-fs-sm);
 }
+tbody td:first-child { padding-left: 24px; }
 tbody tr { cursor: pointer; }
-tbody tr:hover td { background: var(--konvu-row-hover); }
+tbody tr:hover td { background: var(--konvu-table-hover); }
 tbody tr[aria-selected="true"] td { background: var(--konvu-mist-2); }
 tbody tr:focus-visible {
   outline: 2px solid var(--konvu-focus);
@@ -416,6 +472,12 @@ aside.panel.open { display: block; }
 #panel-chips {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   margin-top: 2px;
+}
+.kind-label { font-size: var(--konvu-fs-sm); color: var(--konvu-ink-muted); }
+.fact { display: inline-flex; align-items: center; gap: 6px; }
+.fact-label {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--konvu-ink-faint);
 }
 .panel-head h2 {
   margin: 0 0 6px; font-size: var(--konvu-fs-h2); font-weight: 600;
@@ -612,6 +674,17 @@ ul.plain li { word-break: break-all; }
         <tbody id="tbody"></tbody>
       </table>
       <div class="empty" id="empty" style="display:none"></div>
+    </div>
+
+    <div class="table-footer" id="table-footer">
+      <div class="footer-left">
+        <span class="footer-count" id="footer-count"></span>
+        <div class="footer-track"><div class="footer-fill" id="footer-fill"></div></div>
+      </div>
+      <div class="footer-shortcuts">
+        <span class="shortcut"><kbd>j</kbd><kbd>k</kbd> move</span>
+        <span class="shortcut"><kbd>&crarr;</kbd> open</span>
+      </div>
     </div>
   </section>
 
@@ -912,12 +985,8 @@ const KINDS = ["endpoint", "object", "field", "code"];
 const COVS = ["present", "partial", "absent", "none"];
 const PROPS = Array.from(new Set(CONTROLS.map((c) => c.property).filter(Boolean))).sort();
 
-const COV_LABEL = {
-  present: "Present",
-  partial: "Partial",
-  absent: "Absent",
-  none: "No control linked",
-};
+/** `presenceLabel` in data.ts: the presence, capitalised. There are three. */
+const COV_LABEL = { present: "Present", partial: "Partial", absent: "Absent" };
 
 /* ------------------------------------------------------------------ state -- */
 
@@ -1095,6 +1164,23 @@ function section(title, body, badge) {
   );
 }
 
+/** The radix carets `FilterableTableHeader` renders in a column title. */
+const CARETS = {
+  none:
+    '<path fill-rule="evenodd" clip-rule="evenodd" d="M4.93179 5.43179C4.75605 5.60753 4.75605 5.89245 4.93179 6.06819C5.10753 6.24392 5.39245 6.24392 5.56819 6.06819L7.49999 4.13638L9.43179 6.06819C9.60753 6.24392 9.89245 6.24392 10.0682 6.06819C10.2439 5.89245 10.2439 5.60753 10.0682 5.43179L7.81819 3.18179C7.73379 3.0974 7.61933 3.04999 7.49999 3.04999C7.38064 3.04999 7.26618 3.0974 7.18179 3.18179L4.93179 5.43179ZM10.0682 9.56819C10.2439 9.39245 10.2439 9.10753 10.0682 8.93179C9.89245 8.75606 9.60753 8.75606 9.43179 8.93179L7.49999 10.8636L5.56819 8.93179C5.39245 8.75606 5.10753 8.75606 4.93179 8.93179C4.75605 9.10753 4.75605 9.39245 4.93179 9.56819L7.18179 11.8182C7.35753 11.9939 7.64245 11.9939 7.81819 11.8182L10.0682 9.56819Z"/>',
+  asc:
+    '<path fill-rule="evenodd" clip-rule="evenodd" d="M4.18179 8.81819C4.00605 8.64245 4.00605 8.35753 4.18179 8.18179L7.18179 5.18179C7.26618 5.0974 7.38064 5.04999 7.49999 5.04999C7.61933 5.04999 7.73379 5.0974 7.81819 5.18179L10.8182 8.18179C10.9939 8.35753 10.9939 8.64245 10.8182 8.81819C10.6424 8.99392 10.3575 8.99392 10.1818 8.81819L7.49999 6.13638L4.81819 8.81819C4.64245 8.99392 4.35753 8.99392 4.18179 8.81819Z"/>',
+  desc:
+    '<path fill-rule="evenodd" clip-rule="evenodd" d="M4.18179 6.18181C4.35753 6.00608 4.64245 6.00608 4.81819 6.18181L7.49999 8.86362L10.1818 6.18181C10.3575 6.00608 10.6424 6.00608 10.8182 6.18181C10.9939 6.35755 10.9939 6.64247 10.8182 6.81821L7.81819 9.81821C7.73379 9.9026 7.61934 9.95001 7.49999 9.95001C7.38064 9.95001 7.26618 9.9026 7.18179 9.81821L4.18179 6.81821C4.00605 6.64247 4.00605 6.35755 4.18179 6.18181Z"/>',
+};
+
+function caret(kind) {
+  return (
+    `<svg class="caret" width="15" height="15" viewBox="0 0 15 15" fill="currentColor" ` +
+    `aria-hidden="true">${CARETS[kind]}</svg>`
+  );
+}
+
 /** `propertyLabel` in data.ts. */
 function propertyLabel(property) {
   if (!property) return "";
@@ -1191,7 +1277,7 @@ function tableSpec() {
         {
           key: "coverage", label: "Control coverage", width: "220px",
           value: (r) => byGaps(r.counts),
-          cell: (r) => ((r.asset.controls || []).length ? coverageSummary(r.counts, r.asset.name) : presenceTag("none")),
+          cell: (r) => coverageSummary(r.counts, r.asset.name),
         },
       ],
     };
@@ -1227,28 +1313,7 @@ function tableSpec() {
         {
           key: "coverage", label: "Control coverage", width: "220px",
           value: (r) => byGaps(r.counts),
-          cell: (r) => (r.counts.total ? coverageSummary(r.counts, r.group.model.name) : presenceTag("none")),
-        },
-      ],
-    };
-  }
-
-  if (v === "code") {
-    return {
-      itemLabel: "code assets",
-      defaultSort: { key: "coverage", dir: -1 },
-      columns: [
-        {
-          key: "code", label: "Code asset", width: "auto",
-          value: (r) => (r.asset.name || "").toLowerCase(),
-          cell: (r) =>
-            `<div class="cell-name">${esc(r.asset.name)}</div>` +
-            `<div class="cell-sub" title="${esc(r.asset.decl || "")}">${esc(r.asset.decl || "")}</div>`,
-        },
-        {
-          key: "coverage", label: "Control coverage", width: "220px",
-          value: (r) => byGaps(r.counts),
-          cell: (r) => ((r.asset.controls || []).length ? coverageSummary(r.counts, r.asset.name) : presenceTag("none")),
+          cell: (r) => coverageSummary(r.counts, r.group.model.name),
         },
       ],
     };
@@ -1371,7 +1436,7 @@ function baseRows() {
         id: c.id,
         c,
         links,
-        presence: statuses.length ? worstOf(statuses) : "absent",
+        presence: controlPresence(statuses, c),
         counts: coverageOf(statuses),
         haystack: [c.name, c.id, c.description, c.property].join(" ").toLowerCase(),
       };
@@ -1413,6 +1478,18 @@ function baseRows() {
 
   const kind = currentKind();
   return VIEW_ROWS.filter((r) => r.asset.kind === kind).map((r) => ({ ...r, id: r.asset.id }));
+}
+
+/**
+ * `controlPresence` — repository-wide presence for one control. Absent when
+ * nothing implements it; partial when it is implemented but covers nothing,
+ * since the mapping shows no asset it demonstrably protects; otherwise the
+ * weakest status recorded across the assets it covers.
+ */
+function controlPresence(statuses, control) {
+  if (implementationsFor(control).length === 0) return "absent";
+  if (statuses.length === 0) return "partial";
+  return worstOf(statuses);
 }
 
 function worstOf(statuses) {
@@ -1482,13 +1559,26 @@ function renderTable() {
     spec.columns
       .map((c) => {
         const active = sort.key === c.key;
-        const arrow = active ? `<span class="arrow">${sort.dir > 0 ? "↑" : "↓"}</span>` : "";
+        const kind = active ? (sort.dir > 0 ? "asc" : "desc") : "none";
         const w = c.width === "auto" ? "" : ` style="width:${c.width}"`;
-        return `<th data-key="${c.key}"${w}>${esc(c.label)}${arrow}</th>`;
+        const title = active
+          ? sort.dir > 0
+            ? "Sort descending"
+            : "Clear sort"
+          : "Sort ascending";
+        return (
+          `<th data-key="${c.key}"${w}${active ? ` aria-sort="${kind}ending"` : ""} title="${title}">` +
+          `<span class="th-inner"><span>${esc(c.label)}</span>${caret(kind)}</span></th>`
+        );
       })
       .join("") +
     "</tr>";
 
+
+  const count = document.getElementById("footer-count");
+  count.innerHTML = `<b>${rows.length}</b> of ${total} ${esc(spec.itemLabel)} loaded`;
+  document.getElementById("footer-fill").style.width =
+    (total > 0 ? Math.min(1, rows.length / total) * 100 : 0) + "%";
 
   const empty = document.getElementById("empty");
   const tbody = document.getElementById("tbody");
@@ -1533,8 +1623,17 @@ function openAsset(id) {
   state.selected = id;
 
   document.getElementById("panel-title").textContent = a.name;
-  document.getElementById("panel-chips").innerHTML =
-    kindCell(a.kind) + presenceTag(row.cov);
+
+  // `PanelTitle` names the kind, then a facts row carries CONTROLS coverage and,
+  // for an endpoint group, its endpoint count. No presence tag: the panel header
+  // shows the spread, not a single worst-case verdict.
+  const facts = [`<span class="kind-label">${esc(KIND_LABEL[a.kind] || a.kind)}</span>`];
+  if (row.counts.total > 0) {
+    facts.push(
+      `<span class="fact"><span class="fact-label">Controls</span>` +
+        `${coverageSummary(row.counts, a.name)}</span>`
+    );
+  }
 
   const parts = [];
 
@@ -1547,6 +1646,14 @@ function openAsset(id) {
   );
 
   const urls = row.urls || assetUrls(a);
+  if (a.kind === "endpoint") {
+    facts.push(
+      `<span class="fact"><span class="fact-label">Endpoints</span>` +
+        `<span class="num">${urls.length}</span></span>`
+    );
+  }
+  document.getElementById("panel-chips").innerHTML = facts.join("");
+
   if (a.kind === "endpoint" && urls.length) {
     parts.push(
       section(
@@ -1652,8 +1759,11 @@ function openControl(id) {
 
   document.getElementById("panel-title").textContent = c.name || c.id;
   document.getElementById("panel-chips").innerHTML =
-    (c.property ? `<span class="plain-prop">${esc(propertyLabel(c.property))}</span>` : "") +
-    presenceTag(covered.length ? worstOf(covered.map(({ l }) => l.status)) : "absent");
+    `<span class="kind-label">Control</span>` +
+    (c.property ? `<span class="fact"><span class="fact-label">Property</span>` +
+      `<span class="plain-prop">${esc(propertyLabel(c.property))}</span></span>` : "") +
+    `<span class="fact"><span class="fact-label">Status</span>` +
+    presenceTag(controlPresence(covered.map(({ l }) => l.status), c)) + `</span>`;
 
   const prop = esc(c.property || "");
   const parts = [];
@@ -1825,6 +1935,10 @@ document.addEventListener("keydown", (e) => {
 /* ------------------------------------------------------------------ boot -- */
 
 renderScopeChip();
+
+document.getElementById("scroll").addEventListener("scroll", (e) => {
+  document.getElementById("table-footer").classList.toggle("scrolled", e.target.scrollTop > 0);
+});
 /* Open on the densest asset type that has rows, so the first screen is never
  * an empty table just because this repository exposes no endpoints. */
 const endpointsView = VIEWS.find((v) => v.value === "endpoint");

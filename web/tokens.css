@@ -40,7 +40,13 @@
   --konvu-gray-2: #e5e5e5;
   --konvu-gray-4: #a3a3a3;
   --konvu-gray-5: #737373;
+  --konvu-gray-3: #d4d4d4;
   --konvu-gray-7: #404040;
+  --konvu-gray-8: #262626;
+
+  /* The inventory table's own hover, from sca_triage constants COLOR_HOVER.
+   * Distinct from the mapped-asset row hover in styles.module.css. */
+  --konvu-table-hover: #f5f3f9;
 
   /* ink — theme.ts `ink`, body/muted text over light surfaces. */
   --konvu-ink: #2d1266;
