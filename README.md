@@ -219,7 +219,7 @@ The `finding` command groups scanner findings and submitted reports by source:
 - `konvu finding sast <op>` — application-code (SAST) findings from Semgrep, Arnica, etc.
 - `konvu finding container <op>` — container image findings from AWS Inspector and other scanners
 - `konvu finding secrets <op>` — leaked-credential findings from repository secret scanning
-- `konvu finding vulnerability-report submit` — externally reported vulnerabilities for triage and reproduction
+- `konvu finding vulnerability-report <op>` — externally reported vulnerabilities: submit, inspect, steer, rate, dismiss, and reopen
 
 Common ops are `list`, `get`, and `counts`. `sca`, `sast`, and `secrets` also support `rate`. `sca` alone supports `submit`.
 
@@ -353,6 +353,47 @@ konvu finding vulnerability-report submit \
 The title is derived from the first Markdown heading or the file name. Pass
 `--title` to override it. Use `--file -` to read from stdin and `--dry-run` to
 validate without sending the report.
+
+### Manage a vulnerability report
+
+Steer an assessment when the result or its evidence needs another pass. `steer`
+is an alias for `reassess`; both record the supplied feedback and re-run triage.
+
+```bash
+konvu finding vulnerability-report steer <id> \
+  --tag wrong_verdict \
+  --comment "Endpoint is admin-only"
+```
+
+After processing a report, dismiss it with a reason and optional ticket or
+explanation. `close` is an alias for `dismiss`.
+
+```bash
+konvu finding vulnerability-report dismiss <id> \
+  --reason "Tracked externally" \
+  --comment "Handled in JIRA SEC-1234"
+```
+
+The same operation can rate the assessment. Tags must match the rating; run
+`konvu finding vulnerability-report dismiss --help` for the accepted values.
+
+```bash
+konvu finding vulnerability-report close <id> \
+  --reason "Accepted risk" \
+  --rating agree \
+  --tag strong_evidence
+```
+
+Rating on its own records feedback but does not dismiss the report. Reopen a
+dismissed report before requesting more work on it:
+
+```bash
+konvu finding vulnerability-report reopen <id>
+```
+
+Use `--dry-run` with `steer`, `dismiss`, or `reopen` to validate and preview the
+operation without sending it. List dismissed reports with
+`konvu finding vulnerability-report list --disposition dismissed`.
 
 ### `konvu finding counts` — Assessment metrics
 
