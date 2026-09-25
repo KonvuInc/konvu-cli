@@ -574,19 +574,20 @@ func buildFindingResult(detail map[string]any, includeEvidence bool) map[string]
 	source := getMap(detail, "source")
 	dismissibleFromKonvu, _ := getBool(source, "dismissible_from_konvu")
 	findingSection := map[string]any{
-		"id":                     getStr(detail, "id"),
-		"dependency":             getStr(dep, "name"),
-		"repository":             getStr(ml, "vcs_repository_url"),
-		"manifest":               getStr(ml, "location"),
-		"scanner":                scannerLabel(source),
-		"source_id":              getStr(source, "identifier"),
-		"state":                  getStr(source, "state"),
-		"first_seen":             getStr(source, "remote_created_at"),
-		"triage_url":             getStr(detail, "triage_url"),
-		"dismissed_at":           getStr(source, "dismissed_at"),
-		"dismissed_reason":       getStr(source, "dismissed_reason"),
-		"dismissed_comment":      getStr(source, "dismissed_comment"),
-		"dismissible_from_konvu": dismissibleFromKonvu,
+		"id":                                getStr(detail, "id"),
+		"dependency":                        getStr(dep, "name"),
+		"repository":                        getStr(ml, "vcs_repository_url"),
+		"manifest":                          getStr(ml, "location"),
+		"scanner":                           scannerLabel(source),
+		"source_id":                         getStr(source, "identifier"),
+		"state":                             getStr(source, "state"),
+		"first_seen":                        getStr(source, "remote_created_at"),
+		"triage_url":                        getStr(detail, "triage_url"),
+		"dismissed_at":                      getStr(source, "dismissed_at"),
+		"dismissed_reason":                  getStr(source, "dismissed_reason"),
+		"dismissed_comment":                 getStr(source, "dismissed_comment"),
+		"dismissed_external_reference_code": getStr(source, "dismissed_external_reference_code"),
+		"dismissible_from_konvu":            dismissibleFromKonvu,
 	}
 
 	vulnSection := map[string]any{
@@ -891,6 +892,9 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 				fmt.Printf("Dismissed:  %s (%s)\n", dismissedAt, orDefault(getStr(f, "dismissed_reason"), "no reason"))
 				if comment := getStr(f, "dismissed_comment"); comment != "" {
 					fmt.Printf("Comment:    %s\n", comment)
+				}
+				if reference := getStr(f, "dismissed_external_reference_code"); reference != "" {
+					fmt.Printf("External reference: %s\n", reference)
 				}
 			}
 

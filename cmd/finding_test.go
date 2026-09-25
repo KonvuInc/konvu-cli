@@ -196,12 +196,13 @@ func TestBuildFindingResultEvidence(t *testing.T) {
 func TestBuildFindingResultDismissal(t *testing.T) {
 	detail := sampleFindingDetail()
 	detail["source"] = map[string]any{
-		"source_name":            "dependabot",
-		"identifier":             "GHSA-x",
-		"dismissed_at":           "2026-01-01T00:00:00Z",
-		"dismissed_reason":       "false_positive",
-		"dismissed_comment":      "not exploitable in our context",
-		"dismissible_from_konvu": true,
+		"source_name":                       "dependabot",
+		"identifier":                        "GHSA-x",
+		"dismissed_at":                      "2026-01-01T00:00:00Z",
+		"dismissed_reason":                  "false_positive",
+		"dismissed_comment":                 "not exploitable in our context",
+		"dismissed_external_reference_code": "SEC-1234",
+		"dismissible_from_konvu":            true,
 	}
 
 	f := getMap(buildFindingResult(detail, false), "finding")
@@ -213,6 +214,9 @@ func TestBuildFindingResultDismissal(t *testing.T) {
 	}
 	if getStr(f, "dismissed_comment") != "not exploitable in our context" {
 		t.Errorf("dismissed_comment = %q", getStr(f, "dismissed_comment"))
+	}
+	if getStr(f, "dismissed_external_reference_code") != "SEC-1234" {
+		t.Errorf("dismissed_external_reference_code = %q", getStr(f, "dismissed_external_reference_code"))
 	}
 	if v, _ := getBool(f, "dismissible_from_konvu"); !v {
 		t.Error("dismissible_from_konvu = false, want true")

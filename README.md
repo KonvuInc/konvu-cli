@@ -365,13 +365,14 @@ konvu finding vulnerability-report steer <id> \
   --comment "Endpoint is admin-only"
 ```
 
-After processing a report, dismiss it with a reason and optional ticket or
-explanation. `close` is an alias for `dismiss`.
+After processing a report, dismiss it with a reason, optional explanation, and
+optional external tracking reference. `close` is an alias for `dismiss`.
 
 ```bash
 konvu finding vulnerability-report dismiss <id> \
   --reason "Tracked externally" \
-  --comment "Handled in JIRA SEC-1234"
+  --comment "Handled by AppSec" \
+  --external-reference "SEC-1234"
 ```
 
 Dismissal only closes the report. Rate the assessment separately when you want
@@ -430,8 +431,10 @@ konvu metrics --since 90d --interval month --output json
 # Preview what would be dismissed
 konvu dismiss --assessment false-positive --severity low --dry-run
 
-# Dismiss with reason
-konvu dismiss --assessment false-positive --severity low --reason "Accepted risk"
+# Dismiss with reason and an external tracking reference
+konvu dismiss --assessment false-positive --severity low \
+  --reason "Accepted risk" \
+  --external-reference "SEC-1234"
 ```
 ### `konvu remediate` — Trigger an auto-fix PR
 Asks Konvu to open a remediation pull request for a finding. The job runs
