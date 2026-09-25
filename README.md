@@ -374,18 +374,16 @@ konvu finding vulnerability-report dismiss <id> \
   --comment "Handled in JIRA SEC-1234"
 ```
 
-The same operation can rate the assessment. Tags must match the rating; run
-`konvu finding vulnerability-report dismiss --help` for the accepted values.
+Dismissal only closes the report. Rate the assessment separately when you want
+to record feedback about its quality:
 
 ```bash
-konvu finding vulnerability-report close <id> \
-  --reason "Accepted risk" \
-  --rating agree \
+konvu finding vulnerability-report rate <id> agree \
   --tag strong_evidence
 ```
 
-Rating on its own records feedback but does not dismiss the report. Reopen a
-dismissed report before requesting more work on it:
+Rating records feedback but does not dismiss the report. Reopen a dismissed
+report before requesting more work on it:
 
 ```bash
 konvu finding vulnerability-report reopen <id>
