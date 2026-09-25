@@ -196,7 +196,7 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(issueIDs) == 0 {
-		fmt.Println("No issues found matching criteria.")
+		fmt.Fprintln(cmd.OutOrStdout(), "No issues found matching criteria.")
 		return nil
 	}
 
@@ -229,15 +229,15 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 				"skipped_findings":        skipped,
 				"message":                 msg,
 			}
-			fmt.Println(output.FormatJSON(jsonOut))
+			fmt.Fprintln(cmd.OutOrStdout(), output.FormatJSON(jsonOut))
 		} else {
-			fmt.Printf("\nDry run: would dismiss %d of %d issues\n", wouldDismiss, len(issueIDs))
+			fmt.Fprintf(cmd.OutOrStdout(), "\nDry run: would dismiss %d of %d issues\n", wouldDismiss, len(issueIDs))
 			for _, item := range skipped {
-				fmt.Printf("Skipped %s: %s\n", item.FindingID, item.Reason)
+				fmt.Fprintf(cmd.OutOrStdout(), "Skipped %s: %s\n", item.FindingID, item.Reason)
 			}
-			fmt.Printf("Reason: %s\n", reason)
+			fmt.Fprintf(cmd.OutOrStdout(), "Reason: %s\n", reason)
 			if externalReference != "" {
-				fmt.Printf("External reference: %s\n", externalReference)
+				fmt.Fprintf(cmd.OutOrStdout(), "External reference: %s\n", externalReference)
 			}
 		}
 		return nil
@@ -297,14 +297,14 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 			"skipped":                 totalSkipped,
 			"skipped_findings":        totalSkippedFindings,
 		}
-		fmt.Println(output.FormatJSON(jsonOut))
+		fmt.Fprintln(cmd.OutOrStdout(), output.FormatJSON(jsonOut))
 	} else {
-		fmt.Printf("\nDismissed %d issues\n", totalDismissed)
+		fmt.Fprintf(cmd.OutOrStdout(), "\nDismissed %d issues\n", totalDismissed)
 		for _, item := range totalSkippedFindings {
-			fmt.Printf("Skipped %s: %s\n", item.FindingID, item.Reason)
+			fmt.Fprintf(cmd.OutOrStdout(), "Skipped %s: %s\n", item.FindingID, item.Reason)
 		}
 		if totalSkipped > len(totalSkippedFindings) {
-			fmt.Printf("Skipped %d additional findings (reason unavailable)\n", totalSkipped-len(totalSkippedFindings))
+			fmt.Fprintf(cmd.OutOrStdout(), "Skipped %d additional findings (reason unavailable)\n", totalSkipped-len(totalSkippedFindings))
 		}
 	}
 

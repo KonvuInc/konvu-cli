@@ -93,7 +93,8 @@ func TestDismissSendsExternalReference(t *testing.T) {
 	t.Setenv("KONVU_ACCESS_TOKEN", "test-token")
 
 	command := &cobra.Command{Use: "dismiss", RunE: runDismiss}
-	command.SetOut(&bytes.Buffer{})
+	out := &bytes.Buffer{}
+	command.SetOut(out)
 	command.SetErr(&bytes.Buffer{})
 	addDismissFlags(command)
 	command.SetArgs([]string{
@@ -109,5 +110,51 @@ func TestDismissSendsExternalReference(t *testing.T) {
 
 	if body["external_reference_code"] != "SEC-1234" {
 		t.Fatalf("body = %#v", body)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["external_reference_code"] != "SEC-1234" {
+		t.Fatalf("output = %#v", result)
+	}
+}
+
+func TestDismissDryRunPrintsExternalReference(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/sca_findings/finding-1" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"source": map[string]any{"state": "open", "dismissible_from_konvu": true},
+		})
+	}))
+	defer server.Close()
+	t.Setenv("KONVU_API_URL", server.URL)
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+	t.Setenv("KONVU_ACCESS_TOKEN", "test-token")
+
+	command := &cobra.Command{Use: "dismiss", RunE: runDismiss}
+	out := &bytes.Buffer{}
+	command.SetOut(out)
+	command.SetErr(&bytes.Buffer{})
+	addDismissFlags(command)
+	command.SetArgs([]string{
+		"--issues", "finding-1",
+		"--reason", "Tracked externally",
+		"--external-reference", " SEC-1234 ",
+		"--dry-run",
+		"--output", "json",
+	})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["external_reference_code"] != "SEC-1234" {
+		t.Fatalf("output = %#v", result)
 	}
 }

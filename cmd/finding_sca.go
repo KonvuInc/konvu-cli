@@ -893,6 +893,9 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 				if comment := getStr(f, "dismissed_comment"); comment != "" {
 					fmt.Printf("Comment:    %s\n", comment)
 				}
+				if reference := getStr(f, "dismissed_external_reference_code"); reference != "" {
+					fmt.Printf("External reference: %s\n", reference)
+				}
 			}
 
 			// --- Vulnerability ---
