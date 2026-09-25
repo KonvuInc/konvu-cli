@@ -99,6 +99,8 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 	repo, _ := cmd.Flags().GetString("repo")
 	reason, _ := cmd.Flags().GetString("reason")
 	comment, _ := cmd.Flags().GetString("comment")
+	externalReference, _ := cmd.Flags().GetString("external-reference")
+	externalReference = strings.TrimSpace(externalReference)
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	outputFlag, _ := cmd.Flags().GetString("output")
 
@@ -216,14 +218,16 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 		)
 		if outputFormat == output.JSON {
 			jsonOut := map[string]any{
-				"action":           "dismiss",
-				"dry_run":          true,
-				"reason":           reason,
-				"total":            len(issueIDs),
-				"would_dismiss":    wouldDismiss,
-				"skipped":          len(skipped),
-				"skipped_findings": skipped,
-				"message":          msg,
+				"action":                  "dismiss",
+				"dry_run":                 true,
+				"reason":                  reason,
+				"comment":                 comment,
+				"external_reference_code": externalReference,
+				"total":                   len(issueIDs),
+				"would_dismiss":           wouldDismiss,
+				"skipped":                 len(skipped),
+				"skipped_findings":        skipped,
+				"message":                 msg,
 			}
 			fmt.Println(output.FormatJSON(jsonOut))
 		} else {
@@ -232,6 +236,9 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 				fmt.Printf("Skipped %s: %s\n", item.FindingID, item.Reason)
 			}
 			fmt.Printf("Reason: %s\n", reason)
+			if externalReference != "" {
+				fmt.Printf("External reference: %s\n", externalReference)
+			}
 		}
 		return nil
 	}
@@ -249,9 +256,10 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 		chunk := issueIDs[i:end]
 
 		body := map[string]any{
-			"finding_ids":       chunk,
-			"dismissed_reason":  reason,
-			"dismissed_comment": comment,
+			"finding_ids":             chunk,
+			"dismissed_reason":        reason,
+			"dismissed_comment":       comment,
+			"external_reference_code": externalReference,
 		}
 
 		result, err := client.Post("/sca_findings/bulk_dismiss", body)
@@ -281,12 +289,13 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 
 	if outputFormat == output.JSON {
 		jsonOut := map[string]any{
-			"action":           "dismiss",
-			"dry_run":          false,
-			"reason":           reason,
-			"dismissed":        totalDismissed,
-			"skipped":          totalSkipped,
-			"skipped_findings": totalSkippedFindings,
+			"action":                  "dismiss",
+			"dry_run":                 false,
+			"reason":                  reason,
+			"external_reference_code": externalReference,
+			"dismissed":               totalDismissed,
+			"skipped":                 totalSkipped,
+			"skipped_findings":        totalSkippedFindings,
 		}
 		fmt.Println(output.FormatJSON(jsonOut))
 	} else {
@@ -309,6 +318,7 @@ func addDismissFlags(cmd *cobra.Command) {
 	cmd.Flags().StringP("repo", "r", "", "Filter by repository")
 	cmd.Flags().String("reason", "Dismissed via Konvu CLI", "Reason for dismissal")
 	cmd.Flags().String("comment", "", "Comment for dismissal (auto-generated if empty)")
+	cmd.Flags().String("external-reference", "", "External tracking reference, such as a Jira ticket")
 	cmd.Flags().Bool("dry-run", false, "Preview what would be dismissed without executing")
 	cmd.Flags().StringP("output", "o", "", "Output format: json, table")
 }

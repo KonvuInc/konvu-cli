@@ -192,14 +192,15 @@ func transformFinding(finding map[string]any) map[string]any {
 		"scanner":            scannerLabel(source),
 		"triage_url":         getStr(finding, "triage_url"),
 		// Fields already present in the /sca_findings payload, surfaced here for reporting.
-		"dismissed_at":           getStr(source, "dismissed_at"),
-		"dismissed_reason":       getStr(source, "dismissed_reason"),
-		"dismissed_comment":      getStr(source, "dismissed_comment"),
-		"dismissible_from_konvu": dismissibleFromKonvu,
-		"last_assessed_at":       getStr(assess, "last_assessed_at"),
-		"risk_tier":              getStr(risk, "tier"),
-		"autofix_status":         autofixStatus,
-		"autofix_pr_url":         getStr(autofix, "pr_url"),
+		"dismissed_at":                      getStr(source, "dismissed_at"),
+		"dismissed_reason":                  getStr(source, "dismissed_reason"),
+		"dismissed_comment":                 getStr(source, "dismissed_comment"),
+		"dismissed_external_reference_code": getStr(source, "dismissed_external_reference_code"),
+		"dismissible_from_konvu":            dismissibleFromKonvu,
+		"last_assessed_at":                  getStr(assess, "last_assessed_at"),
+		"risk_tier":                         getStr(risk, "tier"),
+		"autofix_status":                    autofixStatus,
+		"autofix_pr_url":                    getStr(autofix, "pr_url"),
 		// Heuristic fix attribution over fields already in the payload. Empty unless fixed.
 		"fix_source": deriveFixSource(state, autofixStatus),
 	}
