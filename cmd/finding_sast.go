@@ -2,10 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	"github.com/KonvuInc/konvu-cli/pkg/findings"
+	"github.com/KonvuInc/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
 )
 
@@ -15,8 +18,9 @@ var sastCmd = &cobra.Command{
 	Long: `Search and triage SAST findings.
 
 The row 'id' returned by 'list' is the INVESTIGATION ID (Konvu's triage
-record), not the raw scanner detection ID. 'get' and 'rate' both take
-investigation IDs — the raw detection ID is available as 'detection_id'.
+record), while 'detection_id' is the stable Konvu finding ID. 'get' and
+'rate' take investigation IDs; 'assess', 'dismiss', and 'reopen' take
+detection IDs.
 
 Untriaged detections are included in 'list' and 'counts' — their 'id' is
 empty and 'triage_status' is "pending". 'sast list -q' pipes only rows
@@ -76,26 +80,69 @@ func transformDetection(raw map[string]any) findings.Row {
 			}
 		}
 	}
+	supportsDismissal, _ := getBool(raw, "supports_dismissal")
 	return findings.Row{
-		"id":            invID, // primary key = investigation ID; empty when untriaged
-		"detection_id":  getStr(raw, "id"),
-		"title":         getStr(raw, "title"),
-		"severity":      getStr(raw, "severity"),
-		"confidence":    getStr(raw, "confidence"),
-		"cwe_ids":       raw["cwe_ids"],
-		"location":      getStr(raw, "location"),
-		"repo":          getStr(raw, "where"),
-		"state":         getStr(raw, "state"),
-		"assessment":    assessment,
-		"triage_status": triageStatus,
-		"triage_url":    getStr(raw, "triage_url"),
+		"id":                                invID,
+		"detection_id":                      getStr(raw, "id"),
+		"title":                             getStr(raw, "title"),
+		"severity":                          getStr(raw, "severity"),
+		"confidence":                        getStr(raw, "confidence"),
+		"cwe_ids":                           raw["cwe_ids"],
+		"location":                          getStr(raw, "location"),
+		"repo":                              getStr(raw, "where"),
+		"state":                             getStr(raw, "state"),
+		"assessment":                        assessment,
+		"triage_status":                     triageStatus,
+		"triage_url":                        getStr(raw, "triage_url"),
+		"dismissed_at":                      getStr(raw, "dismissed_at"),
+		"dismissed_reason":                  getStr(raw, "dismissed_reason"),
+		"dismissed_comment":                 getStr(raw, "dismissed_comment"),
+		"dismissed_external_reference_code": getStr(raw, "dismissed_external_reference_code"),
+		"supports_dismissal":                supportsDismissal,
 	}
 }
 
 // sastDefaultColumns is the compact table set (URL-free so terminal tables
 // don't wrap); sastCSVColumns adds triage_url for CSV export.
 var sastDefaultColumns = []string{"id", "title", "severity", "location", "repo", "state", "assessment", "triage_status"}
-var sastCSVColumns = append(append([]string{}, sastDefaultColumns...), "triage_url")
+var sastCSVColumns = []string{
+	"id", "detection_id", "title", "severity", "location", "repo", "state", "assessment",
+	"triage_status", "dismissed_at", "dismissed_reason", "dismissed_comment",
+	"dismissed_external_reference_code", "triage_url",
+}
+
+func parseSastListFields(value string) ([]string, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	valid := transformDetection(map[string]any{})
+	validNames := make([]string, 0, len(valid))
+	for name := range valid {
+		validNames = append(validNames, name)
+	}
+	sort.Strings(validNames)
+
+	fields := make([]string, 0)
+	for _, field := range strings.Split(value, ",") {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		if _, ok := valid[field]; !ok {
+			return nil, &clierrors.CLIError{
+				Code:       "INVALID_ARGUMENTS",
+				Message:    fmt.Sprintf("unknown SAST field %q", field),
+				Suggestion: "Valid fields: " + strings.Join(validNames, ", ") + ".",
+				ExitCode:   clierrors.ExitUsageError,
+			}
+		}
+		fields = append(fields, field)
+	}
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	return fields, nil
+}
 
 func runSastList(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
@@ -103,6 +150,11 @@ func runSastList(cmd *cobra.Command, args []string) error {
 	browse := shouldBrowseFindings(cmd)
 
 	f := findings.ReadCommonFilters(cmd)
+	fieldsValue, _ := cmd.Flags().GetString("fields")
+	fieldList, err := parseSastListFields(fieldsValue)
+	if err != nil {
+		return err
+	}
 	kind, _ := cmd.Flags().GetString("kind")
 	if kind == "" {
 		kind = "sast_app"
@@ -120,6 +172,9 @@ func runSastList(cmd *cobra.Command, args []string) error {
 	}
 	if len(f.Assessment) > 0 {
 		params["assessment_result"] = f.Assessment
+	}
+	if state, _ := cmd.Flags().GetStringSlice("state"); len(state) > 0 {
+		params["state"] = state
 	}
 	if f.Since != "" {
 		params["created_after"] = parseRelativeDate(f.Since)
@@ -164,7 +219,15 @@ func runSastList(cmd *cobra.Command, args []string) error {
 	if f.QuietIDs {
 		return findings.RenderBareIDs(cmd, rows, "id")
 	}
-	return findings.RenderColumns(cmd, rows, sastDefaultColumns, sastCSVColumns)
+	tableColumns, csvColumns := sastDefaultColumns, sastCSVColumns
+	if fieldList != nil {
+		filtered := make([]findings.Row, len(rows))
+		for i, row := range rows {
+			filtered[i] = output.FilterFields(row, fieldList)
+		}
+		rows, tableColumns, csvColumns = filtered, fieldList, fieldList
+	}
+	return findings.RenderColumns(cmd, rows, tableColumns, csvColumns)
 }
 
 func runSastGet(cmd *cobra.Command, args []string) error {
@@ -241,19 +304,24 @@ func runSastCounts(cmd *cobra.Command, args []string) error {
 	return findings.Render(cmd, []findings.Row{{"count": n}}, []string{"count"})
 }
 
+func addSastListFlags(cmd *cobra.Command) {
+	cmd.Flags().String("since", "", "Filter by created-after date (e.g. 7d, 2025-01-01)")
+	cmd.Flags().StringSlice("severity", nil, "Filter by severity: critical, high, medium, low")
+	cmd.Flags().StringSlice("repo", nil, "Filter by repository URL (repeatable)")
+	cmd.Flags().StringSlice("assessment", nil, "Filter by assessment (repeatable): exploitable, false_positive, inconclusive, not_assessed")
+	cmd.Flags().StringSlice("state", nil, "Filter by state: open, fixed, dismissed, auto_dismissed, muted")
+	cmd.Flags().Int("limit", 30, "Maximum rows to return (per_page)")
+	cmd.Flags().StringP("output", "o", "", "Output format: json, table, csv")
+	cmd.Flags().BoolP("quiet", "q", false, "Print bare IDs (investigation IDs)")
+	cmd.Flags().String("fields", "", "Comma-separated fields to include")
+	cmd.Flags().StringSlice("cwe", nil, "Filter by CWE identifier (repeatable; e.g. CWE-89)")
+	cmd.Flags().StringSlice("confidence", nil, "Filter by confidence: high, medium, low")
+	cmd.Flags().String("kind", "sast_app", "Detection kind (default sast_app)")
+	cmd.Flags().String("title", "", "Filter by detection title (exact match)")
+}
+
 func init() {
-	// list — full common set + SAST-specific
-	sastListCmd.Flags().String("since", "", "Filter by created-after date (e.g. 7d, 2025-01-01)")
-	sastListCmd.Flags().StringSlice("severity", nil, "Filter by severity: critical, high, medium, low")
-	sastListCmd.Flags().StringSlice("repo", nil, "Filter by repository URL (repeatable)")
-	sastListCmd.Flags().StringSlice("assessment", nil, "Filter by assessment (repeatable): exploitable, false_positive, inconclusive, not_assessed")
-	sastListCmd.Flags().Int("limit", 30, "Maximum rows to return (per_page)")
-	sastListCmd.Flags().StringP("output", "o", "", "Output format: json, table, csv")
-	sastListCmd.Flags().BoolP("quiet", "q", false, "Print bare IDs (investigation IDs)")
-	sastListCmd.Flags().StringSlice("cwe", nil, "Filter by CWE identifier (repeatable; e.g. CWE-89)")
-	sastListCmd.Flags().StringSlice("confidence", nil, "Filter by confidence: high, medium, low")
-	sastListCmd.Flags().String("kind", "sast_app", "Detection kind (default sast_app)")
-	sastListCmd.Flags().String("title", "", "Filter by detection title (exact match)")
+	addSastListFlags(sastListCmd)
 
 	sastGetCmd.Flags().StringP("output", "o", "", "Output format: json (default)")
 

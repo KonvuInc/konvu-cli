@@ -221,7 +221,9 @@ The `finding` command groups scanner findings and submitted reports by source:
 - `konvu finding secrets <op>` — leaked-credential findings from repository secret scanning
 - `konvu finding vulnerability-report <op>` — externally reported vulnerabilities: submit, inspect, steer, rate, dismiss, and reopen
 
-Common ops are `list`, `get`, and `counts`. `sca`, `sast`, and `secrets` also support `rate`. `sca` alone supports `submit`.
+Common ops are `list`, `get`, and `counts`. `sca` and `sast` also support
+`assess`, `rate`, `dismiss`, and `reopen`; `secrets` supports `rate`; `sca`
+alone supports `submit`.
 
 Run any source's `list` command in an interactive terminal to open its findings browser. Use Up/Down to select, Enter or Right to inspect, Left or Escape to return, and Q to quit. The SCA table keeps the assessment summary and colors assessment results. Detail views are concise; request complete SCA evidence explicitly with `konvu finding get <id> --include evidence`.
 
@@ -229,7 +231,11 @@ Bare `konvu finding` opens the first 50 SCA findings in the same browser.
 
 **SCA aliases**: bare forms (`konvu finding list`, `konvu finding get`, `konvu finding rate`, `konvu finding counts`, `konvu finding submit`) delegate to the `sca` equivalents. `finding list` now opens a browser on a TTY; pipes still receive JSON, and scripts can select `--output`, `--quiet`, `--count`, or `--group-by` explicitly.
 
-**SAST identity note**: `konvu finding sast list` emits the *investigation ID* as the row's `id` field. Both `get` and `rate` expect that investigation ID (not the raw scanner detection ID). The raw detection ID is available as `detection_id` in the list rows. Detections without a Konvu investigation are included in the output with an empty `id` and `triage_status: "pending"`; `konvu finding sast list -q` skips them so `xargs`-style pipes stay safe. To restrict output to triaged rows only, filter with `jq '.[] | select(.id != "")'`.
+**SAST identity note**: `konvu finding sast list` emits the *investigation ID*
+as `id` and the stable Konvu finding ID as `detection_id`. `get` and `rate`
+take `id`; `assess`, `dismiss`, and `reopen` take `detection_id`. Detections
+without an investigation have an empty `id` and `triage_status: "pending"`;
+`sast list -q` skips them so existing `get`/`rate` pipelines remain safe.
 
 **Secrets bulk rating**: `konvu finding secrets rate <id> <assessment>` handles single findings. For batches, pipe IDs into `--stdin`:
 ```bash
@@ -279,6 +285,32 @@ konvu finding sast assess <detection-id>
 ```
 
 These commands request one assessment and return the API response. SAST uses `detection_id` from `finding sast list`. Normal assessment eligibility and credit limits apply. Use `-o json` for the raw response; bare `finding assess` is an SCA alias.
+
+### Dismiss or reopen a finding
+
+```bash
+konvu finding sca dismiss <finding-id> \
+  --reason "Tracked externally" \
+  --comment "Handled by AppSec" \
+  --external-reference "SEC-1234"
+konvu finding sca reopen <finding-id>
+
+konvu finding sast dismiss <detection-id> \
+  --reason "Accepted risk" \
+  --comment "Reviewed by AppSec" \
+  --external-reference "SEC-1234"
+konvu finding sast reopen <detection-id>
+```
+
+`close` is an alias for `dismiss`. Use `--dry-run` to preview an action. SAST
+dismissal metadata is available in JSON and CSV output, or as selected table
+fields:
+
+```bash
+konvu finding sast list --state dismissed \
+  --fields detection_id,dismissed_reason,dismissed_comment,dismissed_external_reference_code \
+  --output table
+```
 
 ### `konvu finding get` — Inspect a finding
 
