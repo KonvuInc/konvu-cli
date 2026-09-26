@@ -108,9 +108,7 @@ func TestScaReopenResolvesSource(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/sca_findings/finding-1":
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"source": map[string]any{"id": "issue-1", "integration_id": "integration-1"},
-			})
+			_ = json.NewEncoder(w).Encode(sampleFindingDetail())
 		case r.Method == http.MethodPost && r.URL.Path == "/integrations/integration-1/issue/issue-1/reopen":
 			w.WriteHeader(http.StatusNoContent)
 		default:

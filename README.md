@@ -222,7 +222,8 @@ The `finding` command groups scanner findings and submitted reports by source:
 - `konvu finding vulnerability-report <op>` — externally reported vulnerabilities: submit, inspect, steer, rate, dismiss, and reopen
 
 Common ops are `list`, `get`, and `counts`. `sca` and `sast` also support
-`assess`, `rate`, `dismiss`, and `reopen`; `sca` alone supports `submit`.
+`assess`, `rate`, `dismiss`, and `reopen`; `secrets` supports `rate`; `sca`
+alone supports `submit`.
 
 Run any source's `list` command in an interactive terminal to open its findings browser. Use Up/Down to select, Enter or Right to inspect, Left or Escape to return, and Q to quit. The SCA table keeps the assessment summary and colors assessment results. Detail views are concise; request complete SCA evidence explicitly with `konvu finding get <id> --include evidence`.
 

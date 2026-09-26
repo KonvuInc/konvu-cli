@@ -103,7 +103,12 @@ func sampleFindingDetail() map[string]any {
 			"location":           "package-lock.json",
 		},
 		"dependency": map[string]any{"name": "lodash"},
-		"source":     map[string]any{"source_name": "dependabot", "identifier": "GHSA-x"},
+		"source": map[string]any{
+			"id":             "issue-1",
+			"integration_id": "integration-1",
+			"source_name":    "dependabot",
+			"identifier":     "GHSA-x",
+		},
 		"assessment": map[string]any{
 			"result":  "exploitable",
 			"summary": "confirmed",
