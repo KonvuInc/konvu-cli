@@ -428,7 +428,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 					flatForTable = append(flatForTable, f)
 				}
 				tableData := map[string]any{"findings": flatForTable}
-				fmt.Print(output.FormatTable(tableData, defaultTableColumns, "findings", output.DefaultStyleCell))
+				fmt.Print(output.FormatTable(tableData, findingListTableColumns(fieldList), "findings", output.DefaultStyleCell))
 			}
 		} else {
 			// When the full set was fetched (dismissed filter), honor --offset/--limit
@@ -486,7 +486,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 				}
 				fmt.Fprintln(os.Stderr)
 				fmt.Fprintln(os.Stderr)
-				fmt.Print(output.FormatTable(result, defaultTableColumns, "findings", output.DefaultStyleCell))
+				fmt.Print(output.FormatTable(result, findingListTableColumns(fieldList), "findings", output.DefaultStyleCell))
 			}
 		}
 		return nil
@@ -938,6 +938,13 @@ Exit codes: 0 success, 1 general error, 3 not found, 4 auth failed`,
 
 // --- finding rate ---
 
+func scaRatingDecisionID(detail map[string]any) string {
+	if id := getStr(getMap(detail, "latest_recommendation"), "id"); id != "" {
+		return id
+	}
+	return getStr(getMap(detail, "assessment"), "id")
+}
+
 var scaRateCmd = &cobra.Command{
 	Use:   "rate [finding-id] [rating]",
 	Short: "Rate Konvu's assessment of a finding",
@@ -983,10 +990,9 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth
 				return nil
 			}
 
-			latestRec := getMap(detail, "latest_recommendation")
-			recID = getStr(latestRec, "id")
+			recID = scaRatingDecisionID(detail)
 			if recID == "" {
-				fmt.Fprintln(os.Stderr, "This finding has no recommendation to rate yet.")
+				fmt.Fprintln(os.Stderr, "This finding has no assessment to rate yet.")
 				os.Exit(1)
 			}
 			rateAssessResult = normalizeAssessmentResult(getStr(getMap(detail, "assessment"), "result"))
@@ -1269,7 +1275,7 @@ func init() {
 	scaListCmd.Flags().BoolP("quiet", "q", false, "Output bare finding IDs only")
 	scaListCmd.Flags().Bool("count", false, "Output only the total count")
 	scaListCmd.Flags().StringP("group-by", "g", "", "Group by: repository, dependency, severity, assessment")
-	scaListCmd.Flags().String("fields", "", "Comma-separated fields to include in JSON output")
+	scaListCmd.Flags().String("fields", "", "Comma-separated fields to include")
 
 	// finding get
 	scaGetCmd.Flags().StringSliceP("include", "i", nil, "Include: evidence, logs")
