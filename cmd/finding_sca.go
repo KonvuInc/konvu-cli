@@ -1251,31 +1251,34 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 	},
 }
 
+func addSCAListFlags(cmd *cobra.Command) {
+	cmd.Flags().String("since", "", "First-seen start date: '7d', '30d', or ISO date")
+	cmd.Flags().String("until", "", "First-seen end date: 'now' or ISO date")
+	cmd.Flags().String("dismissed-since", "", "Only findings dismissed on/after this date ('7d' or ISO); closed-in-window filter")
+	cmd.Flags().String("dismissed-before", "", "Only findings dismissed before this date ('now' or ISO)")
+	cmd.Flags().StringSliceP("severity", "s", nil, "Filter: critical,high,moderate,low")
+	cmd.Flags().StringSliceP("assessment", "a", nil, "Filter: exploitable,false-positive,inconclusive,not-assessed")
+	cmd.Flags().StringSlice("state", nil, "Filter: open,dismissed,fixed,muted")
+	cmd.Flags().String("has-fix", "", "Filter: fixed, no_fix")
+	cmd.Flags().StringP("repo", "r", "", "Filter by repository URL or name")
+	cmd.Flags().String("cve", "", "Filter by CVE ID")
+	cmd.Flags().String("ghsa", "", "Filter by advisory ID (GHSA, CVE, or OSV)")
+	cmd.Flags().StringP("dependency", "d", "", "Filter by dependency name")
+	cmd.Flags().String("source", "", "Filter by scanner source: snyk, dependabot, or a label submitted via 'finding submit'")
+	cmd.Flags().StringSlice("dependabot-alert", nil, "Filter by GitHub Dependabot alert URL(s) or node id(s) (RVA_...); repeatable or comma-separated")
+	cmd.Flags().String("sort", "recommendation", "Sort: severity,recommendation,first_seen_at,updated_at,dependency_name,cve")
+	cmd.Flags().String("order", "desc", "Order: asc,desc")
+	cmd.Flags().IntP("limit", "n", 50, "Maximum findings to return")
+	cmd.Flags().Int("offset", 0, "Skip N results")
+	cmd.Flags().StringP("output", "o", "", "Output format: json, table, csv")
+	cmd.Flags().BoolP("quiet", "q", false, "Output bare finding IDs only")
+	cmd.Flags().Bool("count", false, "Output only the total count")
+	cmd.Flags().StringP("group-by", "g", "", "Group by: repository, dependency, severity, assessment")
+	cmd.Flags().String("fields", "", "Comma-separated fields to include")
+}
+
 func init() {
-	// finding list — all 21 flags
-	scaListCmd.Flags().String("since", "", "First-seen start date: '7d', '30d', or ISO date")
-	scaListCmd.Flags().String("until", "", "First-seen end date: 'now' or ISO date")
-	scaListCmd.Flags().String("dismissed-since", "", "Only findings dismissed on/after this date ('7d' or ISO); closed-in-window filter")
-	scaListCmd.Flags().String("dismissed-before", "", "Only findings dismissed before this date ('now' or ISO)")
-	scaListCmd.Flags().StringSliceP("severity", "s", nil, "Filter: critical,high,moderate,low")
-	scaListCmd.Flags().StringSliceP("assessment", "a", nil, "Filter: exploitable,false-positive,inconclusive,not-assessed")
-	scaListCmd.Flags().StringSlice("state", nil, "Filter: open,dismissed,fixed,muted")
-	scaListCmd.Flags().String("has-fix", "", "Filter: fixed, no_fix")
-	scaListCmd.Flags().StringP("repo", "r", "", "Filter by repository URL or name")
-	scaListCmd.Flags().String("cve", "", "Filter by CVE ID")
-	scaListCmd.Flags().String("ghsa", "", "Filter by advisory ID (GHSA, CVE, or OSV)")
-	scaListCmd.Flags().StringP("dependency", "d", "", "Filter by dependency name")
-	scaListCmd.Flags().String("source", "", "Filter by scanner source: snyk, dependabot, or a label submitted via 'finding submit'")
-	scaListCmd.Flags().StringSlice("dependabot-alert", nil, "Filter by GitHub Dependabot alert URL(s) or node id(s) (RVA_...); repeatable or comma-separated")
-	scaListCmd.Flags().String("sort", "recommendation", "Sort: severity,recommendation,first_seen_at,updated_at,dependency_name,cve")
-	scaListCmd.Flags().String("order", "desc", "Order: asc,desc")
-	scaListCmd.Flags().IntP("limit", "n", 50, "Maximum findings to return")
-	scaListCmd.Flags().Int("offset", 0, "Skip N results")
-	scaListCmd.Flags().StringP("output", "o", "", "Output format: json, table, csv")
-	scaListCmd.Flags().BoolP("quiet", "q", false, "Output bare finding IDs only")
-	scaListCmd.Flags().Bool("count", false, "Output only the total count")
-	scaListCmd.Flags().StringP("group-by", "g", "", "Group by: repository, dependency, severity, assessment")
-	scaListCmd.Flags().String("fields", "", "Comma-separated fields to include")
+	addSCAListFlags(scaListCmd)
 
 	// finding get
 	scaGetCmd.Flags().StringSliceP("include", "i", nil, "Include: evidence, logs")
