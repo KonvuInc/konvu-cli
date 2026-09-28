@@ -303,6 +303,49 @@ func TestParseFindingListFields(t *testing.T) {
 	}
 }
 
+func TestFindingListTableColumns(t *testing.T) {
+	fields := []string{"id", "dismissed_comment", "dismissed_external_reference_code"}
+	got := findingListTableColumns(fields)
+	if strings.Join(got, ",") != strings.Join(fields, ",") {
+		t.Fatalf("columns = %#v, want %#v", got, fields)
+	}
+
+	if got := findingListTableColumns(nil); strings.Join(got, ",") != strings.Join(defaultTableColumns, ",") {
+		t.Fatalf("default columns = %#v, want %#v", got, defaultTableColumns)
+	}
+}
+
+func TestSCARatingDecisionID(t *testing.T) {
+	cases := []struct {
+		name   string
+		detail map[string]any
+		want   string
+	}{
+		{
+			name: "legacy recommendation",
+			detail: map[string]any{
+				"latest_recommendation": map[string]any{"id": "recommendation-1"},
+				"assessment":            map[string]any{"id": "assessment-1"},
+			},
+			want: "recommendation-1",
+		},
+		{
+			name:   "current assessment",
+			detail: map[string]any{"assessment": map[string]any{"id": "assessment-1"}},
+			want:   "assessment-1",
+		},
+		{name: "not assessed", detail: map[string]any{}, want: ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := scaRatingDecisionID(tc.detail); got != tc.want {
+				t.Fatalf("decision ID = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSCAListRejectsUnknownFieldsBeforeEarlyReturns(t *testing.T) {
 	if mode := os.Getenv("KONVU_TEST_INVALID_LIST_FIELDS_MODE"); mode != "" {
 		_ = scaListCmd.Flags().Set("fields", "does_not_exist")

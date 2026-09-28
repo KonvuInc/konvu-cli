@@ -111,6 +111,33 @@ var sastCSVColumns = []string{
 	"dismissed_external_reference_code", "triage_url",
 }
 
+var sastFeedbackTags = map[string]string{
+	"inaccurate":   "Inaccurate",
+	"incomplete":   "Incomplete",
+	"unclear":      "Unclear",
+	"not relevant": "Not Relevant",
+	"other":        "Other",
+}
+
+func normalizeSastFeedbackTags(tags []string) ([]string, error) {
+	normalized := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		key := strings.ToLower(strings.TrimSpace(tag))
+		key = strings.NewReplacer("-", " ", "_", " ").Replace(key)
+		value, ok := sastFeedbackTags[key]
+		if !ok {
+			return nil, &clierrors.CLIError{
+				Code:       "INVALID_ARGUMENTS",
+				Message:    fmt.Sprintf("invalid SAST feedback tag %q", tag),
+				Suggestion: "Use Inaccurate, Incomplete, Unclear, Not Relevant, or Other.",
+				ExitCode:   clierrors.ExitUsageError,
+			}
+		}
+		normalized = append(normalized, value)
+	}
+	return normalized, nil
+}
+
 func parseSastListFields(value string) ([]string, error) {
 	if strings.TrimSpace(value) == "" {
 		return nil, nil
@@ -266,6 +293,10 @@ func runSastRate(cmd *cobra.Command, args []string) error {
 	}
 	comment, _ := cmd.Flags().GetString("comment")
 	tags, _ := cmd.Flags().GetStringSlice("feedback-tag")
+	tags, err := normalizeSastFeedbackTags(tags)
+	if err != nil {
+		return err
+	}
 
 	if err := findings.RequireJSON(cmd, "sast rate"); err != nil {
 		return err
@@ -326,7 +357,7 @@ func init() {
 	sastGetCmd.Flags().StringP("output", "o", "", "Output format: json (default)")
 
 	sastRateCmd.Flags().StringP("comment", "c", "", "Free-text comment attached to the rating")
-	sastRateCmd.Flags().StringSlice("feedback-tag", nil, "Feedback tag (repeatable)")
+	sastRateCmd.Flags().StringSlice("feedback-tag", nil, "Feedback tag (repeatable): Inaccurate, Incomplete, Unclear, Not Relevant, Other")
 	sastRateCmd.Flags().StringP("output", "o", "", "Output format: json")
 
 	sastCountsCmd.Flags().StringSlice("severity", nil, "Filter by severity")

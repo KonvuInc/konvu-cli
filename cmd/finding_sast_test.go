@@ -76,3 +76,18 @@ func TestSastListRejectsUnknownField(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestNormalizeSastFeedbackTags(t *testing.T) {
+	got, err := normalizeSastFeedbackTags([]string{"inaccurate", "not-relevant", "Other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"Inaccurate", "Not Relevant", "Other"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("tags = %#v, want %#v", got, want)
+	}
+
+	if _, err := normalizeSastFeedbackTags([]string{"strong_evidence"}); err == nil {
+		t.Fatal("unknown tag should return an error")
+	}
+}

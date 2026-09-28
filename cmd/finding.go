@@ -229,6 +229,13 @@ func parseFindingListFields(fields string) ([]string, error) {
 	return fieldList, nil
 }
 
+func findingListTableColumns(fields []string) []string {
+	if fields != nil {
+		return fields
+	}
+	return defaultTableColumns
+}
+
 // deriveFixSource labels how a fixed finding was remediated, using only fields
 // already in the response. A merged autofix PR is a reliable "fixed by patcheus"
 // signal. Without it we cannot distinguish an external fix from missing autofix
