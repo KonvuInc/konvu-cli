@@ -1,10 +1,14 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
+	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
+	"github.com/KonvuInc/konvu-cli/pkg/output"
 	"github.com/KonvuInc/konvu-cli/skills"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -35,10 +39,28 @@ func Execute() {
 		}
 	}
 
+	rootCmd.SilenceErrors = true
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		os.Exit(writeExecutionError(os.Stderr, err))
 	}
+}
+
+func writeExecutionError(writer io.Writer, err error) int {
+	message := "Error: " + err.Error() + "\n"
+	exitCode := clierrors.ExitGeneralError
+	var cliErr *clierrors.CLIError
+	if errors.As(err, &cliErr) {
+		if cliErr.Suggestion != "" {
+			message += "  " + cliErr.Suggestion + "\n"
+		}
+		if cliErr.ExitCode > 0 {
+			exitCode = cliErr.ExitCode
+		}
+	}
+	if output.WriteString(writer, message) != nil {
+		return clierrors.ExitGeneralError
+	}
+	return exitCode
 }
 
 // printCmdHelp recursively prints usage for a command and its subcommands.

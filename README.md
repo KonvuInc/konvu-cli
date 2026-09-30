@@ -372,6 +372,32 @@ on every submission. Every item is processed independently and reported back as
 created / updated / accepted_unmapped / rejected (with a reason); a submission
 where every item is rejected exits `1`.
 
+### Repository triage instructions
+
+`konvu knowledge triage-instructions <op>` supports upload, list, get, and delete.
+
+Upload a Markdown file from the terminal. These instructions apply at the next
+triage; existing verdicts are unchanged.
+
+```bash
+konvu knowledge triage-instructions upload --repo github:acme/web --file scope.md
+konvu knowledge triage-instructions list --repo github:acme/web
+konvu knowledge triage-instructions get <file-id> --repo github:acme/web -o json
+cat scope.md | konvu knowledge triage-instructions upload --repo github:acme/web --file - --path /scope.md
+```
+
+To replace or delete a file, use the `sha256` returned by `get`. A stale revision
+is refused, so review the latest content before retrying. Upload output contains
+file metadata; `get -o json` includes the content and revision.
+
+```bash
+konvu knowledge triage-instructions upload --repo github:acme/web --file scope.md --file-id <file-id> --base-sha256 <sha256>
+konvu knowledge triage-instructions delete <file-id> --repo github:acme/web --base-sha256 <sha256>
+```
+
+OAuth and API-key credentials use the same commands. Uploads and deletes require
+write access. The repository must have one triage target configured in Konvu.
+
 ### `konvu finding vulnerability-report submit` — Submit a vulnerability report
 
 Submit a Markdown or plain-text report for a repository:
