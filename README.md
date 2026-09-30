@@ -219,7 +219,6 @@ The `finding` command groups scanner findings and submitted reports by source:
 - `konvu finding sast <op>` — application-code (SAST) findings from Semgrep, Arnica, etc.
 - `konvu finding container <op>` — container image findings from AWS Inspector and other scanners
 - `konvu finding secrets <op>` — leaked-credential findings from repository secret scanning
-- `konvu knowledge triage-instructions <op>` — upload, list, read, replace, and delete repository triage instructions
 - `konvu finding vulnerability-report <op>` — externally reported vulnerabilities: submit, inspect, steer, rate, dismiss, and reopen
 
 Common ops are `list`, `get`, and `counts`. `sca` and `sast` also support
@@ -374,6 +373,8 @@ created / updated / accepted_unmapped / rejected (with a reason); a submission
 where every item is rejected exits `1`.
 
 ### Repository triage instructions
+
+`konvu knowledge triage-instructions <op>` supports upload, list, get, and delete.
 
 Upload a Markdown file from the terminal. These instructions apply at the next
 triage; existing verdicts are unchanged.

@@ -61,7 +61,7 @@ func TestInstructionsCreateAndUpdate(t *testing.T) {
 				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 					t.Error(err)
 				}
-				if payload["content"] != "# Private instructions" || payload["path"] != "/scope.md" || payload["client"] != "cli" {
+				if payload["content"] != "# Private instructions\n" || payload["path"] != "/scope.md" || payload["client"] != "cli" {
 					t.Errorf("payload = %#v", payload)
 				}
 				if replacement && payload["base_sha256"] != "revision-1" {
@@ -220,5 +220,41 @@ func TestInstructionsRepositoryResolution(t *testing.T) {
 		if err == nil || writes != 0 {
 			t.Errorf("error=%v writes=%d", err, writes)
 		}
+	}
+}
+
+func TestInstructionsPreserveMarkdownWhitespace(t *testing.T) {
+	instructionServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		if payload["content"] != "    Indented code\nText with hard break  " {
+			t.Errorf("content=%q", payload["content"])
+		}
+		_, _ = w.Write([]byte(`{"id":"file-1"}`))
+	})
+	command, _ := instructionTestCommand("upload", "--repo", "acme/web", "--file", "-", "--path", "scope.md")
+	command.SetIn(strings.NewReader("    Indented code\nText with hard break  "))
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInstructionsAuthenticationErrorIsRedacted(t *testing.T) {
+	instructionServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"detail":"private authentication detail"}`))
+	})
+	command, _ := instructionTestCommand("get", "file-1", "--repo", "acme/web")
+	err := command.Execute()
+	cliErr, ok := err.(*clierrors.CLIError)
+	if !ok || cliErr.ExitCode != clierrors.ExitAuthFailed || strings.Contains(err.Error(), "private") {
+		t.Fatalf("error=%v", err)
+	}
+	out := new(bytes.Buffer)
+	if code := writeExecutionError(out, err); code != clierrors.ExitAuthFailed {
+		t.Errorf("exit=%d", code)
+	}
+	if strings.Contains(out.String(), "private") || !strings.Contains(out.String(), "konvu login") {
+		t.Errorf("output=%s", out)
 	}
 }

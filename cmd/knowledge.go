@@ -28,7 +28,7 @@ func newTriageInstructionsCommand() *cobra.Command {
 	for _, operation := range []string{"list", "get", "upload", "delete"} {
 		operation := operation
 		command := &cobra.Command{
-			Use: operation, Args: cobra.NoArgs,
+			Use: operation, Args: cobra.NoArgs, SilenceUsage: true,
 			RunE: func(cmd *cobra.Command, args []string) error { return runTriageInstructions(cmd, args, operation) },
 		}
 		switch operation {
@@ -133,8 +133,8 @@ func readInstructions(cmd *cobra.Command, file string) (string, error) {
 	if err != nil || len(data) > maxBytes || !utf8.Valid(data) || strings.ContainsRune(string(data), 0) {
 		return "", instructionUsage("instruction file must be UTF-8 text under 1 MiB", "Upload a Markdown text file.")
 	}
-	content := strings.TrimSpace(strings.ReplaceAll(string(data), "\r\n", "\n"))
-	if content == "" {
+	content := strings.ReplaceAll(string(data), "\r\n", "\n")
+	if strings.TrimSpace(content) == "" {
 		return "", instructionUsage("instruction file is empty", "Add instructions before uploading the file.")
 	}
 	return content, nil
@@ -243,7 +243,7 @@ func runTriageInstructions(cmd *cobra.Command, args []string, operation string) 
 
 func instructionAPIError(err error) error {
 	if _, ok := err.(*api.AuthenticationError); ok {
-		return clierrors.NewAuthError(err.Error())
+		return clierrors.NewAuthError("authentication failed")
 	}
 	suggestion := "Check repository access and the instruction file, then retry."
 	code := "INSTRUCTIONS_REQUEST_FAILED"
