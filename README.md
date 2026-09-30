@@ -219,6 +219,7 @@ The `finding` command groups scanner findings and submitted reports by source:
 - `konvu finding sast <op>` — application-code (SAST) findings from Semgrep, Arnica, etc.
 - `konvu finding container <op>` — container image findings from AWS Inspector and other scanners
 - `konvu finding secrets <op>` — leaked-credential findings from repository secret scanning
+- `konvu knowledge triage-instructions <op>` — upload, list, read, replace, and delete repository triage instructions
 - `konvu finding vulnerability-report <op>` — externally reported vulnerabilities: submit, inspect, steer, rate, dismiss, and reopen
 
 Common ops are `list`, `get`, and `counts`. `sca` and `sast` also support
@@ -371,6 +372,30 @@ changed value renames the scanner and an omitted one clears the label — send i
 on every submission. Every item is processed independently and reported back as
 created / updated / accepted_unmapped / rejected (with a reason); a submission
 where every item is rejected exits `1`.
+
+### Repository triage instructions
+
+Upload a Markdown file from the terminal. These instructions apply at the next
+triage; existing verdicts are unchanged.
+
+```bash
+konvu knowledge triage-instructions upload --repo github:acme/web --file scope.md
+konvu knowledge triage-instructions list --repo github:acme/web
+konvu knowledge triage-instructions get <file-id> --repo github:acme/web -o json
+cat scope.md | konvu knowledge triage-instructions upload --repo github:acme/web --file - --path /scope.md
+```
+
+To replace or delete a file, use the `sha256` returned by `get`. A stale revision
+is refused, so review the latest content before retrying. Upload output contains
+file metadata; `get -o json` includes the content and revision.
+
+```bash
+konvu knowledge triage-instructions upload --repo github:acme/web --file scope.md --file-id <file-id> --base-sha256 <sha256>
+konvu knowledge triage-instructions delete <file-id> --repo github:acme/web --base-sha256 <sha256>
+```
+
+OAuth and API-key credentials use the same commands. Uploads and deletes require
+write access. The repository must have one triage target configured in Konvu.
 
 ### `konvu finding vulnerability-report submit` — Submit a vulnerability report
 

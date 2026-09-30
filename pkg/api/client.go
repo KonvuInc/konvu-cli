@@ -179,6 +179,10 @@ func (c *Client) query(method, path string, params map[string]any) (map[string]a
 		return nil, err
 	}
 
+	if resp.StatusCode == http.StatusNoContent {
+		return nil, nil
+	}
+
 	var result map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
