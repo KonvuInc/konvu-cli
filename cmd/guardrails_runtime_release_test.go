@@ -9,9 +9,9 @@ import (
 )
 
 func TestProductionGuardrailsPinUsesBaselineV1Release(t *testing.T) {
-	if guardrailsPinnedVersion != "v0.6.4" {
+	if guardrailsPinnedVersion != "v0.6.10" {
 		t.Fatalf(
-			"production Guardrails pin = %q, want v0.6.4",
+			"production Guardrails pin = %q, want v0.6.10",
 			guardrailsPinnedVersion,
 		)
 	}
