@@ -36,7 +36,17 @@ func prCheckServer(t *testing.T) *httptest.Server {
 			if q.Has("number") && (q.Get("repository") != "acme/app" || q.Get("number") != "42") {
 				t.Fatalf("get query = %v", q)
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{reviewed}})
+			if q.Get("per_page") == "1" && !q.Has("number") && (q.Get("repository") != "acme/app" || !strings.HasPrefix(q.Get("since"), "20")) {
+				t.Fatalf("counts query = %v", q)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items": []any{reviewed},
+				"counts": map[string]any{
+					"pull_requests": 7, "findings": 3,
+					"outcomes": map[string]any{"pass": 5, "violation": 2},
+					"modes":    map[string]any{"monitor": 6, "warn": 1, "unknown": 0},
+				},
+			})
 		case "/services/guardrails/v1/ci/pull-requests/repo-1/42/runs":
 			_ = json.NewEncoder(w).Encode([]any{
 				map[string]any{"id": "run-2", "outcome": "error", "findings": []any{}},
@@ -94,5 +104,18 @@ func TestPRCheckListAndGet(t *testing.T) {
 	}
 	if review["pr"].(map[string]any)["base_sha"] != "base" || review["mode"] != "monitor" {
 		t.Fatalf("review = %#v", review)
+	}
+
+	countsCmd := &cobra.Command{Use: "counts", RunE: runPRCheckCounts}
+	addPRCheckFilterFlags(countsCmd)
+	var counts []map[string]any
+	if err := json.Unmarshal([]byte(run(countsCmd, "--repo", "acme/app", "--since", "30d")), &counts); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]float64{"pull_requests": 7, "pass": 5, "violation": 2, "findings": 3, "monitor": 6, "warn": 1}
+	for key, value := range want {
+		if counts[0][key] != value {
+			t.Fatalf("counts[%s] = %v, want %v", key, counts[0][key], value)
+		}
 	}
 }
