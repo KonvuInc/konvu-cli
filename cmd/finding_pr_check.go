@@ -76,7 +76,7 @@ func prCheckRequestError(err error) error {
 	}
 	return &clierrors.CLIError{
 		Code:       "PR_CHECK_REQUEST_FAILED",
-		Message:    "could not read PR checks",
+		Message:    fmt.Sprintf("could not read PR checks: %v", err),
 		Suggestion: "Check your company access and that Guardrails CI is enabled on a repository.",
 		Retryable:  true,
 		ExitCode:   clierrors.ExitGeneralError,
