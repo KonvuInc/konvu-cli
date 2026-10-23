@@ -12,17 +12,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Guardrails CI reads, through Core's service proxy.
+// Every PR check call hangs off this prefix.
+const prCheckBase = "/services/guardrails/v1/ci"
+
 const (
-	prCheckReviewedPath = "/services/guardrails/v1/ci/pull-requests/reviewed"
-	prCheckRunsPath     = "/services/guardrails/v1/ci/pull-requests/%s/%d/runs"
-	prCheckMaxPerPage   = 100
+	prCheckReviewedPath = prCheckBase + "/pull-requests/reviewed"
+	prCheckRunsPath     = prCheckBase + "/pull-requests/%s/%d/runs"
+	prCheckMaxLimit     = 100
 )
 
-// Outcomes a completed, non-failed PR check can have.
-var prCheckOutcomes = map[string]any{"pass": true, "violation": true}
-
-var prCheckStates = map[string]any{"open": true, "closed": true, "merged": true}
+var (
+	// Outcomes a completed, non-failed PR check can have.
+	prCheckOutcomes = []string{"violation", "pass"}
+	prCheckStates   = []string{"open", "merged", "closed"}
+)
 
 // github.com/<owner>/<repo>/pull/<number>
 var prURLRe = regexp.MustCompile(`^https://github\.com/([^/]+/[^/]+)/pull/(\d+)/?$`)
@@ -55,7 +58,7 @@ var prCheckListCmd = &cobra.Command{
 	Short: "List analyzed PRs with their outcome and flaws",
 	Example: `  konvu finding pr-check list --outcome violation
   konvu finding pr-check list --outcome pass --state merged --limit 30
-  konvu finding pr-check list --page 2 -q`,
+  konvu finding pr-check list --offset 50 -q`,
 	RunE: runPRCheckList,
 }
 
@@ -67,16 +70,25 @@ var prCheckGetCmd = &cobra.Command{
 	RunE:    runPRCheckGet,
 }
 
-func mapPRCheckError(err error) error {
-	if ae, ok := err.(*api.APIError); ok && (ae.StatusCode == 403 || ae.StatusCode == 404) {
-		return &clierrors.CLIError{
-			Message:    "PR checks are not available for this company.",
-			Suggestion: "Enable Guardrails CI on a repository in the Konvu console (Prevent), then retry.",
-		}
+func prCheckRequestError(err error) error {
+	if _, ok := err.(*api.AuthenticationError); ok {
+		return clierrors.NewAuthError(err.Error())
 	}
 	return &clierrors.CLIError{
-		Message:    fmt.Sprintf("pr-check: %v", err),
-		Suggestion: "Check auth with 'konvu auth whoami'.",
+		Code:       "PR_CHECK_REQUEST_FAILED",
+		Message:    "could not read PR checks",
+		Suggestion: "Check your company access and that Guardrails CI is enabled on a repository.",
+		Retryable:  true,
+		ExitCode:   clierrors.ExitGeneralError,
+	}
+}
+
+func prCheckUsageError(message, suggestion string) error {
+	return &clierrors.CLIError{
+		Code:       "INVALID_ARGUMENTS",
+		Message:    message,
+		Suggestion: suggestion,
+		ExitCode:   clierrors.ExitUsageError,
 	}
 }
 
@@ -89,22 +101,18 @@ func prCheckFilters(cmd *cobra.Command) (map[string]any, error) {
 	if since, _ := cmd.Flags().GetString("since"); since != "" {
 		t, err := parseClientDate(since)
 		if err != nil {
-			return nil, &clierrors.CLIError{Message: err.Error(), Suggestion: "Example: --since 30d"}
+			return nil, prCheckUsageError(err.Error(), "Example: --since 30d")
 		}
 		params["since"] = t.Format("2006-01-02T15:04:05Z")
 	}
 	return params, nil
 }
 
-// validValues rejects any value not in allowed, naming the flag.
-func validValues(flag string, values []string, allowed map[string]any) error {
+// validValues rejects the first value not in allowed, naming the flag.
+func validValues(flag string, values, allowed []string) error {
 	for _, v := range values {
-		if allowed[v] != nil {
-			continue
-		}
-		return &clierrors.CLIError{
-			Message:    fmt.Sprintf("invalid --%s value %q", flag, v),
-			Suggestion: fmt.Sprintf("Valid: %s.", strings.Join(sortedKeys(allowed), ", ")),
+		if !contains(allowed, v) {
+			return invalidValue(flag, v, allowed)
 		}
 	}
 	return nil
@@ -115,13 +123,13 @@ func runPRCheckCounts(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	params["per_page"] = 1
+	params["limit"] = 1
 
 	client := api.NewClient("", "")
 	defer client.Close()
 	resp, err := client.Get(prCheckReviewedPath, params)
 	if err != nil {
-		return mapPRCheckError(err)
+		return prCheckRequestError(err)
 	}
 
 	counts := getMap(resp, "counts")
@@ -179,26 +187,23 @@ func runPRCheckList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	limit, _ := cmd.Flags().GetInt("limit")
-	if limit < 1 || limit > prCheckMaxPerPage {
-		return &clierrors.CLIError{
-			Message:    fmt.Sprintf("--limit must be between 1 and %d", prCheckMaxPerPage),
-			Suggestion: "Use --page to read further.",
-		}
+	if limit < 1 || limit > prCheckMaxLimit {
+		return prCheckUsageError(fmt.Sprintf("--limit must be between 1 and %d", prCheckMaxLimit), "Use --offset to read further.")
 	}
-	page, _ := cmd.Flags().GetInt("page")
-	if page < 1 {
-		return &clierrors.CLIError{Message: "--page must be 1 or more"}
+	offset, _ := cmd.Flags().GetInt("offset")
+	if offset < 0 {
+		return prCheckUsageError("--offset cannot be negative", "Pass 0 or more.")
 	}
 	params["outcome"] = outcomes
 	params["state"] = states
-	params["per_page"] = limit
-	params["page"] = page
+	params["limit"] = limit
+	params["offset"] = offset
 
 	client := api.NewClient("", "")
 	defer client.Close()
 	resp, err := client.Get(prCheckReviewedPath, params)
 	if err != nil {
-		return mapPRCheckError(err)
+		return prCheckRequestError(err)
 	}
 
 	rows := []findings.Row{}
@@ -220,10 +225,10 @@ func runPRCheckGet(cmd *cobra.Command, args []string) error {
 	m := prURLRe.FindStringSubmatch(strings.TrimSpace(args[0]))
 	if m == nil {
 		// shortcut: GitHub PR URLs only; add GitLab merge-request URLs when a GitLab tenant enables PR checks.
-		return &clierrors.CLIError{
-			Message:    fmt.Sprintf("not a GitHub pull request URL: %q", args[0]),
-			Suggestion: "Example: konvu finding pr-check get https://github.com/acme/app/pull/42",
-		}
+		return prCheckUsageError(
+			fmt.Sprintf("not a GitHub pull request URL: %q", args[0]),
+			"Example: konvu finding pr-check get https://github.com/acme/app/pull/42",
+		)
 	}
 	number, _ := strconv.Atoi(m[2])
 
@@ -231,22 +236,24 @@ func runPRCheckGet(cmd *cobra.Command, args []string) error {
 	defer client.Close()
 
 	// The reviewed list resolves the repository id and the run the PR is judged on.
-	resp, err := client.Get(prCheckReviewedPath, map[string]any{"repository": m[1], "number": number, "per_page": 1})
+	resp, err := client.Get(prCheckReviewedPath, map[string]any{"repository": m[1], "number": number, "limit": 1})
 	if err != nil {
-		return mapPRCheckError(err)
+		return prCheckRequestError(err)
 	}
 	items := getSlice(resp, "items")
 	if len(items) == 0 {
 		return &clierrors.CLIError{
+			Code:       "PR_CHECK_NOT_FOUND",
 			Message:    fmt.Sprintf("no completed PR check for %s", args[0]),
 			Suggestion: "List analyzed PRs with 'konvu finding pr-check list'.",
+			ExitCode:   clierrors.ExitGeneralError,
 		}
 	}
 	pr, _ := items[0].(map[string]any)
 
 	runs, err := client.GetList(fmt.Sprintf(prCheckRunsPath, getStr(pr, "repository_id"), number), nil)
 	if err != nil {
-		return mapPRCheckError(err)
+		return prCheckRequestError(err)
 	}
 	return findings.Render(cmd, []findings.Row{prCheckReview(pr, runs)}, nil)
 }
@@ -260,7 +267,7 @@ func prCheckReview(pr map[string]any, runs []any) findings.Row {
 	baseSHA := ""
 	for _, r := range runs {
 		run, ok := r.(map[string]any)
-		if !ok || prCheckOutcomes[getStr(run, "outcome")] == nil {
+		if !ok || !contains(prCheckOutcomes, getStr(run, "outcome")) {
 			continue
 		}
 		history = append(history, map[string]any{
@@ -313,10 +320,10 @@ func addPRCheckFilterFlags(c *cobra.Command) {
 
 func addPRCheckListFlags(c *cobra.Command) {
 	addPRCheckFilterFlags(c)
-	c.Flags().StringSlice("outcome", nil, "Filter by outcome (repeatable): violation, pass")
-	c.Flags().StringSlice("state", nil, "Filter by PR state (repeatable): open, merged, closed")
-	c.Flags().IntP("limit", "n", 50, "Rows per page (max 100)")
-	c.Flags().Int("page", 1, "Page number")
+	c.Flags().StringSlice("outcome", nil, "Filter by outcome (repeatable): "+strings.Join(prCheckOutcomes, ", "))
+	c.Flags().StringSlice("state", nil, "Filter by PR state (repeatable): "+strings.Join(prCheckStates, ", "))
+	c.Flags().IntP("limit", "n", 50, fmt.Sprintf("Maximum PRs to return (max %d)", prCheckMaxLimit))
+	c.Flags().Int("offset", 0, "Skip N results")
 	c.Flags().BoolP("quiet", "q", false, "Print bare PR URLs, one per line")
 }
 

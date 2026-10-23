@@ -30,13 +30,13 @@ func prCheckServer(t *testing.T) *httptest.Server {
 		switch r.URL.Path {
 		case prCheckReviewedPath:
 			q := r.URL.Query()
-			if q.Get("per_page") == "30" && (strings.Join(q["outcome"], ",") != "pass" || q.Get("state") != "merged") {
+			if q.Get("limit") == "30" && (strings.Join(q["outcome"], ",") != "pass" || q.Get("state") != "merged" || q.Get("offset") != "60") {
 				t.Fatalf("list query = %v", q)
 			}
 			if q.Has("number") && (q.Get("repository") != "acme/app" || q.Get("number") != "42") {
 				t.Fatalf("get query = %v", q)
 			}
-			if q.Get("per_page") == "1" && !q.Has("number") && (q.Get("repository") != "acme/app" || !strings.HasPrefix(q.Get("since"), "20")) {
+			if q.Get("limit") == "1" && !q.Has("number") && (q.Get("repository") != "acme/app" || !strings.HasPrefix(q.Get("since"), "20")) {
 				t.Fatalf("counts query = %v", q)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -83,7 +83,7 @@ func TestPRCheckListAndGet(t *testing.T) {
 
 	listCmd := &cobra.Command{Use: "list", RunE: runPRCheckList}
 	addPRCheckListFlags(listCmd)
-	list := run(listCmd, "--outcome", "pass", "--state", "merged", "--limit", "30", "-q")
+	list := run(listCmd, "--outcome", "pass", "--state", "merged", "--limit", "30", "--offset", "60", "-q")
 	if strings.TrimSpace(list) != "https://github.com/acme/app/pull/42" {
 		t.Fatalf("list = %q", list)
 	}
