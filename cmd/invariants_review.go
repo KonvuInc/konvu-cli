@@ -58,8 +58,9 @@ for the next code analysis or rule change, nothing to repeat); still proposed me
 accepted yet, though the request may still be running, so check with 'konvu invariants get'
 before repeating it.
 
-Exit codes: 0 accepted, 1 general error (not a suggestion, changed meanwhile, or the request
-failed), 2 invalid id or flag, 3 invariant not found, 4 auth failed or refused`,
+Exit codes: 0 accepted, 1 general error (not a suggestion, changed meanwhile, cannot be
+accepted unchanged, or the request failed), 2 invalid id or flag, 3 invariant not found,
+4 auth failed or refused`,
 		Example: `  konvu invariants accept 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b --dry-run
   konvu invariants accept 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b`,
 		Args: cobra.ExactArgs(1),
@@ -88,7 +89,8 @@ request failed), 2 invalid id or flag, 3 invariant not found, 4 auth failed or r
 	return c
 }
 
-// invariantID checks the <id> argument is a UUID before it becomes part of a request path.
+// invariantID checks the <id> argument is a UUID before it becomes part of a request path, and
+// returns it in the dashed lowercase form the server answers with, so ids compare as equal.
 func invariantID(arg string) (string, error) {
 	id := strings.ToLower(strings.TrimSpace(arg))
 	if !uuidRe.MatchString(id) {
@@ -98,6 +100,9 @@ func invariantID(arg string) (string, error) {
 			Suggestion: "Pass an id from 'konvu invariants list': a UUID.",
 			ExitCode:   clierrors.ExitUsageError,
 		}
+	}
+	if len(id) == 32 {
+		id = id[:8] + "-" + id[8:12] + "-" + id[12:16] + "-" + id[16:20] + "-" + id[20:]
 	}
 	return id, nil
 }
@@ -214,7 +219,7 @@ func acceptOutcome(row map[string]any, id string, dryRun bool) error {
 		if dryRun {
 			verb = "would be added"
 		}
-		message = fmt.Sprintf("suggestion %s was no longer open (declined, or replaced by new suggestions) when the accept reached Konvu, so its wording %s as a new active rule (%s)", id, verb, other)
+		message = fmt.Sprintf("suggestion %s was no longer open (declined, or replaced by a rule pushed at its rank or by new suggestions) when the accept reached Konvu, so its wording %s as a new active rule (%s)", id, verb, other)
 	}
 	return &clierrors.CLIError{
 		Code:       "INVARIANT_CHANGED",
@@ -366,7 +371,7 @@ func invariantNotProposed(verb, id, status string) error {
 		message = fmt.Sprintf("invariant %s is already active (validated), by an earlier attempt or someone else; only a proposed one can be %s", id, verb)
 		suggestion = "Nothing to do. " + suggestion
 	case "retired":
-		suggestion = "Konvu replaced its suggestions since: run 'konvu invariants list --status proposed' and look for the same wording under a new id."
+		suggestion = "It was replaced, by a rule pushed at its rank or by new suggestions: run 'konvu invariants list' and look for the same wording under a new id."
 	}
 	return &clierrors.CLIError{
 		Code:       "INVARIANT_NOT_PROPOSED",

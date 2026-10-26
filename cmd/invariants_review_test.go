@@ -173,6 +173,17 @@ func TestInvariantsListKeepsOnlyTheAskedStatus(t *testing.T) {
 	}
 }
 
+func TestInvariantsListWithNoMatchPrintsAnEmptyArray(t *testing.T) {
+	reviewServer(t, map[string][]invariantReply{"GET " + invariantsPath: {{200, []any{oneInvariant("validated")}}}})
+	out, err := runInvariants(newInvariantsListCmd(), "--status", "proposed", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != "[]" {
+		t.Fatalf("out = %q, want []", out)
+	}
+}
+
 func TestInvariantsListRefusesAnUnknownStatus(t *testing.T) {
 	reviewServer(t, nil)
 	_, err := runInvariants(newInvariantsListCmd(), "--status", "declined")
@@ -235,8 +246,12 @@ func TestInvariantsGetTableSummarizesControlsAndSteering(t *testing.T) {
 
 func TestInvariantsGetStripsTerminalEscapes(t *testing.T) {
 	inv := oneInvariant("proposed")
+	inv["statement"] = "Tokens\x1b[2J never leak."
 	inv["why_it_matters"] = "fine\x1b[1A\x1b[2KStatus:    validated (active)"
-	getMap(inv, "steering")["recent"] = []any{steeredEdit("2026-10-20T09:00:00Z", "claude-code", "app/\x1b]52;c;aGk=\x07x.py")}
+	getSlice(inv, "controls")[0].(map[string]any)["title"] = "Redact\x1b[31m tokens"
+	steering := getMap(inv, "steering")
+	steering["agents"] = []any{map[string]any{"name": "evil\x1b]0;pwned\x07agent", "count": 3}}
+	steering["recent"] = []any{steeredEdit("2026-10-20T09:00:00Z", "claude-code", "app/\x1b]52;c;aGk=\x07x.py")}
 	reviewServer(t, map[string][]invariantReply{invariantRoute("GET"): {{200, inv}}})
 	out, err := runInvariants(newInvariantsGetCmd(), testInvariantID, "-o", "table")
 	if err != nil {
@@ -244,6 +259,38 @@ func TestInvariantsGetStripsTerminalEscapes(t *testing.T) {
 	}
 	if strings.ContainsAny(out, "\x1b\x07") {
 		t.Fatalf("control characters reached the terminal: %q", out)
+	}
+	for _, want := range []string{"Tokens [2J never leak.", "Redact [31m tokens", "evil ]0;pwned agent (3)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}
+
+// The accept and decline tables print the statement the server sends back.
+func TestInvariantDecisionTablesStripTerminalEscapes(t *testing.T) {
+	accepted := uploaded("validated", "validated")
+	accepted["invariants"].([]any)[0].(map[string]any)["statement"] = "Tokens\x1b[2J never leak."
+	declined := oneInvariant("declined")
+	declined["statement"] = "Tokens\x1b[2J never leak."
+	reviewServer(t, map[string][]invariantReply{
+		invariantRoute("GET"):              {{200, oneInvariant("proposed")}},
+		"POST " + invariantsPath:           {{201, accepted}},
+		invariantRoute("POST", "/decline"): {{200, declined}},
+	})
+	for name, run := range map[string]func() (string, error){
+		"accept": func() (string, error) { return runInvariants(newInvariantsAcceptCmd(), testInvariantID, "-o", "table") },
+		"decline": func() (string, error) {
+			return runInvariants(newInvariantsDeclineCmd(), testInvariantID, "-o", "table")
+		},
+	} {
+		out, err := run()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if strings.ContainsAny(out, "\x1b") || !strings.Contains(out, "Tokens [2J never leak.") {
+			t.Errorf("%s: out = %q", name, out)
+		}
 	}
 }
 
@@ -257,6 +304,19 @@ func TestInvariantsGetWithoutSteeringSaysSo(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out, "none mapped yet") || !strings.Contains(out, "Agent steering: not reported") {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+func TestInvariantsGetNeverSteeredSaysNever(t *testing.T) {
+	inv := oneInvariant("validated")
+	inv["steering"] = map[string]any{"days": 30, "edits": 0, "last_at": nil, "agents": []any{}, "recent": []any{}}
+	reviewServer(t, map[string][]invariantReply{invariantRoute("GET"): {{200, inv}}})
+	out, err := runInvariants(newInvariantsGetCmd(), testInvariantID, "-o", "table")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Agent steering (last 30 days): 0 edits, last never\n") || strings.Contains(out, "Recent edits") {
 		t.Fatalf("out = %q", out)
 	}
 }
@@ -338,6 +398,25 @@ func TestInvariantsAcceptUploadsTheSuggestionUnchanged(t *testing.T) {
 	}
 }
 
+// The server answers with the dashed id, so an undashed or uppercase one must still match it.
+func TestInvariantsAcceptTakesAnUndashedID(t *testing.T) {
+	undashed := strings.ToUpper(strings.ReplaceAll(testInvariantID, "-", ""))
+	_, calls := reviewServer(t, map[string][]invariantReply{
+		invariantRoute("GET"):    {{200, oneInvariant("proposed")}, {200, oneInvariant("proposed")}},
+		"POST " + invariantsPath: {{201, uploaded("validated", "validated")}, {201, uploaded("unchanged", "validated")}},
+	})
+	if _, err := runInvariants(newInvariantsAcceptCmd(), undashed, "-o", "json"); err != nil {
+		t.Fatalf("err = %#v", err)
+	}
+	if got := calls()[0].path; got != invariantsPath+"/"+testInvariantID {
+		t.Fatalf("read %s, want the dashed id", got)
+	}
+	_, err := runInvariants(newInvariantsAcceptCmd(), undashed)
+	if e := cliErrorOf(t, err); e.Code != "INVARIANT_NOT_PROPOSED" {
+		t.Fatalf("unchanged on the same id: err = %#v", e)
+	}
+}
+
 func TestInvariantsAcceptDryRunWritesNothing(t *testing.T) {
 	dry := uploaded("validated", "validated")
 	dry["dry_run"] = true
@@ -361,15 +440,32 @@ func TestInvariantsAcceptDryRunWritesNothing(t *testing.T) {
 	if e := cliErrorOf(t, err); !e.Retryable || !strings.Contains(e.Suggestion, "writes nothing") {
 		t.Fatalf("err = %#v", e)
 	}
+
+	// Nor is a dry run whose connection dropped.
+	_, calls = reviewServer(t, map[string][]invariantReply{
+		invariantRoute("GET"):    {{200, oneInvariant("proposed")}},
+		"POST " + invariantsPath: {{dropConnection, nil}},
+	})
+	_, err = runInvariants(newInvariantsAcceptCmd(), testInvariantID, "--dry-run")
+	if e := cliErrorOf(t, err); !e.Retryable || !strings.Contains(e.Suggestion, "writes nothing") {
+		t.Fatalf("err = %#v", e)
+	}
+	if n := len(calls()); n != 2 {
+		t.Fatalf("%d calls, want no read-back", n)
+	}
 }
 
 func TestInvariantsAcceptRefusesWhatIsNotASuggestion(t *testing.T) {
-	for _, status := range []string{"validated", "declined"} {
+	for _, status := range []string{"validated", "declined", "retired"} {
 		_, calls := reviewServer(t, map[string][]invariantReply{invariantRoute("GET"): {{200, oneInvariant(status)}}})
 		_, err := runInvariants(newInvariantsAcceptCmd(), testInvariantID)
 		e := cliErrorOf(t, err)
 		if e.Code != "INVARIANT_NOT_PROPOSED" || e.ExitCode != clierrors.ExitGeneralError || !strings.Contains(e.Message, status) {
 			t.Fatalf("%s: err = %#v", status, e)
+		}
+		// Once a rule is active Konvu stops suggesting, so a retired one was mostly replaced by a pushed rule.
+		if status == "retired" && (!strings.Contains(e.Suggestion, "pushed at its rank") || strings.Contains(e.Suggestion, "--status proposed")) {
+			t.Fatalf("retired: suggestion %q", e.Suggestion)
 		}
 		if n := len(calls()); n != 1 {
 			t.Fatalf("%s: %d calls, want only the read", status, n)
@@ -400,7 +496,7 @@ func TestInvariantsAcceptAfterAServerErrorReadsTheOutcomeBack(t *testing.T) {
 	}
 
 	// Still proposed after a timeout: not accepted yet, and the request may still be running.
-	for _, failure := range []invariantReply{{504, detail("service_timeout")}, {dropConnection, nil}} {
+	for _, failure := range []invariantReply{{500, detail("Internal Server Error")}, {504, detail("service_timeout")}, {dropConnection, nil}} {
 		_, calls = reviewServer(t, map[string][]invariantReply{
 			invariantRoute("GET"):    {{200, oneInvariant("proposed")}, {200, oneInvariant("proposed")}},
 			"POST " + invariantsPath: {failure},
@@ -487,19 +583,25 @@ func TestInvariantsAcceptRefusesAnUploadThatLandedElsewhere(t *testing.T) {
 	dryCreated["invariants"].([]any)[0].(map[string]any)["id"] = nil
 	elsewhere := uploaded("validated", "validated")
 	elsewhere["invariants"].([]any)[0].(map[string]any)["id"] = otherInvariantID
+	activeElsewhere := uploaded("unchanged", "validated")
+	activeElsewhere["invariants"].([]any)[0].(map[string]any)["id"] = otherInvariantID
+	noRows := map[string]any{"dry_run": false, "invariants": []any{}}
 
 	for _, tc := range []struct {
-		name    string
-		resp    map[string]any
-		args    []string
-		code    string
-		message string
-		written bool
+		name       string
+		resp       map[string]any
+		args       []string
+		code       string
+		message    string
+		suggestion string
 	}{
-		{"declined meanwhile", created, nil, "INVARIANT_CHANGED", otherInvariantID, true},
-		{"declined meanwhile, dry run", dryCreated, []string{"--dry-run"}, "INVARIANT_CHANGED", "would be added", false},
-		{"accepted meanwhile", uploaded("unchanged", "validated"), nil, "INVARIANT_NOT_PROPOSED", "already active", false},
-		{"same wording elsewhere", elsewhere, nil, "INVARIANT_CHANGED", otherInvariantID, true},
+		{"declined meanwhile", created, nil, "INVARIANT_CHANGED", otherInvariantID, "It is active now"},
+		{"declined meanwhile, dry run", dryCreated, []string{"--dry-run"}, "INVARIANT_CHANGED", "would be added", "Nothing was written"},
+		{"accepted meanwhile", uploaded("unchanged", "validated"), nil, "INVARIANT_NOT_PROPOSED", "already active", "Nothing to do"},
+		{"same wording elsewhere", elsewhere, nil, "INVARIANT_CHANGED", otherInvariantID, "It is active now"},
+		{"same wording already active elsewhere", activeElsewhere, nil, "INVARIANT_CHANGED", otherInvariantID, "Nothing was written"},
+		{"unexpected result", uploaded("merged", "validated"), nil, "API_ERROR", "unexpected result", "konvu invariants get"},
+		{"no result", noRows, nil, "API_ERROR", "0 results", "konvu invariants get"},
 	} {
 		reviewServer(t, map[string][]invariantReply{
 			invariantRoute("GET"):    {{200, oneInvariant("proposed")}},
@@ -513,8 +615,8 @@ func TestInvariantsAcceptRefusesAnUploadThatLandedElsewhere(t *testing.T) {
 		if strings.Contains(e.Message, "(id )") || strings.Contains(e.Message, "id ,") {
 			t.Errorf("%s: names an empty id: %q", tc.name, e.Message)
 		}
-		if got := strings.Contains(e.Suggestion, "It is active now"); got != tc.written {
-			t.Errorf("%s: suggestion %q, written = %v", tc.name, e.Suggestion, tc.written)
+		if !strings.Contains(e.Suggestion, tc.suggestion) {
+			t.Errorf("%s: suggestion %q, want %q", tc.name, e.Suggestion, tc.suggestion)
 		}
 	}
 }
@@ -547,11 +649,14 @@ func TestInvariantsDeclineMapsRefusals(t *testing.T) {
 		{"unknown", invariantReply{404, detail("no such invariant for this company")}, "INVARIANT_NOT_FOUND", clierrors.ExitNotFound, false},
 		{"not a person", invariantReply{403, detail("An attributed user identity is required.")}, "FORBIDDEN", clierrors.ExitAuthFailed, false},
 		{"server", invariantReply{502, detail("service_proxy_error")}, "API_ERROR", clierrors.ExitGeneralError, true},
+		{"lost connection", invariantReply{dropConnection, nil}, "API_ERROR", clierrors.ExitGeneralError, true},
 	} {
 		reviewServer(t, map[string][]invariantReply{invariantRoute("POST", "/decline"): {tc.reply}})
 		_, err := runInvariants(newInvariantsDeclineCmd(), testInvariantID)
 		e := cliErrorOf(t, err)
-		if e.Code != tc.code || e.ExitCode != tc.exit || e.Retryable != tc.retryable || !strings.Contains(e.Message, tc.reply.body.(map[string]any)["detail"].(string)) {
+		body, _ := tc.reply.body.(map[string]any)
+		want, _ := body["detail"].(string)
+		if e.Code != tc.code || e.ExitCode != tc.exit || e.Retryable != tc.retryable || !strings.Contains(e.Message, want) {
 			t.Errorf("%s: err = %#v", tc.name, e)
 		}
 		if tc.retryable && !strings.Contains(e.Suggestion, "safe to repeat") {

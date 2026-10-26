@@ -237,9 +237,9 @@ func invariantsListError(err error) error {
 	return clierrors.NewAPIError(err.Error())
 }
 
-// invariantDetail is the server's own reason for refusing a call.
+// invariantDetail is the server's own reason for refusing a call, fit for a terminal.
 func invariantDetail(apiErr *api.APIError) string {
-	return api.ServerDetail([]byte(strings.TrimPrefix(apiErr.Message, "API error: ")))
+	return sanitizeGuardrailsBaselineText(api.ServerDetail([]byte(strings.TrimPrefix(apiErr.Message, "API error: "))))
 }
 
 // invariantsPushError maps a refused push to its next step. It never claims the push was
