@@ -651,13 +651,27 @@ For hosted profiles, `show` exits 3 (not found) when the repository has not been
 Security invariants are the rules your code must never break, written in your words. Konvu maps each one to the controls in your code that keep it true and enforces it on every change. Aliased as `konvu invariant`.
 
 ```bash
-# Your company's live invariants, by rank
+# Your company's live invariants, by rank: Konvu's suggestions (proposed) and the active ones (validated)
 konvu invariants list
+konvu invariants list --status proposed
+
+# One invariant: its controls with their code anchors, and how Konvu steered coding agents with it
+konvu invariants get <id>
+konvu invariants get <id> -o json
 
 # Add the ones you wrote: check on the server first, then write
 konvu invariants push --file invariants.json --dry-run
 konvu invariants push --file invariants.json
+
+# Decide on a suggestion: accept it (it becomes active, attributed to you) or decline it
+konvu invariants accept <id> --dry-run
+konvu invariants accept <id>
+konvu invariants decline <id>
 ```
+
+`<id>` is an invariant's UUID, as `konvu invariants list` prints it (with or without dashes, any case); anything else exits 2 before any request. `list` exits 2 for an unknown `--status`, 4 when you are not signed in or your login has no company, 1 when the request failed. `get` exits 3 when the id is not one of your company's invariants, 4 when you are not signed in or your login has no company, 1 when the request failed.
+
+`accept` sends a `proposed` invariant unchanged, and it keeps its rank; to change its wording first, push the edited rule at the suggestion's rank instead, which replaces it. Only a suggestion is accepted: when it stopped being one before the accept reached Konvu (accepted, declined or replaced meanwhile), `accept` exits 1 and says what was written, if anything. When the server fails, `accept` reads the invariant back: `validated` means it is active (`"mapping_pending": true` in JSON: its mapping to controls may wait for the next code analysis or rule change, nothing to repeat); still `proposed` means not accepted yet, though the request may still be running, so check with `get` before repeating it. `decline` drops a `proposed` invariant for good; one already declined exits 0, so repeating it is safe. Exit codes for both: 1 when the invariant is not a suggestion (`accept`: already active, declined or retired; `decline`: active or retired), changed meanwhile, cannot be accepted unchanged (`accept`: the server refused its text; push an edited version instead), or the request failed; 2 for a malformed id; 3 when it is not one of your company's invariants; 4 when you are not signed in, or not as a person.
 
 `push` reads a JSON array (or `{"invariants": [...]}`) of 1 to 10 invariants, each with `statement`, `why_it_matters` and `property`, and optionally `rank`, `repository_id` and `protected_assets`; `konvu invariants push --help` lists the fields. They are stored as validated and attributed to you. A statement already live comes back `unchanged` (or `validated` if it was a proposal), so a push is safe to repeat. Exit codes: 2 when the invariants are malformed, 3 when `repository_id` is not one of your repositories, 4 when you are not signed in as a person, 1 when a rank is unavailable or the request failed (run the same push again: it is safe to repeat).
 
@@ -738,11 +752,14 @@ konvu skills install
 
 Skills are installed to `~/.claude/skills/` where Claude Code discovers them automatically — no configuration needed.
 
-Security rules (invariants) come as three skills:
+Security rules (invariants) and PR checks come as these skills:
 
 - `/konvu-onboarding` — a short welcome, then your first security rule with `konvu-invariants`, then how Konvu enforces it
 - `/konvu-invariants` — pick a repo and a theme, draft the rule that matters most, shape it together, then save it
 - `/konvu-upload-invariants` — save security rules you wrote with `konvu invariants push`, after a server-side dry run
+- `/konvu-decide-suggestions` — go through the rules Konvu suggested, checked against your code, then accept or decline the ones you pick
+- `/konvu-audit-rules` — read-only audit of your active rules (all, or the ids you give): where each is enforced, its gaps, agent steering and PR check outcomes
+- `/konvu-review-pr-checks` — read-only review of what Konvu's PR check found, on every analyzed PR or on one PR URL
 
 To check the skills directory:
 

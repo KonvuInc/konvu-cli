@@ -41,6 +41,21 @@ All commands support:
 | 3 | Not found |
 | 4 | Authentication failed |
 
+## Security rules and PR checks
+
+```bash
+konvu invariants list [--status proposed|validated|all]  # Security rules, by rank
+konvu invariants get <id>                    # One rule: controls, code anchors, agent steering
+konvu invariants push --file rules.json [--dry-run]      # Add rules you wrote
+konvu invariants accept <id> [--dry-run]     # Accept a suggested rule, making it active
+konvu invariants decline <id>                # Decline a suggested rule
+konvu finding pr-check counts                # What Konvu's PR check analyzed
+konvu finding pr-check list [--outcome violation|pass]   # Analyzed PRs and their flaws
+konvu finding pr-check get <pr-url>          # One PR's flaws: attack path, evidence
+```
+
+`accept` and `decline` act only on a suggestion (`proposed`): accept exits 1 for anything else, decline for an active or retired one (an already declined one exits 0). A malformed id exits 2, an unknown one 3.
+
 ## Tips
 
 - Pipe with `-o json` for structured output: `konvu finding list -o json | jq '.findings[]'`

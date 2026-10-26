@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-//go:embed konvu-shared recipe-weekly-triage guardrails-onboarding konvu-onboarding konvu-invariants konvu-upload-invariants
+//go:embed konvu-shared recipe-weekly-triage guardrails-onboarding konvu-onboarding konvu-invariants konvu-upload-invariants konvu-decide-suggestions konvu-audit-rules konvu-review-pr-checks
 var embedded embed.FS
 
 // SkillDir pairs an embed directory name with its install directory name, and carries what the
@@ -69,6 +69,30 @@ var skillDirs = []SkillDir{
 		InstallName: "konvu-upload-invariants",
 		Pitch: []string{
 			"  Save security rules you wrote to Konvu. Run it with: /konvu-upload-invariants",
+		},
+	},
+	{
+		EmbedName:   "konvu-decide-suggestions",
+		InstallName: "konvu-decide-suggestions",
+		Pitch: []string{
+			"  Decide on the security rules Konvu suggested: checked against your code,",
+			"  then accepted or declined as you pick. Run it with: /konvu-decide-suggestions",
+		},
+	},
+	{
+		EmbedName:   "konvu-audit-rules",
+		InstallName: "konvu-audit-rules",
+		Pitch: []string{
+			"  Audit how your code enforces your active security rules, and where it",
+			"  doesn't (read-only). Run it with: /konvu-audit-rules",
+		},
+	},
+	{
+		EmbedName:   "konvu-review-pr-checks",
+		InstallName: "konvu-review-pr-checks",
+		Pitch: []string{
+			"  Review what Konvu's PR check found on your pull requests, or on one PR",
+			"  (read-only). Run it with: /konvu-review-pr-checks",
 		},
 	},
 }

@@ -119,7 +119,11 @@ const helpAllFooter = `EXAMPLES
   konvu inventory show github:org/repo -o json
   konvu inventory -q | xargs -n1 konvu inventory show
   konvu invariants list
+  konvu invariants list --status proposed -o json
+  konvu invariants get <id> -o json
   konvu invariants push --file invariants.json --dry-run
+  konvu invariants accept <id> --dry-run
+  konvu invariants decline <id>
 
 OUTPUT FORMATS
   Most commands support: -o json (structured), -o table (human), -o csv (finding list only)
