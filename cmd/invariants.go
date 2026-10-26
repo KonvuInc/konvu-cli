@@ -16,6 +16,9 @@ import (
 
 const invariantsPath = "/services/guardrails/v1/prevent/invariants"
 
+// invariantListStatuses are the values `list --status` takes; "all" keeps every live invariant.
+var invariantListStatuses = []string{"all", "proposed", "validated"}
+
 var invariantsCmd = &cobra.Command{
 	Use:     "invariants",
 	Aliases: []string{"invariant"},
@@ -28,10 +31,16 @@ func newInvariantsListCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "list",
 		Short: "List your company's live invariants, by rank",
+		Long: `List your company's live invariants, by rank: the ones Konvu suggested (proposed) and the
+active ones (validated). --status keeps only one of the two.
+
+Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed or refused`,
 		Example: `  konvu invariants list
+  konvu invariants list --status proposed
   konvu invariants list -o json`,
 		RunE: runInvariantsList,
 	}
+	c.Flags().String("status", "all", "Which invariants: proposed (suggested by Konvu), validated (active) or all")
 	c.Flags().StringP("output", "o", "", "Output format: json, table")
 	return c
 }
@@ -72,12 +81,19 @@ func runInvariantsList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	status, _ := cmd.Flags().GetString("status")
+	if err := validValues("status", []string{status}, invariantListStatuses); err != nil {
+		return err
+	}
 
 	client := api.NewClient("", "")
 	defer client.Close()
 	items, err := client.GetList(invariantsPath, nil)
 	if err != nil {
 		return invariantsListError(err)
+	}
+	if status != "all" {
+		items = invariantsWithStatus(items, status)
 	}
 	if format == output.JSON {
 		fmt.Fprintln(cmd.OutOrStdout(), output.FormatJSON(items))
@@ -92,11 +108,25 @@ func runInvariantsList(cmd *cobra.Command, args []string) error {
 			"property":  getStr(m, "property"),
 			"status":    getStr(m, "status"),
 			"controls":  len(getSlice(m, "controls")),
+			"id":        getStr(m, "id"),
 		})
 	}
-	cols := []string{"rank", "statement", "property", "status", "controls"}
+	// The id goes last: the last column is never truncated, and get, accept and decline take it.
+	cols := []string{"rank", "statement", "property", "status", "controls", "id"}
 	fmt.Fprint(cmd.OutOrStdout(), output.FormatTable(map[string]any{"invariants": rows}, cols, "invariants", nil))
 	return nil
+}
+
+// invariantsWithStatus keeps the listed invariants whose status is status. The list is never
+// paginated, so filtering it here sees every invariant.
+func invariantsWithStatus(items []any, status string) []any {
+	kept := make([]any, 0, len(items))
+	for _, item := range items {
+		if m, ok := item.(map[string]any); ok && getStr(m, "status") == status {
+			kept = append(kept, item)
+		}
+	}
+	return kept
 }
 
 func runInvariantsPush(cmd *cobra.Command, args []string) error {
@@ -185,7 +215,8 @@ func readInvariantsFile(path string) ([]any, error) {
 	return nil, errors.New(`expected a non-empty JSON array of invariants, or {"invariants": [...]}`)
 }
 
-// invariantsListError maps a failed list: nothing list-specific to explain beyond auth.
+// invariantsListError maps a failed read: no session or a refused caller (exit 4), anything
+// else a general error.
 func invariantsListError(err error) error {
 	var authErr *api.AuthenticationError
 	if errors.As(err, &authErr) {
@@ -193,9 +224,22 @@ func invariantsListError(err error) error {
 	}
 	var apiErr *api.APIError
 	if errors.As(err, &apiErr) {
-		return clierrors.NewAPIError(api.ServerDetail([]byte(strings.TrimPrefix(apiErr.Message, "API error: "))))
+		if apiErr.StatusCode == 403 {
+			return &clierrors.CLIError{
+				Code:       "FORBIDDEN",
+				Message:    invariantDetail(apiErr),
+				Suggestion: "Run 'konvu whoami' to check who you are signed in as, and for which company.",
+				ExitCode:   clierrors.ExitAuthFailed,
+			}
+		}
+		return clierrors.NewAPIError(invariantDetail(apiErr))
 	}
 	return clierrors.NewAPIError(err.Error())
+}
+
+// invariantDetail is the server's own reason for refusing a call.
+func invariantDetail(apiErr *api.APIError) string {
+	return api.ServerDetail([]byte(strings.TrimPrefix(apiErr.Message, "API error: ")))
 }
 
 // invariantsPushError maps a refused push to its next step. It never claims the push was
@@ -215,7 +259,7 @@ func invariantsPushError(err error, invariants []any) error {
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	}
-	detail := api.ServerDetail([]byte(strings.TrimPrefix(apiErr.Message, "API error: ")))
+	detail := invariantDetail(apiErr)
 	switch {
 	case apiErr.StatusCode == 403:
 		return &clierrors.CLIError{
@@ -269,6 +313,12 @@ func anyRepositoryID(invariants []any) bool {
 }
 
 func init() {
-	invariantsCmd.AddCommand(newInvariantsListCmd(), newInvariantsPushCmd())
+	invariantsCmd.AddCommand(
+		newInvariantsListCmd(),
+		newInvariantsGetCmd(),
+		newInvariantsPushCmd(),
+		newInvariantsAcceptCmd(),
+		newInvariantsDeclineCmd(),
+	)
 	rootCmd.AddCommand(invariantsCmd)
 }
