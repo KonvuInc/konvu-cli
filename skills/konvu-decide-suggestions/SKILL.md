@@ -24,16 +24,21 @@ Open your first message with two short lines, in your own words: Konvu drafts su
 
 ## Flow
 
-1. `konvu invariants list --status proposed`. If there are none, say so in one line and stop. If the user named one rule (an id), work on that one only.
+1. `konvu invariants list --status proposed`. If there are none, say so in one line and stop. If the user named some (a dashboard prompt lists them as `id: statement`), work on those only.
 2. For each, `konvu invariants get <id>`. Explain it in two plain sentences: what it means for the code, and what it would catch on a pull request.
-3. Read the code in its repository and check that the rule holds today. Start from its controls' code anchors (`decl` is file:line). Cite file:line for the code that keeps it true, and for any place that already breaks it.
+3. Read the code and check that the rule holds today. Start from its controls' code anchors (`decl` is `path#symbol`: open the file and find the symbol); controls can come from several repositories, so use the ones whose files are in this checkout. Cite file:line for the code that keeps it true, and for any place that already breaks it.
 4. Recommend accept or decline, with a one-line reason. If a small wording change would make a rule accurate, say so: accept takes a suggestion as it is, so an edited rule is saved with /konvu-upload-invariants instead, at the suggestion's rank, where it replaces the suggestion.
 5. Show a table (rank, rule, what it means, your recommendation, evidence), ask which to accept and which to decline, and **wait** for the user's pick. Never decide on their behalf: no answer, a vague one, or "whatever you think" is not a pick; ask again, by rank.
 6. For exactly the ones the user picked, and nothing else: `konvu invariants accept <id>` or `konvu invariants decline <id>`. Leave the others as they are. Report one line each: accepted (now active), declined, or what went wrong.
 
 ## When a decision fails
 
-- Refused because it is no longer a suggestion (already active, or declined): someone decided on it meanwhile. Report it, don't retry.
+Report it to the user in one line. Never work around it on your own (no push, no edited wording) without their say.
+
+- **No longer a suggestion.** Already active: it was accepted (by an earlier attempt or someone else). Declined: someone declined it. Retired: Konvu replaced its suggestions since; run step 1 again, find the same wording under its new id, and ask the user before deciding on that one.
+- **Changed meanwhile** (`INVARIANT_CHANGED`): the message says what was written, if anything. Report it as is.
+- **Cannot be accepted unchanged** (`INVARIANT_NOT_ACCEPTED`): show the reason, and offer to save an edited version with /konvu-upload-invariants.
+- **Unconfirmed** (`ACCEPT_UNCONFIRMED`): wait a minute and `get` it. Validated means accepted; still proposed means run the accept once more.
 - `"mapping_pending": true` in accept's output: it is accepted, and Konvu maps it to controls at the next code analysis or rule change. Don't accept it again.
 - Exit 3: it is not one of the company's rules any more. Exit 4: log in again, or the login is not a person's (a decision is attributed to a person).
-- Any other error: follow its suggestion. When it says the command is safe to repeat, run it once more.
+- Any other error: report it; run the command once more only when its suggestion says it is safe to repeat.

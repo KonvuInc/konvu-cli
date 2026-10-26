@@ -29,7 +29,7 @@ konvu finding pr-check get <pr-url>   the flaw: attack path, protections checked
 gh api repos/<repo>/compare/<pr.base_sha>...<pr.head_sha>   the diff Konvu checked
 ```
 
-`list` returns at most 100 PRs per call: page with `--offset` when there are more.
+`list` returns 50 PRs by default and at most 100: pass `--limit 100` and page with `--offset` until a page comes back with fewer than 100, then check the total against `counts`. `compare` lists at most 300 changed files: on a bigger PR, say the diff you judged was partial.
 
 ## One PR
 

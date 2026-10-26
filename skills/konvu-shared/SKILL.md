@@ -54,7 +54,7 @@ konvu finding pr-check list [--outcome violation|pass]   # Analyzed PRs and thei
 konvu finding pr-check get <pr-url>          # One PR's flaws: attack path, evidence
 ```
 
-`accept` and `decline` take only a suggestion (`proposed`); anything else exits 1. A malformed id exits 2, an unknown one 3.
+`accept` and `decline` act only on a suggestion (`proposed`): accept exits 1 for anything else, decline for an active or retired one (an already declined one exits 0). A malformed id exits 2, an unknown one 3.
 
 ## Tips
 

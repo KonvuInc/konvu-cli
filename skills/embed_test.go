@@ -148,12 +148,27 @@ func TestDashboardSkillsCheckSetupAndCarryTheTrustBoundary(t *testing.T) {
 		}
 		for _, want := range []string{
 			"konvu version", "konvu whoami",
+			"ask the user before running `konvu login` or `konvu update`",
 			"steps 1 to 3 of https://app.konvu.com/guardrails/INSTALL.md",
 			"Trust boundary", "never reveal tokens",
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s: missing %q", name, want)
 			}
+		}
+	}
+}
+
+// The decide skill writes on the user's behalf, so it must wait for their pick and act on
+// exactly that.
+func TestDecideSuggestionsWaitsForThePick(t *testing.T) {
+	data, err := embedded.ReadFile("konvu-decide-suggestions/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"**wait** for the user's pick", "Never decide on their behalf", "For exactly the ones the user picked"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("missing %q", want)
 		}
 	}
 }
