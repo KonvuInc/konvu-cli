@@ -19,6 +19,8 @@ const (
 	prCheckReviewedPath = prCheckBase + "/pull-requests/reviewed"
 	prCheckRunsPath     = prCheckBase + "/pull-requests/%s/%d/runs"
 	prCheckMaxLimit     = 100
+	// Only findings judged to be security flaws; other defects stay in the PR comment.
+	prCheckFindingScope = "security"
 )
 
 var (
@@ -94,7 +96,7 @@ func prCheckUsageError(message, suggestion string) error {
 
 // prCheckFilters reads the filters shared by counts and list.
 func prCheckFilters(cmd *cobra.Command) (map[string]any, error) {
-	params := map[string]any{}
+	params := map[string]any{"findings": prCheckFindingScope}
 	if repo, _ := cmd.Flags().GetString("repo"); repo != "" {
 		params["repository"] = repo
 	}
@@ -236,7 +238,7 @@ func runPRCheckGet(cmd *cobra.Command, args []string) error {
 	defer client.Close()
 
 	// The reviewed list resolves the repository id and the run the PR is judged on.
-	resp, err := client.Get(prCheckReviewedPath, map[string]any{"repository": m[1], "number": number, "limit": 1})
+	resp, err := client.Get(prCheckReviewedPath, map[string]any{"repository": m[1], "number": number, "limit": 1, "findings": prCheckFindingScope})
 	if err != nil {
 		return prCheckRequestError(err)
 	}
@@ -251,7 +253,7 @@ func runPRCheckGet(cmd *cobra.Command, args []string) error {
 	}
 	pr, _ := items[0].(map[string]any)
 
-	runs, err := client.GetList(fmt.Sprintf(prCheckRunsPath, getStr(pr, "repository_id"), number), nil)
+	runs, err := client.GetList(fmt.Sprintf(prCheckRunsPath, getStr(pr, "repository_id"), number), map[string]any{"findings": prCheckFindingScope})
 	if err != nil {
 		return prCheckRequestError(err)
 	}

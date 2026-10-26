@@ -27,6 +27,10 @@ func prCheckServer(t *testing.T) *httptest.Server {
 		"findings":      []any{"Member reads another workspace"},
 	}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Every PR check read asks for security findings only.
+		if r.URL.Query().Get("findings") != prCheckFindingScope {
+			t.Fatalf("findings scope = %q on %s", r.URL.Query().Get("findings"), r.URL.Path)
+		}
 		switch r.URL.Path {
 		case prCheckReviewedPath:
 			q := r.URL.Query()
