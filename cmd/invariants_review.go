@@ -46,15 +46,17 @@ func newInvariantsAcceptCmd() *cobra.Command {
 		Long: `Accept a proposed invariant, a security rule Konvu suggested: it becomes validated (active),
 attributed to you, and Konvu checks every change against it.
 
-The suggestion is sent unchanged, at its rank. To change its wording first, write the edited
-rule to a file and add it at the same rank with 'konvu invariants push': it replaces the
-suggestion. Only a proposed invariant can be accepted. --dry-run checks it on the server and
-writes nothing.
+The suggestion is sent unchanged and keeps its rank. To change its wording first, write the
+edited rule to a file and add it at the suggestion's rank with 'konvu invariants push': it
+replaces the suggestion. --dry-run checks it on the server and writes nothing.
 
-When the request fails on the server's side, accept reads the invariant back to say whether
-it landed: validated means accepted (Konvu maps it to controls at the next code analysis or
-rule change, nothing to repeat), proposed means nothing was written and the same accept is
-safe to repeat.
+Only a proposed invariant is accepted. If it stopped being one before the accept reached Konvu
+(accepted, declined or replaced meanwhile), accept exits 1 and says what was written, if
+anything. When the request fails on the server's side, accept reads the invariant back:
+validated means it is active ("mapping_pending": true in JSON: its mapping to controls may wait
+for the next code analysis or rule change, nothing to repeat); still proposed means not
+accepted yet, though the request may still be running, so check with 'konvu invariants get'
+before repeating it.
 
 Exit codes: 0 accepted, 1 general error (not a suggestion, changed meanwhile, or the request
 failed), 2 invalid id or flag, 3 invariant not found, 4 auth failed or refused`,
@@ -73,11 +75,11 @@ func newInvariantsDeclineCmd() *cobra.Command {
 		Use:   "decline <id>",
 		Short: "Decline a security rule Konvu suggested",
 		Long: `Decline a proposed invariant, a security rule Konvu suggested: it is dropped, its rank is
-freed, and Konvu does not suggest it again. Only a proposed invariant can be declined; one
-already declined comes back unchanged, so a decline is safe to repeat.
+freed, and Konvu does not suggest it again. One already declined comes back unchanged (exit 0),
+so a decline is safe to repeat; an active or retired invariant is refused.
 
-Exit codes: 0 declined, 1 general error (not a suggestion, or the request failed), 2 invalid
-id or flag, 3 invariant not found, 4 auth failed or refused`,
+Exit codes: 0 declined (or already declined), 1 general error (active or retired, or the
+request failed), 2 invalid id or flag, 3 invariant not found, 4 auth failed or refused`,
 		Example: `  konvu invariants decline 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b`,
 		Args:    cobra.ExactArgs(1),
 		RunE:    runInvariantsDecline,
@@ -168,16 +170,8 @@ func runInvariantsAccept(cmd *cobra.Command, args []string) error {
 		}
 	}
 	row, _ := rows[0].(map[string]any)
-	switch getStr(row, "result") {
-	case "unchanged":
-		output.PrintStderr("It was already active: someone accepted it meanwhile.")
-	case "created":
-		// The statement left the live set between the read and the upload, so it was added anew.
-		verb := "was added"
-		if dryRun {
-			verb = "would be added"
-		}
-		output.PrintStderr(fmt.Sprintf("The suggestion was no longer open, so it %s as a new active rule (id %s).", verb, getStr(row, "id")))
+	if err := acceptOutcome(row, id, dryRun); err != nil {
+		return err
 	}
 	if dryRun {
 		output.PrintStderr("Dry run: nothing was written. Run without --dry-run to accept it.")
@@ -186,9 +180,54 @@ func runInvariantsAccept(cmd *cobra.Command, args []string) error {
 	return printAccepted(cmd, format, resp)
 }
 
+// acceptOutcome checks the upload landed on this suggestion. The upload matches by statement,
+// not id, under the server's lock, so between the read and the write the suggestion can be
+// accepted, declined or replaced, or its wording can match another invariant: anything but
+// "validated" on this id is refused, saying what was written.
+func acceptOutcome(row map[string]any, id string, dryRun bool) error {
+	result, gotID := getStr(row, "result"), getStr(row, "id")
+	if result == "validated" && gotID == id {
+		return nil
+	}
+	if result == "unchanged" && gotID == id {
+		return invariantNotProposed("accepted", id, invariantValidated)
+	}
+	if result != "created" && (gotID == id || (result != "validated" && result != "unchanged")) {
+		return &clierrors.CLIError{
+			Code:       "API_ERROR",
+			Message:    fmt.Sprintf("Konvu answered the accept with an unexpected result %q", sanitizeGuardrailsBaselineText(result)),
+			Suggestion: fmt.Sprintf("Run 'konvu invariants get %s' to see where it stands.", id),
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
+	written := "Nothing was written."
+	if !dryRun && result != "unchanged" {
+		written = "It is active now: review it with 'konvu invariants list'."
+	}
+	other := fmt.Sprintf("rank %d", intField(row, "rank"))
+	if gotID != "" {
+		other = fmt.Sprintf("id %s, %s", sanitizeGuardrailsBaselineText(gotID), other)
+	}
+	message := fmt.Sprintf("Konvu matched this wording to another invariant (%s) instead of %s", other, id)
+	if result == "created" {
+		verb := "was added"
+		if dryRun {
+			verb = "would be added"
+		}
+		message = fmt.Sprintf("suggestion %s was no longer open (declined, or replaced by new suggestions) when the accept reached Konvu, so its wording %s as a new active rule (%s)", id, verb, other)
+	}
+	return &clierrors.CLIError{
+		Code:       "INVARIANT_CHANGED",
+		Message:    message,
+		Suggestion: written,
+		ExitCode:   clierrors.ExitGeneralError,
+	}
+}
+
 // acceptedUpload is the suggestion as an upload item. The server matches it to the live
-// statement and keeps the stored row as it is, so only the fields the upload requires travel;
-// why_it_matters is cut to the upload's limit, which a suggestion's text is not held to.
+// statement and keeps that row, rank included, so only the fields the upload requires travel:
+// a rank would only matter on a statement no longer live, where it would displace another
+// suggestion. why_it_matters is cut to the upload's limit, which a suggestion's is not held to.
 func acceptedUpload(inv map[string]any) map[string]any {
 	why := []rune(strings.TrimSpace(getStr(inv, "why_it_matters")))
 	if len(why) > maxUploadWhyChars {
@@ -198,7 +237,6 @@ func acceptedUpload(inv map[string]any) map[string]any {
 		"statement":      getStr(inv, "statement"),
 		"why_it_matters": string(why),
 		"property":       getStr(inv, "property"),
-		"rank":           intField(inv, "rank"),
 	}
 }
 
@@ -218,25 +256,29 @@ func outcomeUnknown(err error) bool {
 }
 
 // confirmAccept reads the invariant back after an upload whose outcome is unknown, and says
-// what actually happened: accepted, not written, or changed by someone else.
+// what is known: active, not yet accepted, or changed by someone else. A timeout or a lost
+// connection does not stop the server, so "still proposed" only means "not yet".
 func confirmAccept(cmd *cobra.Command, client *api.Client, postErr error, id string, format output.OutputFormat) error {
 	reason := postErr.Error()
 	var apiErr *api.APIError
 	if errors.As(postErr, &apiErr) {
 		reason = invariantDetail(apiErr)
 	}
+	reason = sanitizeGuardrailsBaselineText(reason)
+	recheck := fmt.Sprintf("Wait a minute, then run 'konvu invariants get %s': validated means it is active; if it is still proposed, run this accept again, which is safe to repeat.", id)
 	inv, err := client.Get(invariantPath(id), nil)
 	if err != nil {
 		return &clierrors.CLIError{
 			Code:       "ACCEPT_UNCONFIRMED",
 			Message:    fmt.Sprintf("the accept failed (%s) and the invariant could not be read back", reason),
-			Suggestion: fmt.Sprintf("Run 'konvu invariants get %s': validated means it was accepted, proposed means run this accept again.", id),
+			Suggestion: recheck,
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	}
 	switch status := getStr(inv, "status"); status {
 	case invariantValidated:
-		output.PrintStderr(fmt.Sprintf("Accepted, but the server then failed (%s): Konvu maps it to controls at the next code analysis or rule change. No need to accept it again.", reason))
+		// Not the server's detail: it asks for a retry that the "proposed only" check refuses.
+		output.PrintStderr("It is active now, but the server failed after the accept, so its mapping to controls may wait for the next code analysis or rule change. No need to accept it again.")
 		return printAccepted(cmd, format, map[string]any{
 			"dry_run": false,
 			"invariants": []any{map[string]any{
@@ -250,9 +292,9 @@ func confirmAccept(cmd *cobra.Command, client *api.Client, postErr error, id str
 		})
 	case invariantProposed:
 		return &clierrors.CLIError{
-			Code:       "API_ERROR",
-			Message:    reason,
-			Suggestion: "Nothing was accepted, and an accept is safe to repeat: run the same command again.",
+			Code:       "ACCEPT_UNCONFIRMED",
+			Message:    fmt.Sprintf("the accept failed (%s) and the invariant is still proposed, though the request may still be running on the server", reason),
+			Suggestion: recheck,
 			Retryable:  true,
 			ExitCode:   clierrors.ExitGeneralError,
 		}
@@ -276,8 +318,8 @@ func printAccepted(cmd *cobra.Command, format output.OutputFormat, resp map[stri
 		m, _ := r.(map[string]any)
 		rows = append(rows, map[string]any{
 			"rank":      intField(m, "rank"),
-			"result":    getStr(m, "result"),
-			"statement": getStr(m, "statement"),
+			"result":    displayText(m, "result"),
+			"statement": displayText(m, "statement"),
 		})
 	}
 	cols := []string{"rank", "result", "statement"}
@@ -307,8 +349,8 @@ func runInvariantsDecline(cmd *cobra.Command, args []string) error {
 	}
 	row := map[string]any{
 		"rank":      intField(inv, "rank"),
-		"status":    getStr(inv, "status"),
-		"statement": getStr(inv, "statement"),
+		"status":    displayText(inv, "status"),
+		"statement": displayText(inv, "statement"),
 	}
 	cols := []string{"rank", "status", "statement"}
 	fmt.Fprint(cmd.OutOrStdout(), output.FormatTable(map[string]any{"invariants": []any{row}}, cols, "invariants", nil))
@@ -319,9 +361,12 @@ func runInvariantsDecline(cmd *cobra.Command, args []string) error {
 func invariantNotProposed(verb, id, status string) error {
 	message := fmt.Sprintf("invariant %s is %s; only a proposed one can be %s", id, statusOrUnknown(status), verb)
 	suggestion := "Run 'konvu invariants list --status proposed' to see the open suggestions."
-	if status == invariantValidated {
-		message = fmt.Sprintf("invariant %s is already active (validated); only a proposed one can be %s", id, verb)
+	switch status {
+	case invariantValidated:
+		message = fmt.Sprintf("invariant %s is already active (validated), by an earlier attempt or someone else; only a proposed one can be %s", id, verb)
 		suggestion = "Nothing to do. " + suggestion
+	case "retired":
+		suggestion = "Konvu replaced its suggestions since: run 'konvu invariants list --status proposed' and look for the same wording under a new id."
 	}
 	return &clierrors.CLIError{
 		Code:       "INVARIANT_NOT_PROPOSED",
@@ -332,7 +377,7 @@ func invariantNotProposed(verb, id, status string) error {
 }
 
 func statusOrUnknown(status string) string {
-	if status == "" {
+	if status = sanitizeGuardrailsBaselineText(status); status == "" {
 		return "of unknown status"
 	}
 	return status
@@ -402,7 +447,7 @@ func invariantAcceptError(err error, id string, dryRun bool) error {
 		return &clierrors.CLIError{
 			Code:       "INVARIANT_NOT_ACCEPTED",
 			Message:    detail,
-			Suggestion: "Konvu cannot take this suggestion unchanged: write it to a file, fix what the message names, and add it at the same rank with 'konvu invariants push'.",
+			Suggestion: "Konvu cannot accept this suggestion unchanged. An edited version, added with 'konvu invariants push' at the suggestion's rank, replaces it.",
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	case apiErr.StatusCode >= 500 && dryRun:
@@ -460,22 +505,23 @@ func invariantDeclineError(err error, id string) error {
 }
 
 // formatInvariant renders one invariant for a terminal: what it says, the controls that keep
-// it true, and how Konvu steered coding agents with it.
+// it true, and how Konvu steered coding agents with it. Every server string goes through
+// displayText: rule text and steered file paths are written by people and workstations.
 func formatInvariant(inv map[string]any) string {
 	var b strings.Builder
-	status := getStr(inv, "status")
+	status := displayText(inv, "status")
 	switch status {
 	case invariantProposed:
 		status += " (suggested by Konvu)"
 	case invariantValidated:
 		status += " (active)"
 	}
-	fmt.Fprintf(&b, "%s\n\n", getStr(inv, "statement"))
+	fmt.Fprintf(&b, "%s\n\n", displayText(inv, "statement"))
 	fmt.Fprintf(&b, "Status:    %s\n", status)
-	fmt.Fprintf(&b, "Property:  %s\n", getStr(inv, "property"))
+	fmt.Fprintf(&b, "Property:  %s\n", displayText(inv, "property"))
 	fmt.Fprintf(&b, "Rank:      %d\n", intField(inv, "rank"))
-	fmt.Fprintf(&b, "Id:        %s\n", getStr(inv, "id"))
-	if why := getStr(inv, "why_it_matters"); why != "" {
+	fmt.Fprintf(&b, "Id:        %s\n", displayText(inv, "id"))
+	if why := displayText(inv, "why_it_matters"); why != "" {
 		fmt.Fprintf(&b, "Why:       %s\n", why)
 	}
 
@@ -486,8 +532,8 @@ func formatInvariant(inv map[string]any) string {
 	}
 	for _, c := range controls {
 		m, _ := c.(map[string]any)
-		parts := []string{getStr(m, "title"), getStr(m, "role")}
-		if ref := getStr(m, "standard_ref"); ref != "" {
+		parts := []string{displayText(m, "title"), displayText(m, "role")}
+		if ref := displayText(m, "standard_ref"); ref != "" {
 			parts = append(parts, ref)
 		}
 		parts = append(parts, plural(len(getSlice(m, "code_anchors")), "code anchor"))
@@ -503,7 +549,7 @@ func formatInvariant(inv map[string]any) string {
 	if days := intField(steering, "days"); days > 0 {
 		window = fmt.Sprintf("last %d days", days)
 	}
-	last := getStr(steering, "last_at")
+	last := displayText(steering, "last_at")
 	if last == "" {
 		last = "never"
 	}
@@ -516,7 +562,7 @@ func formatInvariant(inv map[string]any) string {
 		b.WriteString("  Recent edits:\n")
 	}
 	for _, r := range newestFirst(recent, steeringRecent) {
-		fields := []string{getStr(r, "at"), getStr(r, "agent"), getStr(r, "developer"), getStr(r, "file"), getStr(r, "control_id")}
+		fields := []string{displayText(r, "at"), displayText(r, "agent"), displayText(r, "developer"), displayText(r, "file"), displayText(r, "control_id")}
 		kept := fields[:0]
 		for _, f := range fields {
 			if f != "" {
@@ -537,7 +583,7 @@ func topAgents(agents []any, n int) string {
 	list := make([]agent, 0, len(agents))
 	for _, a := range agents {
 		m, _ := a.(map[string]any)
-		if name := getStr(m, "name"); name != "" {
+		if name := displayText(m, "name"); name != "" {
 			list = append(list, agent{name, intField(m, "count")})
 		}
 	}
@@ -571,6 +617,12 @@ func newestFirst(recent []any, n int) []map[string]any {
 		edits = edits[:n]
 	}
 	return edits
+}
+
+// displayText is a server string fit for a terminal: control characters, escape sequences
+// included, become spaces.
+func displayText(m map[string]any, key string) string {
+	return sanitizeGuardrailsBaselineText(getStr(m, key))
 }
 
 func plural(n int, noun string) string {
