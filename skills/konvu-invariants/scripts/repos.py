@@ -32,10 +32,11 @@ def weight(ts: float) -> float:
     return 2 ** (-(NOW - ts) / 86400 / HALF_LIFE_DAYS)
 
 
-def identities() -> tuple[set[str], str]:
-    """The user's git emails (lowercased) and name, matched exactly against each commit's author."""
-    emails = {e.lower() for e in run(["git", "config", "--global", "--get-all", "user.email"]).split()}
-    return emails, run(["git", "config", "--global", "user.name"]).strip()
+def identities(repo: Path) -> tuple[set[str], str]:
+    """The user's effective git emails (lowercased) and name in this repo (its own config, then global),
+    matched exactly against each commit's author."""
+    emails = {e.lower() for e in run(["git", "-C", str(repo), "config", "--get-all", "user.email"]).split()}
+    return emails, run(["git", "-C", str(repo), "config", "user.name"]).strip()
 
 
 def local_repos() -> list[Path]:
@@ -75,13 +76,16 @@ def origin(repo: Path) -> str:
     return path if host == "github.com" else f"{host}/{path}"
 
 
-def local_score(repo: Path, who: tuple[set[str], str]) -> dict[str, object] | None:
-    emails, name = who
+def local_score(repo: Path) -> dict[str, object] | None:
+    emails, name = identities(repo)
     out = run(["git", "-C", str(repo), "log", "--all", f"--since={WINDOW_DAYS}.days", "--format=%ct%x09%ae%x09%an"])
     stamps = []
     for line in out.splitlines():
         fields = line.split("\t")
-        if len(fields) == 3 and fields[0].isdigit() and (fields[1].lower() in emails or (name and fields[2] == name)):
+        if len(fields) != 3:
+            continue
+        mine = (not emails and not name) or fields[1].lower() in emails or (name and fields[2] == name)
+        if fields[0].isdigit() and mine:
             stamps.append(int(fields[0]))
     if not stamps:
         return None
@@ -122,9 +126,8 @@ def main() -> None:
 
 
 def rank() -> None:
-    who = identities()
     with ThreadPoolExecutor(16) as ex:
-        local = [r for r in ex.map(lambda p: local_score(p, who), local_repos()) if r]
+        local = [r for r in ex.map(local_score, local_repos()) if r]
         gh = ex.submit(github_scores).result()
     # Several clones or worktrees of one repo share its history: keep the most active one, the main checkout on a tie.
     by_origin: dict[str, dict[str, object]] = {}
