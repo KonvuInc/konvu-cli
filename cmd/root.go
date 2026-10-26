@@ -118,6 +118,8 @@ const helpAllFooter = `EXAMPLES
   konvu inventory map diff <base-run> <head-run>
   konvu inventory show github:org/repo -o json
   konvu inventory -q | xargs -n1 konvu inventory show
+  konvu invariants list
+  konvu invariants push --file invariants.json --dry-run
 
 OUTPUT FORMATS
   Most commands support: -o json (structured), -o table (human), -o csv (finding list only)
