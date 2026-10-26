@@ -738,6 +738,12 @@ konvu skills install
 
 Skills are installed to `~/.claude/skills/` where Claude Code discovers them automatically — no configuration needed.
 
+Security rules (invariants) come as three skills:
+
+- `/konvu-onboarding` — a short welcome, then your first security rule with `konvu-invariants`, then how Konvu enforces it
+- `/konvu-invariants` — pick a repo and a theme, draft the rule that matters most, shape it together, then save it
+- `/konvu-upload-invariants` — save security rules you wrote with `konvu invariants push`, after a server-side dry run
+
 To check the skills directory:
 
 ```bash

@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-//go:embed konvu-shared recipe-weekly-triage guardrails-onboarding
+//go:embed konvu-shared recipe-weekly-triage guardrails-onboarding konvu-onboarding konvu-invariants konvu-upload-invariants
 var embedded embed.FS
 
 // SkillDir pairs an embed directory name with its install directory name, and carries what the
@@ -46,6 +46,29 @@ var skillDirs = []SkillDir{
 			"  Security Context Graphs — map a codebase and explore its Assets, Controls,",
 			"  and Implementations across historical runs. Run it in Claude Code with:",
 			"  /konvu-guardrails-onboarding, or ask it to explore a Security Context Graph.",
+		},
+	},
+	{
+		EmbedName:   "konvu-onboarding",
+		InstallName: "konvu-onboarding",
+		Pitch: []string{
+			"  Konvu onboarding — write your first security rule with your agent and see",
+			"  how Konvu enforces it. Run it in Claude Code with: /konvu-onboarding",
+		},
+	},
+	{
+		EmbedName:   "konvu-invariants",
+		InstallName: "konvu-invariants",
+		Pitch: []string{
+			"  Security rules — pick a repo and a theme, draft the rule that matters most,",
+			"  shape it together. Run it with: /konvu-invariants",
+		},
+	},
+	{
+		EmbedName:   "konvu-upload-invariants",
+		InstallName: "konvu-upload-invariants",
+		Pitch: []string{
+			"  Save security rules you wrote to Konvu. Run it with: /konvu-upload-invariants",
 		},
 	},
 }
