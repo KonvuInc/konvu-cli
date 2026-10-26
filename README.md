@@ -646,6 +646,21 @@ Inventory navigation uses the same pattern as findings: Up/Down selects a reposi
 
 For hosted profiles, `show` exits 3 (not found) when the repository has not been mapped in Konvu yet. Its Threat Profile appears after mapping. The `threat_profile_tier` field is a stable slug (`crown_jewel`, `key_asset`, `standard`, `peripheral`); `threat_profile_tier_label` carries the human-readable version.
 
+### `konvu invariants` — Your security rules
+
+Security invariants are the rules your code must never break, written in your words. Konvu maps each one to the controls in your code that keep it true and enforces it on every change. Aliased as `konvu invariant`.
+
+```bash
+# Your company's live invariants, by rank
+konvu invariants list
+
+# Add the ones you wrote: check on the server first, then write
+konvu invariants push --file invariants.json --dry-run
+konvu invariants push --file invariants.json
+```
+
+`push` reads a JSON array (or `{"invariants": [...]}`) of 1 to 10 invariants, each with `statement`, `why_it_matters` and `property`, and optionally `rank`, `repository_id` and `protected_assets`; `konvu invariants push --help` lists the fields. They are stored as validated and attributed to you. A statement already live comes back `unchanged` (or `validated` if it was a proposal), so a push is safe to repeat. Exit codes: 2 when the invariants are malformed, 3 when `repository_id` is not one of your repositories, 1 when a requested rank is taken.
+
 ### `konvu skills path` — Locate bundled skills
 
 Returns the path to the bundled Claude Code skills directory. Useful for configuring your AI assistant.
