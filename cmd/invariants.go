@@ -48,7 +48,7 @@ Each invariant accepts:
   why_it_matters   (required) at most 500 characters
   property         (required) authentication, authorization, confidentiality,
                    integrity, availability or non_repudiation
-  rank             1 to 10; the first free rank when omitted
+  rank             1 or more; the first free rank when omitted
   repository_id    the repository it was written for
   protected_assets [{"kind": "...", "name": "..."}]
 
