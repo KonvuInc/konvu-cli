@@ -24,18 +24,23 @@ var invariantsCmd = &cobra.Command{
 Konvu maps each one to the controls that keep it true and enforces it on every change.`,
 }
 
-var invariantsListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List your company's live invariants, by rank",
-	Example: `  konvu invariants list
+func newInvariantsListCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "list",
+		Short: "List your company's live invariants, by rank",
+		Example: `  konvu invariants list
   konvu invariants list -o json`,
-	RunE: runInvariantsList,
+		RunE: runInvariantsList,
+	}
+	c.Flags().StringP("output", "o", "", "Output format: json, table")
+	return c
 }
 
-var invariantsPushCmd = &cobra.Command{
-	Use:   "push",
-	Short: "Add the invariants you wrote",
-	Long: `Add invariants from --file (or stdin with '-'), as validated and attributed to you.
+func newInvariantsPushCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "push",
+		Short: "Add the invariants you wrote",
+		Long: `Add invariants from --file (or stdin with '-'), as validated and attributed to you.
 
 The file is a JSON array of invariants, or an object with an "invariants" array (1 to 10).
 Each invariant accepts:
@@ -50,22 +55,29 @@ Each invariant accepts:
 A statement already live comes back unchanged (or validated, if it was a proposal), so a
 push is safe to repeat. --dry-run checks everything on the server and writes nothing.
 
-Exit codes: 0 success, 1 general error, 2 invalid invariants, 3 repository not found, 4 auth failed`,
-	Example: `  konvu invariants push --file invariants.json --dry-run
+Exit codes: 0 success, 1 general error, 2 invalid invariants, 3 repository not found, 4 auth failed or refused`,
+		Example: `  konvu invariants push --file invariants.json --dry-run
   konvu invariants push --file invariants.json
   cat invariants.json | konvu invariants push --file -`,
-	RunE: runInvariantsPush,
+		RunE: runInvariantsPush,
+	}
+	c.Flags().String("file", "", "JSON file of invariants, or '-' for stdin")
+	c.Flags().Bool("dry-run", false, "Check on the server without writing anything")
+	c.Flags().StringP("output", "o", "", "Output format: json, table")
+	return c
 }
 
 func runInvariantsList(cmd *cobra.Command, args []string) error {
-	outputFlag, _ := cmd.Flags().GetString("output")
-	format := output.DetectOutputFormat(outputFlag)
+	format, err := findingDispositionOutputFormat(cmd)
+	if err != nil {
+		return err
+	}
 
 	client := api.NewClient("", "")
 	defer client.Close()
 	items, err := client.GetList(invariantsPath, nil)
 	if err != nil {
-		return invariantsRequestError(err)
+		return invariantsListError(err)
 	}
 	if format == output.JSON {
 		fmt.Fprintln(cmd.OutOrStdout(), output.FormatJSON(items))
@@ -90,8 +102,10 @@ func runInvariantsList(cmd *cobra.Command, args []string) error {
 func runInvariantsPush(cmd *cobra.Command, args []string) error {
 	file, _ := cmd.Flags().GetString("file")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
-	outputFlag, _ := cmd.Flags().GetString("output")
-	format := output.DetectOutputFormat(outputFlag)
+	format, err := findingDispositionOutputFormat(cmd)
+	if err != nil {
+		return err
+	}
 
 	if file == "" {
 		return &clierrors.CLIError{
@@ -118,7 +132,7 @@ func runInvariantsPush(cmd *cobra.Command, args []string) error {
 		"invariants": invariants,
 	})
 	if err != nil {
-		return invariantsRequestError(err)
+		return invariantsPushError(err, invariants)
 	}
 	if format == output.JSON {
 		fmt.Fprintln(cmd.OutOrStdout(), output.FormatJSON(resp))
@@ -171,43 +185,71 @@ func readInvariantsFile(path string) ([]any, error) {
 	return nil, errors.New(`expected a non-empty JSON array of invariants, or {"invariants": [...]}`)
 }
 
-func invariantsRequestError(err error) error {
+// invariantsListError maps a failed list: nothing list-specific to explain beyond auth.
+func invariantsListError(err error) error {
+	var authErr *api.AuthenticationError
+	if errors.As(err, &authErr) {
+		return clierrors.NewAuthError(err.Error())
+	}
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) {
+		return clierrors.NewAPIError(api.ServerDetail([]byte(strings.TrimPrefix(apiErr.Message, "API error: "))))
+	}
+	return clierrors.NewAPIError(err.Error())
+}
+
+// invariantsPushError maps a refused push to its next step. It never claims the push was
+// saved: the server's own detail says so when it is, and a push is safe to repeat either way.
+func invariantsPushError(err error, invariants []any) error {
 	var authErr *api.AuthenticationError
 	if errors.As(err, &authErr) {
 		return clierrors.NewAuthError(err.Error())
 	}
 	var apiErr *api.APIError
 	if !errors.As(err, &apiErr) {
-		return clierrors.NewAPIError(err.Error())
+		return &clierrors.CLIError{
+			Code:       "API_ERROR",
+			Message:    err.Error(),
+			Suggestion: "A push is safe to repeat: run the same command again.",
+			Retryable:  true,
+			ExitCode:   clierrors.ExitGeneralError,
+		}
 	}
 	detail := api.ServerDetail([]byte(strings.TrimPrefix(apiErr.Message, "API error: ")))
-	switch apiErr.StatusCode {
-	case 409:
+	switch {
+	case apiErr.StatusCode == 403:
+		return &clierrors.CLIError{
+			Code:       "FORBIDDEN",
+			Message:    detail,
+			Suggestion: "Run 'konvu whoami' to check who you are signed in as: pushed invariants are attributed to a person.",
+			ExitCode:   clierrors.ExitAuthFailed,
+		}
+	case apiErr.StatusCode == 409:
 		return &clierrors.CLIError{
 			Code:       "INVARIANT_RANK_UNAVAILABLE",
 			Message:    detail,
-			Suggestion: "Run 'konvu invariants list' to see the ranks in use, then pick a free one or omit rank.",
+			Suggestion: "Run 'konvu invariants list' to see the ranks in use, then push again with a free rank or none.",
 			ExitCode:   clierrors.ExitGeneralError,
 		}
-	case 404:
+	case apiErr.StatusCode == 404 && anyRepositoryID(invariants):
 		return &clierrors.CLIError{
 			Code:       "REPOSITORY_NOT_FOUND",
 			Message:    detail,
 			Suggestion: "Check repository_id: it must be one of your company's repositories.",
 			ExitCode:   clierrors.ExitNotFound,
 		}
-	case 422:
+	case apiErr.StatusCode == 422:
 		return &clierrors.CLIError{
 			Code:       "INVALID_INVARIANTS",
 			Message:    detail,
 			Suggestion: "Run 'konvu invariants push --help' for the expected format.",
 			ExitCode:   clierrors.ExitUsageError,
 		}
-	case 502:
+	case apiErr.StatusCode >= 500:
 		return &clierrors.CLIError{
-			Code:       "INVARIANTS_NOT_MAPPED",
+			Code:       "API_ERROR",
 			Message:    detail,
-			Suggestion: "Your invariants are saved. Run the same push again to map them to controls.",
+			Suggestion: "A push is safe to repeat: run the same command again.",
 			Retryable:  true,
 			ExitCode:   clierrors.ExitGeneralError,
 		}
@@ -215,9 +257,18 @@ func invariantsRequestError(err error) error {
 	return clierrors.NewAPIError(detail)
 }
 
+// anyRepositoryID reports whether a pushed invariant names a repository, the only way a
+// push can be refused for an unknown one.
+func anyRepositoryID(invariants []any) bool {
+	for _, item := range invariants {
+		if m, ok := item.(map[string]any); ok && m["repository_id"] != nil {
+			return true
+		}
+	}
+	return false
+}
+
 func init() {
-	invariantsPushCmd.Flags().String("file", "", "JSON file of invariants, or '-' for stdin")
-	invariantsPushCmd.Flags().Bool("dry-run", false, "Check on the server without writing anything")
-	invariantsCmd.AddCommand(invariantsListCmd, invariantsPushCmd)
+	invariantsCmd.AddCommand(newInvariantsListCmd(), newInvariantsPushCmd())
 	rootCmd.AddCommand(invariantsCmd)
 }

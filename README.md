@@ -659,7 +659,7 @@ konvu invariants push --file invariants.json --dry-run
 konvu invariants push --file invariants.json
 ```
 
-`push` reads a JSON array (or `{"invariants": [...]}`) of 1 to 10 invariants, each with `statement`, `why_it_matters` and `property`, and optionally `rank`, `repository_id` and `protected_assets`; `konvu invariants push --help` lists the fields. They are stored as validated and attributed to you. A statement already live comes back `unchanged` (or `validated` if it was a proposal), so a push is safe to repeat. Exit codes: 2 when the invariants are malformed, 3 when `repository_id` is not one of your repositories, 1 when a requested rank is taken.
+`push` reads a JSON array (or `{"invariants": [...]}`) of 1 to 10 invariants, each with `statement`, `why_it_matters` and `property`, and optionally `rank`, `repository_id` and `protected_assets`; `konvu invariants push --help` lists the fields. They are stored as validated and attributed to you. A statement already live comes back `unchanged` (or `validated` if it was a proposal), so a push is safe to repeat. Exit codes: 2 when the invariants are malformed, 3 when `repository_id` is not one of your repositories, 4 when you are not signed in as a person, 1 when a rank is unavailable or the request failed (run the same push again: it is safe to repeat).
 
 ### `konvu skills path` — Locate bundled skills
 

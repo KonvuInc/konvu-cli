@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
@@ -62,13 +63,6 @@ func runInvariants(c *cobra.Command, args ...string) (string, error) {
 	return out.String(), err
 }
 
-func pushCmd() *cobra.Command {
-	c := &cobra.Command{Use: "push", RunE: runInvariantsPush}
-	c.Flags().String("file", "", "")
-	c.Flags().Bool("dry-run", false, "")
-	return c
-}
-
 func writeInvariants(t *testing.T, body string) string {
 	path := filepath.Join(t.TempDir(), "invariants.json")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
@@ -84,7 +78,7 @@ func TestInvariantsPushSendsTheFileAndDryRun(t *testing.T) {
 	invariantsEnv(t, server)
 
 	file := writeInvariants(t, `{"invariants": [{"statement": "Tokens never reach logs.", "why_it_matters": "x", "property": "confidentiality"}]}`)
-	out, err := runInvariants(pushCmd(), "--file", file, "--dry-run")
+	out, err := runInvariants(newInvariantsPushCmd(), "--file", file, "--dry-run")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +101,7 @@ func TestInvariantsPushAcceptsABareArray(t *testing.T) {
 	invariantsEnv(t, server)
 
 	file := writeInvariants(t, `[{"statement": "A.", "why_it_matters": "x", "property": "integrity"}]`)
-	if _, err := runInvariants(pushCmd(), "--file", file); err != nil {
+	if _, err := runInvariants(newInvariantsPushCmd(), "--file", file); err != nil {
 		t.Fatal(err)
 	}
 	if posted["dry_run"] != false {
@@ -122,7 +116,7 @@ func TestInvariantsPushExplainsATakenRank(t *testing.T) {
 	invariantsEnv(t, server)
 
 	file := writeInvariants(t, `[{"statement": "A.", "why_it_matters": "x", "property": "integrity", "rank": 2}]`)
-	_, err := runInvariants(pushCmd(), "--file", file)
+	_, err := runInvariants(newInvariantsPushCmd(), "--file", file)
 	var cliErr *clierrors.CLIError
 	if !errors.As(err, &cliErr) || cliErr.Code != "INVARIANT_RANK_UNAVAILABLE" {
 		t.Fatalf("err = %#v", err)
@@ -134,7 +128,7 @@ func TestInvariantsPushExplainsATakenRank(t *testing.T) {
 
 func TestInvariantsPushRefusesAnEmptyFile(t *testing.T) {
 	file := writeInvariants(t, `[]`)
-	_, err := runInvariants(pushCmd(), "--file", file)
+	_, err := runInvariants(newInvariantsPushCmd(), "--file", file)
 	var cliErr *clierrors.CLIError
 	if !errors.As(err, &cliErr) || cliErr.ExitCode != clierrors.ExitUsageError {
 		t.Fatalf("err = %#v", err)
@@ -147,12 +141,70 @@ func TestInvariantsList(t *testing.T) {
 	defer server.Close()
 	invariantsEnv(t, server)
 
-	out, err := runInvariants(&cobra.Command{Use: "list", RunE: runInvariantsList})
+	out, err := runInvariants(newInvariantsListCmd(), "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var items []map[string]any
 	if err := json.Unmarshal([]byte(out), &items); err != nil || items[0]["statement"] != "Tokens never reach logs." {
 		t.Fatalf("out = %q", out)
+	}
+}
+
+func TestInvariantsListPrintsATable(t *testing.T) {
+	var posted map[string]any
+	server := invariantsServer(t, &posted, http.StatusCreated)
+	defer server.Close()
+	invariantsEnv(t, server)
+
+	out, err := runInvariants(newInvariantsListCmd(), "--output", "table")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Tokens never reach logs.") || json.Valid([]byte(out)) {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+func TestInvariantsRefuseAnUnsupportedOutput(t *testing.T) {
+	_, err := runInvariants(newInvariantsListCmd(), "-o", "csv")
+	var cliErr *clierrors.CLIError
+	if !errors.As(err, &cliErr) || cliErr.ExitCode != clierrors.ExitUsageError {
+		t.Fatalf("err = %#v", err)
+	}
+}
+
+func TestInvariantsPushServerFailureClaimsNoSave(t *testing.T) {
+	var posted map[string]any
+	server := invariantsServer(t, &posted, http.StatusBadGateway)
+	defer server.Close()
+	invariantsEnv(t, server)
+
+	file := writeInvariants(t, `[{"statement": "A.", "why_it_matters": "x", "property": "integrity"}]`)
+	_, err := runInvariants(newInvariantsPushCmd(), "--file", file)
+	var cliErr *clierrors.CLIError
+	if !errors.As(err, &cliErr) || cliErr.Code != "API_ERROR" || !cliErr.Retryable {
+		t.Fatalf("err = %#v", err)
+	}
+	if strings.Contains(strings.ToLower(cliErr.Suggestion), "saved") {
+		t.Fatalf("suggestion claims a save: %q", cliErr.Suggestion)
+	}
+}
+
+func TestInvariantsPushNotFoundIsARepositoryOnlyWhenOneWasNamed(t *testing.T) {
+	var posted map[string]any
+	server := invariantsServer(t, &posted, http.StatusNotFound)
+	defer server.Close()
+	invariantsEnv(t, server)
+
+	for body, want := range map[string]string{
+		`[{"statement": "A.", "why_it_matters": "x", "property": "integrity"}]`:                        "API_ERROR",
+		`[{"statement": "A.", "why_it_matters": "x", "property": "integrity", "repository_id": "r1"}]`: "REPOSITORY_NOT_FOUND",
+	} {
+		_, err := runInvariants(newInvariantsPushCmd(), "--file", writeInvariants(t, body))
+		var cliErr *clierrors.CLIError
+		if !errors.As(err, &cliErr) || cliErr.Code != want {
+			t.Fatalf("%s: err = %#v, want %s", body, err, want)
+		}
 	}
 }
