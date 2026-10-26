@@ -9,7 +9,7 @@ metadata:
 
 # Konvu onboarding
 
-Three parts, in order: the welcome (this skill), the first security rule (the **konvu-invariants** skill, which saves it with **konvu-upload-invariants**), then the ending (this skill). `<invariants-dir>` below is the konvu-invariants skill's folder, next to this one.
+Three parts, in order: the welcome (this skill), the first security rule (the **konvu-invariants** skill, which saves it with **konvu-upload-invariants**), then the ending (this skill). `<invariants-dir>` below is the konvu-invariants skill's folder, next to this one; quote it in commands if it has spaces.
 
 ## 1 · Welcome
 
@@ -46,7 +46,7 @@ Your message, in this order:
 2. the congratulations as a bold title on its own line, **Congrats, we just wrote your first security rule together.**
 3. the wow, in one or two lines, along the lines of: "Now you can make sure it's never broken again. Plug in the GitHub App, and Konvu guarantees it on every change, in CI and in your coding agent."
 4. two or three plain lines on how: Konvu builds a security graph of their whole code and finds the controls that keep this security rule true (the concrete checks in their code); then any change that would break it is caught: a PR that breaks it is blocked in CI, and their coding agent is stopped as the code is written
-5. the diagram from `python3 <invariants-dir>/scripts/show.py enforce <repo>`, pasted unchanged with its code fences (recommended)
+5. the diagram from the `show.py enforce` command konvu-invariants gave you when it finished, pasted unchanged with its code fences (recommended)
 6. one line, along the lines of: "That's one security rule. You can write as many as you want, here in your coding agent or anywhere else, and Konvu enforces them all."
 7. the action in bold, in your own words for the moment, e.g. **Want this one guaranteed? Tell me and I'll open Konvu so you can plug in the GitHub App.**
 

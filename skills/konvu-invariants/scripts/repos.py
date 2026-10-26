@@ -7,11 +7,13 @@ repos the user hasn't touched in 180 days are left out. Prints the top 10 as JSO
 
 from __future__ import annotations
 
+import calendar
 import json
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from urllib.parse import urlsplit
 
 HOME = Path.home()
 WINDOW_DAYS = 180
@@ -30,22 +32,24 @@ def weight(ts: float) -> float:
     return 2 ** (-(NOW - ts) / 86400 / HALF_LIFE_DAYS)
 
 
-def identities() -> list[str]:
-    ids = run(["git", "config", "--global", "--get-all", "user.email"]).split()
-    name = run(["git", "config", "--global", "user.name"]).strip()
-    return ids + ([name] if name else [])
+def identities() -> tuple[set[str], str]:
+    """The user's git emails (lowercased) and name, matched exactly against each commit's author."""
+    emails = {e.lower() for e in run(["git", "config", "--global", "--get-all", "user.email"]).split()}
+    return emails, run(["git", "config", "--global", "user.name"]).strip()
 
 
 def local_repos() -> list[Path]:
-    """Git repos under home whose .git changed within the window (a cheap pre-filter before reading history)."""
-    out = run(["find", str(HOME), "-maxdepth", "6", "-type", "d", "-name", ".git", "-prune",
+    """Git repos and worktrees under home. A .git folder that hasn't changed within the window is skipped
+    (a cheap pre-filter before reading history); a worktree's .git file is a pointer, so its history decides."""
+    out = run(["find", str(HOME), "-maxdepth", "6", "-name", ".git", "-prune",
                "-not", "-path", "*/Library/*", "-not", "-path", "*/node_modules/*", "-not", "-path", "*/.cache/*"], timeout=30)
     cutoff = NOW - WINDOW_DAYS * 86400
     repos = []
     for line in out.splitlines():  # one path per line: paths may contain spaces
         try:
-            if Path(line).stat().st_mtime > cutoff:
-                repos.append(Path(line).parent)
+            git = Path(line)
+            if git.is_file() or git.stat().st_mtime > cutoff:
+                repos.append(git.parent)
         except OSError:
             continue
     # Skip clones inside hidden folders (tool caches, agent scratch copies).
@@ -53,19 +57,32 @@ def local_repos() -> list[Path]:
 
 
 def origin(repo: Path) -> str:
-    """owner/name of the repo's origin, following local-path remotes; the path itself when there's no remote."""
+    """The repo's identity: owner/name on github.com (the key `gh` uses), host/path on any other host,
+    following local-path remotes; the path itself when there's no remote."""
     url = run(["git", "-C", str(repo), "remote", "get-url", "origin"]).strip()
     if url.startswith("/") and Path(url).is_dir():
         url = run(["git", "-C", url, "remote", "get-url", "origin"]).strip() or url
-    url = url.removesuffix(".git").replace(":", "/")
-    return "/".join(url.split("/")[-2:]).lower() if "github" in url or "gitlab" in url else str(repo)
+    if "://" in url:
+        parts = urlsplit(url)
+        host, path = parts.hostname or "", parts.path
+    elif ":" in url and not url.startswith("/"):  # scp-like: git@github.com:owner/name.git
+        host, path = url.split(":", 1)
+        host = host.rsplit("@", 1)[-1]
+    else:
+        return str(repo)
+    path = path.strip("/").removesuffix(".git").lower()
+    host = host.lower()
+    return path if host == "github.com" else f"{host}/{path}"
 
 
-def local_score(repo: Path, who: list[str]) -> dict[str, object] | None:
-    args = ["git", "-C", str(repo), "log", "--all", f"--since={WINDOW_DAYS}.days", "--format=%ct"]
-    for w in who:
-        args += ["--author", w]
-    stamps = [int(t) for t in run(args).split() if t.isdigit()]
+def local_score(repo: Path, who: tuple[set[str], str]) -> dict[str, object] | None:
+    emails, name = who
+    out = run(["git", "-C", str(repo), "log", "--all", f"--since={WINDOW_DAYS}.days", "--format=%ct%x09%ae%x09%an"])
+    stamps = []
+    for line in out.splitlines():
+        fields = line.split("\t")
+        if len(fields) == 3 and fields[0].isdigit() and (fields[1].lower() in emails or (name and fields[2] == name)):
+            stamps.append(int(fields[0]))
     if not stamps:
         return None
     return {"name": repo.name, "path": str(repo), "origin": origin(repo), "your_commits": len(stamps),
@@ -89,7 +106,7 @@ def github_scores() -> dict[str, dict[str, object]]:
     repos: dict[str, dict[str, object]] = {}
     for pr in prs:
         full = pr["repository"]["nameWithOwner"]
-        ts = time.mktime(time.strptime(pr["updatedAt"][:19], "%Y-%m-%dT%H:%M:%S"))
+        ts = calendar.timegm(time.strptime(pr["updatedAt"][:19], "%Y-%m-%dT%H:%M:%S"))  # updatedAt is UTC
         r = repos.setdefault(full, {"name": full.split("/")[-1], "github": full, "your_prs": 0, "score": 0.0, "last": 0.0})
         r["your_prs"] += 1
         r["score"] += weight(ts)
@@ -109,9 +126,9 @@ def rank() -> None:
     with ThreadPoolExecutor(16) as ex:
         local = [r for r in ex.map(lambda p: local_score(p, who), local_repos()) if r]
         gh = ex.submit(github_scores).result()
-    # Several clones or worktrees of one repo share its history: keep the most active one.
+    # Several clones or worktrees of one repo share its history: keep the most active one, the main checkout on a tie.
     by_origin: dict[str, dict[str, object]] = {}
-    for r in sorted(local, key=lambda r: r["score"], reverse=True):
+    for r in sorted(local, key=lambda r: (r["score"], (Path(str(r["path"])) / ".git").is_dir()), reverse=True):
         by_origin.setdefault(str(r["origin"]), r)
     for full, g in gh.items():
         r = by_origin.get(full.lower())

@@ -2,7 +2,7 @@ Find the 3 repos this user most likely wants to protect. The ranking below comes
 
 Pick the 3 that matter most to the business among the ones they're actively on: the product that holds customer data beats a side tool or a tap, and a scratch copy of a repo is the same repo. Skip forks, fixtures, demos and third-party code.
 
-Your message, with nothing before it: the progress bar from `python3 {skill_dir}/scripts/show.py progress 1`, pasted unchanged with its code fences; a bold title on its own line, **Which repo do we start with?**; your 3 picks as **1**, **2**, **3**, the first marked recommended, each with one short line on why (what it does for the business, why it fits them). End with the action in bold: reply **1** to **3**, or name another repo.
+Your message, with nothing before it: the progress bar from `{show} progress 1`, pasted unchanged with its code fences; a bold title on its own line, **Which repo do we start with?**; your 3 picks as **1**, **2**, **3**, the first marked recommended, each with one short line on why (what it does for the business, why it fits them). End with the action in bold: reply **1** to **3**, or name another repo.
 
 Ranking:
 {repos_ranking}
