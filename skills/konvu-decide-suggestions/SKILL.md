@@ -31,7 +31,13 @@ Step 2 — pick a repository. Group the suggestions by their `repository_id`. If
 
 Step 3 — pick a theme. Look at the suggestions for the chosen repository and group them into two to four themes based on what they protect (examples: "token and credential isolation", "webhook integrity", "remediation safety", "data immutability"). Name each theme and give it one plain sentence. Ask which theme to explore first, or suggest the most security-critical one.
 
-Step 4 — walk through the rules. For each rule in the chosen theme, `konvu invariants get <id>`, then explain it in two to three plain sentences: what it means for this codebase, what a PR violation would look like in practice, and why that matters. Do not copy-paste the rule statement as the explanation. Then ask: accept as-is, amend, or decline?
+Step 4 — walk through the rules. For each rule in the chosen theme, `konvu invariants get <id>`. Then:
+
+a. Explain in two to three plain sentences: what it means for this codebase, what a PR violation would look like in practice, and why that matters. Do not copy-paste the rule statement as the explanation.
+
+b. Check the code. Look at the controls' `code_anchors` from the get response (format `path#symbol`): open each file and verify the symbol is there and its quote matches. Cite one or two file:line references as evidence for what the code currently does. If an anchor file is not found in this checkout, note it as unconfirmed. One line of evidence is enough; more if the rule is partial or unclear.
+
+c. Ask: accept as-is, amend, or decline?
 
 Step 5 — act on the decision.
 

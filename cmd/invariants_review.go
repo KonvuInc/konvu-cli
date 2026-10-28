@@ -152,7 +152,7 @@ func runInvariantsAmend(cmd *cobra.Command, args []string) error {
 		if dryRun || !outcomeUnknown(err) {
 			return invariantAmendError(err, id, dryRun)
 		}
-		return confirmAmend(cmd, client, err, id, format)
+		return confirmAmend(cmd, client, err, id, format, statement, whyItMatters, property)
 	}
 	if dryRun {
 		output.PrintStderr("Dry run: nothing was written. Run without --dry-run to amend it.")
@@ -172,7 +172,9 @@ func runInvariantsAmend(cmd *cobra.Command, args []string) error {
 }
 
 // confirmAmend reads the invariant back after an amend whose outcome is unknown.
-func confirmAmend(cmd *cobra.Command, client *api.Client, postErr error, id string, format output.OutputFormat) error {
+// It checks that the saved text matches the requested edits: another reviewer's accept would
+// leave the invariant validated but with the original (unedited) text.
+func confirmAmend(cmd *cobra.Command, client *api.Client, postErr error, id string, format output.OutputFormat, statement, whyItMatters, property string) error {
 	reason := postErr.Error()
 	var apiErr *api.APIError
 	if errors.As(postErr, &apiErr) {
@@ -191,6 +193,16 @@ func confirmAmend(cmd *cobra.Command, client *api.Client, postErr error, id stri
 	}
 	switch status := getStr(inv, "status"); status {
 	case invariantValidated:
+		// Check that the saved fields are the ones the user requested: another reviewer's accept
+		// (or a concurrent amend) would leave the invariant validated but with different text.
+		if getStr(inv, "statement") != statement || getStr(inv, "why_it_matters") != whyItMatters || getStr(inv, "property") != property {
+			return &clierrors.CLIError{
+				Code:       "INVARIANT_CHANGED",
+				Message:    fmt.Sprintf("the amend failed (%s) and the suggestion was decided on by another reviewer before it could be confirmed", reason),
+				Suggestion: fmt.Sprintf("Run 'konvu invariants get %s' to see what was saved.", id),
+				ExitCode:   clierrors.ExitGeneralError,
+			}
+		}
 		output.PrintStderr("It is active now, but the server failed after the amend, so its mapping to controls may wait for the next code analysis or rule change.")
 		if format == output.JSON {
 			fmt.Fprintln(cmd.OutOrStdout(), output.FormatJSON(inv))
@@ -252,6 +264,8 @@ func invariantAmendError(err error, id string, dryRun bool) error {
 			Suggestion: fmt.Sprintf("The suggestion changed after it was read. Run 'konvu invariants get %s' to see where it stands.", id),
 			ExitCode:   clierrors.ExitGeneralError,
 		}
+	case apiErr.StatusCode == 404:
+		return invariantNotFound(apiErr, id)
 	case apiErr.StatusCode == 422:
 		return &clierrors.CLIError{
 			Code:       "INVALID_AMEND",
