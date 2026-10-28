@@ -19,7 +19,13 @@ Use `-o json` for every konvu call.
 
 ## Step 0 — Check CLI and login
 
-Run `konvu version` and `konvu whoami -o json`. If either fails or the user is not logged in, tell them in one line and ask the user before running `konvu login` or `konvu update`. To set it up, follow steps 1 to 3 of https://app.konvu.com/guardrails/INSTALL.md (install the CLI, log in, install the skills), not its onboarding step. Do not proceed until they confirm they are logged in.
+Run `konvu version`.
+
+- If the command is not found, tell them in one line and ask the user before running `konvu login` or `konvu update`. To set it up, follow steps 1 to 3 of https://app.konvu.com/guardrails/INSTALL.md (install the CLI, log in, install the skills), not its onboarding step. Stop here until they confirm the CLI is installed.
+- If the CLI is there but outdated or the command is unknown, ask the user before running `konvu update`.
+- If the CLI is present, run `konvu whoami -o json`. If the user is not logged in, ask them to run `konvu login`.
+
+Do not proceed until they confirm they are logged in.
 
 ---
 
@@ -56,15 +62,13 @@ Ask which theme to explore first, or suggest the most security-critical one and 
 For each rule in the chosen theme, do **all of the following without pausing**:
 
 1. Run `konvu invariants get <id> -o json` to read its controls and code anchors.
-2. Spin up a **background agent** to quickly peek at the code: look at the `code_anchors` from the get response (format `path#symbol`), open each file, find the symbol, and note what it does. The agent should return in a short paragraph — not an audit, just enough to confirm the rule makes sense given what the code actually does. If a file isn't found in the current checkout, note it as unconfirmed.
-3. While the agent runs, do not wait — move to presenting the rule immediately using what you know from the rule text.
-
-Once the agent returns its peek (or times out), present the rule to the user like this:
-
-- **What this rule says**, in one plain sentence (your words, not the statement verbatim).
-- **What it would catch on a PR**, in one concrete example.
-- **What the code shows**, in one line — confirmed, unconfirmed, or a gap the peek found.
-- **Your read**: accept as-is, amend the wording slightly, or decline — and a one-line reason.
+2. Immediately present the rule — do not wait for the code peek:
+   - **What this rule says**, in one plain sentence (your words, not the statement verbatim).
+   - **What it would catch on a PR**, in one concrete example.
+3. In parallel, spin up a **background agent** to quickly peek at the code: look at the `code_anchors` from the get response (format `path#symbol`), open each file, find the symbol at that path, and return one `file:line` reference that confirms or contradicts the rule — not an audit, just the single most relevant line. If no file matches the current checkout, return "unconfirmed".
+4. Once the agent returns (or times out after ~30 seconds), add:
+   - **What the code shows**: the `file:line` reference the agent found, or "unconfirmed" if no match.
+   - **Your read**: accept as-is, amend the wording slightly, or decline — and a one-line reason.
 
 Then ask the user: "What do you think — accept, amend, or decline? Any questions?"
 
