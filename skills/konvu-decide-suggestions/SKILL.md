@@ -59,20 +59,22 @@ Ask which theme to explore first, or suggest the most security-critical one and 
 
 ## Step 4 — Work through the rules in the theme
 
-For each rule in the chosen theme, do **all of the following without pausing**:
+**One rule at a time.** Do not pre-fetch, pre-audit, or launch background agents for rules you haven't started presenting yet. Work strictly sequentially: finish one rule completely before touching the next.
+
+For the **current rule only**, do all of the following without pausing:
 
 1. Run `konvu invariants get <id> -o json` to read its controls and code anchors.
 2. Immediately present the rule — do not wait for the code peek:
    - **What this rule says**, in one plain sentence (your words, not the statement verbatim).
    - **What it would catch on a PR**, in one concrete example.
-3. In parallel, spin up a **background agent** to quickly peek at the code: look at the `code_anchors` from the get response (format `path#symbol`), open each file, find the symbol at that path, and return one `file:line` reference that confirms or contradicts the rule — not an audit, just the single most relevant line. If no file matches the current checkout, return "unconfirmed".
+3. At the same time, spin up a **single background agent** for this one rule: look at the `code_anchors` from the get response (format `path#symbol`), open each file, find the symbol at that path, and return one `file:line` reference that confirms or contradicts the rule — not an audit, just the single most relevant line. If no file matches the current checkout, return "unconfirmed".
 4. Once the agent returns (or times out after ~30 seconds), add:
    - **What the code shows**: the `file:line` reference the agent found, or "unconfirmed" if no match.
    - **Your read**: accept as-is, amend the wording slightly, or decline — and a one-line reason.
 
 Then ask the user: "What do you think — accept, amend, or decline? Any questions?"
 
-Lead the conversation. If they ask a question, answer it short. If they want to dig deeper, do it then. Do not audit upfront.
+Lead the conversation. If they ask a question, answer it short. If they want to dig deeper, do it then. Never launch agents for rules ahead of the current one.
 
 **wait** for the user's pick before running any command. Never decide on their behalf: no answer, a vague one, or "whatever you think" is not a pick — ask again.
 
