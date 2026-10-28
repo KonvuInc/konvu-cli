@@ -318,6 +318,7 @@ func init() {
 		newInvariantsGetCmd(),
 		newInvariantsPushCmd(),
 		newInvariantsAcceptCmd(),
+		newInvariantsAmendCmd(),
 		newInvariantsDeclineCmd(),
 	)
 	rootCmd.AddCommand(invariantsCmd)
