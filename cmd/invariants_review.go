@@ -71,6 +71,220 @@ accepted unchanged, or the request failed), 2 invalid id or flag, 3 invariant no
 	return c
 }
 
+var invariantSecurityProperties = []string{
+	"authentication", "authorization", "confidentiality",
+	"integrity", "availability", "non_repudiation",
+}
+
+func newInvariantsAmendCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "amend <id>",
+		Short: "Accept a security rule Konvu suggested, with your adjustments",
+		Long: `Accept a proposed invariant with edits: it becomes active, attributed to you, and recorded
+as amended (Konvu-suggested, user-adjusted). Konvu checks every change against it.
+
+All three text flags are required. --dry-run checks the request on the server and writes nothing.
+
+Only a proposed invariant can be amended. If it stopped being one before the amend reached
+Konvu (accepted, declined or replaced meanwhile), amend exits 1 and says what was written,
+if anything.
+
+Exit codes: 0 amended, 1 general error (not a suggestion, changed meanwhile, or the request
+failed), 2 invalid id or flag, 3 invariant not found, 4 auth failed or refused`,
+		Example: `  konvu invariants amend 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b \
+    --statement "..." --why-it-matters "..." --property confidentiality --dry-run
+  konvu invariants amend 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b \
+    --statement "..." --why-it-matters "..." --property confidentiality`,
+		Args: cobra.ExactArgs(1),
+		RunE: runInvariantsAmend,
+	}
+	c.Flags().String("statement", "", "The amended rule text (required, at most 200 characters)")
+	c.Flags().String("why-it-matters", "", "Why this rule matters (required, at most 500 characters)")
+	c.Flags().String("property", "", "Security property: authentication, authorization, confidentiality, integrity, availability or non_repudiation (required)")
+	c.Flags().Bool("dry-run", false, "Check on the server without writing anything")
+	c.Flags().StringP("output", "o", "", "Output format: json, table")
+	return c
+}
+
+func runInvariantsAmend(cmd *cobra.Command, args []string) error {
+	id, err := invariantID(args[0])
+	if err != nil {
+		return err
+	}
+	statement, _ := cmd.Flags().GetString("statement")
+	whyItMatters, _ := cmd.Flags().GetString("why-it-matters")
+	property, _ := cmd.Flags().GetString("property")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	format, err := findingDispositionOutputFormat(cmd)
+	if err != nil {
+		return err
+	}
+	for _, pair := range [][2]string{{"statement", statement}, {"why-it-matters", whyItMatters}, {"property", property}} {
+		if pair[1] == "" {
+			return &clierrors.CLIError{
+				Code:       "MISSING_FLAG",
+				Message:    fmt.Sprintf("--%s is required", pair[0]),
+				Suggestion: "Run 'konvu invariants amend --help' for usage.",
+				ExitCode:   clierrors.ExitUsageError,
+			}
+		}
+	}
+	if err := validValues("property", []string{property}, invariantSecurityProperties); err != nil {
+		return err
+	}
+
+	client := api.NewClient("", "")
+	defer client.Close()
+	inv, err := client.Get(invariantPath(id), nil)
+	if err != nil {
+		return invariantReadError(err, id)
+	}
+	if status := getStr(inv, "status"); status != invariantProposed {
+		return invariantNotProposed("amended", id, status)
+	}
+	resp, err := client.Post(invariantPath(id)+"/amend", map[string]any{
+		"statement":      statement,
+		"why_it_matters": whyItMatters,
+		"property":       property,
+		"dry_run":        dryRun,
+	})
+	if err != nil {
+		if dryRun || !outcomeUnknown(err) {
+			return invariantAmendError(err, id, dryRun)
+		}
+		return confirmAmend(cmd, client, err, id, format, statement, whyItMatters, property)
+	}
+	if dryRun {
+		output.PrintStderr("Dry run: nothing was written. Run without --dry-run to amend it.")
+	}
+	if format == output.JSON {
+		fmt.Fprintln(cmd.OutOrStdout(), output.FormatJSON(resp))
+		return nil
+	}
+	row := map[string]any{
+		"rank":      intField(resp, "rank"),
+		"status":    displayText(resp, "status"),
+		"statement": displayText(resp, "statement"),
+	}
+	cols := []string{"rank", "status", "statement"}
+	fmt.Fprint(cmd.OutOrStdout(), output.FormatTable(map[string]any{"invariants": []any{row}}, cols, "invariants", nil))
+	return nil
+}
+
+// confirmAmend reads the invariant back after an amend whose outcome is unknown.
+// It checks that the saved text matches the requested edits: another reviewer's accept would
+// leave the invariant validated but with the original (unedited) text.
+func confirmAmend(cmd *cobra.Command, client *api.Client, postErr error, id string, format output.OutputFormat, statement, whyItMatters, property string) error {
+	reason := postErr.Error()
+	var apiErr *api.APIError
+	if errors.As(postErr, &apiErr) {
+		reason = invariantDetail(apiErr)
+	}
+	reason = sanitizeGuardrailsBaselineText(reason)
+	recheck := fmt.Sprintf("Wait a minute, then run 'konvu invariants get %s': validated means it is active; if it is still proposed, run this amend again.", id)
+	inv, err := client.Get(invariantPath(id), nil)
+	if err != nil {
+		return &clierrors.CLIError{
+			Code:       "AMEND_UNCONFIRMED",
+			Message:    fmt.Sprintf("the amend failed (%s) and the invariant could not be read back", reason),
+			Suggestion: recheck,
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
+	switch status := getStr(inv, "status"); status {
+	case invariantValidated:
+		// Check that the saved fields are the ones the user requested: another reviewer's accept
+		// (or a concurrent amend) would leave the invariant validated but with different text.
+		if getStr(inv, "statement") != statement || getStr(inv, "why_it_matters") != whyItMatters || getStr(inv, "property") != property {
+			return &clierrors.CLIError{
+				Code:       "INVARIANT_CHANGED",
+				Message:    fmt.Sprintf("the amend failed (%s) and the suggestion was decided on by another reviewer before it could be confirmed", reason),
+				Suggestion: fmt.Sprintf("Run 'konvu invariants get %s' to see what was saved.", id),
+				ExitCode:   clierrors.ExitGeneralError,
+			}
+		}
+		output.PrintStderr("It is active now, but the server failed after the amend, so its mapping to controls may wait for the next code analysis or rule change.")
+		if format == output.JSON {
+			fmt.Fprintln(cmd.OutOrStdout(), output.FormatJSON(inv))
+			return nil
+		}
+		row := map[string]any{
+			"rank":      intField(inv, "rank"),
+			"status":    displayText(inv, "status"),
+			"statement": displayText(inv, "statement"),
+		}
+		cols := []string{"rank", "status", "statement"}
+		fmt.Fprint(cmd.OutOrStdout(), output.FormatTable(map[string]any{"invariants": []any{row}}, cols, "invariants", nil))
+		return nil
+	case invariantProposed:
+		return &clierrors.CLIError{
+			Code:       "AMEND_UNCONFIRMED",
+			Message:    fmt.Sprintf("the amend failed (%s) and the invariant is still proposed, though the request may still be running on the server", reason),
+			Suggestion: recheck,
+			Retryable:  true,
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	default:
+		return &clierrors.CLIError{
+			Code:       "INVARIANT_CHANGED",
+			Message:    fmt.Sprintf("the amend failed (%s) and the suggestion is now %s", reason, statusOrUnknown(status)),
+			Suggestion: "Run 'konvu invariants list' to check whether the rule is active under a new id.",
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
+}
+
+// invariantAmendError maps a refused amend whose outcome is known: nothing was written.
+func invariantAmendError(err error, id string, dryRun bool) error {
+	var authErr *api.AuthenticationError
+	if errors.As(err, &authErr) {
+		return clierrors.NewAuthError(err.Error())
+	}
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) {
+		if !dryRun {
+			return clierrors.NewAPIError(err.Error())
+		}
+		return &clierrors.CLIError{
+			Code:       "API_ERROR",
+			Message:    err.Error(),
+			Suggestion: "A dry run writes nothing: run it again.",
+			Retryable:  true,
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
+	detail := invariantDetail(apiErr)
+	switch {
+	case apiErr.StatusCode == 403:
+		return invariantDecisionForbidden(apiErr)
+	case apiErr.StatusCode == 409:
+		return &clierrors.CLIError{
+			Code:       "INVARIANT_CHANGED",
+			Message:    detail,
+			Suggestion: fmt.Sprintf("The suggestion changed after it was read. Run 'konvu invariants get %s' to see where it stands.", id),
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	case apiErr.StatusCode == 404:
+		return invariantNotFound(apiErr, id)
+	case apiErr.StatusCode == 422:
+		return &clierrors.CLIError{
+			Code:       "INVALID_AMEND",
+			Message:    detail,
+			Suggestion: "Check that statement is at most 200 characters and why-it-matters at most 500.",
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	case apiErr.StatusCode >= 500 && dryRun:
+		return &clierrors.CLIError{
+			Code:       "API_ERROR",
+			Message:    detail,
+			Suggestion: "A dry run writes nothing: run it again.",
+			Retryable:  true,
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
+	return clierrors.NewAPIError(detail)
+}
+
 func newInvariantsDeclineCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "decline <id>",

@@ -664,3 +664,157 @@ func TestInvariantsDeclineMapsRefusals(t *testing.T) {
 		}
 	}
 }
+
+func amendedInvariant() map[string]any {
+	inv := oneInvariant("validated")
+	inv["statement"] = "Session tokens never reach logs or error responses."
+	inv["why_it_matters"] = "A leaked token grants full session access."
+	inv["property"] = "confidentiality"
+	inv["origin"] = "amended"
+	return inv
+}
+
+func amendArgs() []string {
+	return []string{
+		testInvariantID,
+		"--statement", "Session tokens never reach logs or error responses.",
+		"--why-it-matters", "A leaked token grants full session access.",
+		"--property", "confidentiality",
+	}
+}
+
+func TestInvariantsAmendPostsTheDecision(t *testing.T) {
+	_, calls := reviewServer(t, map[string][]invariantReply{
+		invariantRoute("GET"):              {{200, oneInvariant("proposed")}},
+		invariantRoute("POST", "/amend"):   {{200, amendedInvariant()}},
+	})
+	out, err := runInvariants(newInvariantsAmendCmd(), append(amendArgs(), "-o", "json")...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil || got["origin"] != "amended" {
+		t.Fatalf("out = %q", out)
+	}
+	sent := calls()[1].body
+	if sent["statement"] != "Session tokens never reach logs or error responses." ||
+		sent["why_it_matters"] != "A leaked token grants full session access." ||
+		sent["property"] != "confidentiality" ||
+		sent["dry_run"] != false {
+		t.Fatalf("sent = %#v", sent)
+	}
+}
+
+func TestInvariantsAmendDryRunWritesNothing(t *testing.T) {
+	_, calls := reviewServer(t, map[string][]invariantReply{
+		invariantRoute("GET"):            {{200, oneInvariant("proposed")}},
+		invariantRoute("POST", "/amend"): {{200, amendedInvariant()}},
+	})
+	if _, err := runInvariants(newInvariantsAmendCmd(), append(amendArgs(), "--dry-run")...); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls(); len(got) != 2 || got[1].body["dry_run"] != true {
+		t.Fatalf("calls = %#v", got)
+	}
+}
+
+func TestInvariantsAmendRefusesMissingFlags(t *testing.T) {
+	reviewServer(t, nil)
+	for _, args := range [][]string{
+		{testInvariantID, "--why-it-matters", "x", "--property", "confidentiality"},
+		{testInvariantID, "--statement", "x", "--property", "confidentiality"},
+		{testInvariantID, "--statement", "x", "--why-it-matters", "x"},
+	} {
+		_, err := runInvariants(newInvariantsAmendCmd(), args...)
+		if e := cliErrorOf(t, err); e.Code != "MISSING_FLAG" || e.ExitCode != clierrors.ExitUsageError {
+			t.Errorf("args %v: err = %#v", args, e)
+		}
+	}
+}
+
+func TestInvariantsAmendRefusesInvalidProperty(t *testing.T) {
+	reviewServer(t, nil)
+	args := append(amendArgs()[:len(amendArgs())-1], "transparency")
+	_, err := runInvariants(newInvariantsAmendCmd(), args...)
+	if e := cliErrorOf(t, err); e.ExitCode != clierrors.ExitUsageError || !strings.Contains(e.Message, "transparency") {
+		t.Fatalf("err = %#v", e)
+	}
+}
+
+func TestInvariantsAmendRefusesWhatIsNotASuggestion(t *testing.T) {
+	for _, status := range []string{"validated", "declined", "retired"} {
+		_, calls := reviewServer(t, map[string][]invariantReply{invariantRoute("GET"): {{200, oneInvariant(status)}}})
+		_, err := runInvariants(newInvariantsAmendCmd(), amendArgs()...)
+		e := cliErrorOf(t, err)
+		if e.Code != "INVARIANT_NOT_PROPOSED" || e.ExitCode != clierrors.ExitGeneralError || !strings.Contains(e.Message, status) {
+			t.Fatalf("%s: err = %#v", status, e)
+		}
+		if n := len(calls()); n != 1 {
+			t.Fatalf("%s: %d calls, want only the read", status, n)
+		}
+	}
+}
+
+func TestInvariantsAmendMapsRefusals(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		reply invariantReply
+		code  string
+		exit  int
+	}{
+		{"not a person", invariantReply{403, detail("An attributed user identity is required.")}, "FORBIDDEN", clierrors.ExitAuthFailed},
+		{"changed meanwhile", invariantReply{409, detail("invariant is validated; only a proposed one can be amended")}, "INVARIANT_CHANGED", clierrors.ExitGeneralError},
+		{"invalid fields", invariantReply{422, detail("statement too long")}, "INVALID_AMEND", clierrors.ExitGeneralError},
+		{"not found", invariantReply{404, detail("no such invariant for this company")}, "INVARIANT_NOT_FOUND", clierrors.ExitNotFound},
+	} {
+		reviewServer(t, map[string][]invariantReply{
+			invariantRoute("GET"):            {{200, oneInvariant("proposed")}},
+			invariantRoute("POST", "/amend"): {tc.reply},
+		})
+		_, err := runInvariants(newInvariantsAmendCmd(), amendArgs()...)
+		if e := cliErrorOf(t, err); e.Code != tc.code || e.ExitCode != tc.exit {
+			t.Errorf("%s: err = %#v", tc.name, e)
+		}
+	}
+}
+
+func TestInvariantsAmendAfterServerErrorReadsBack(t *testing.T) {
+	amended := amendedInvariant()
+
+	// Confirmed: validated with the requested edits applied.
+	_, calls := reviewServer(t, map[string][]invariantReply{
+		invariantRoute("GET"):            {{200, oneInvariant("proposed")}, {200, amended}},
+		invariantRoute("POST", "/amend"): {{502, detail("service_proxy_error")}},
+	})
+	out, err := runInvariants(newInvariantsAmendCmd(), append(amendArgs(), "-o", "json")...)
+	if err != nil {
+		t.Fatalf("a saved amend must succeed: %v", err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil || resp["origin"] != "amended" {
+		t.Fatalf("out = %q", out)
+	}
+	if n := len(calls()); n != 3 {
+		t.Fatalf("%d calls, want read + amend + read-back", n)
+	}
+
+	// False success: validated but another reviewer's accept landed (original text).
+	reviewServer(t, map[string][]invariantReply{
+		invariantRoute("GET"):            {{200, oneInvariant("proposed")}, {200, oneInvariant("validated")}},
+		invariantRoute("POST", "/amend"): {{502, detail("service_proxy_error")}},
+	})
+	_, err = runInvariants(newInvariantsAmendCmd(), amendArgs()...)
+	if e := cliErrorOf(t, err); e.Code != "INVARIANT_CHANGED" || e.ExitCode != clierrors.ExitGeneralError {
+		t.Fatalf("another reviewer's accept must not report success: err = %#v", e)
+	}
+
+	// Still proposed after server error: not confirmed yet.
+	reviewServer(t, map[string][]invariantReply{
+		invariantRoute("GET"):            {{200, oneInvariant("proposed")}, {200, oneInvariant("proposed")}},
+		invariantRoute("POST", "/amend"): {{504, detail("service_timeout")}},
+	})
+	_, err = runInvariants(newInvariantsAmendCmd(), amendArgs()...)
+	if e := cliErrorOf(t, err); e.Code != "AMEND_UNCONFIRMED" || !e.Retryable {
+		t.Fatalf("err = %#v", e)
+	}
+}
