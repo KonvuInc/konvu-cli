@@ -34,7 +34,7 @@ func prCheckServer(t *testing.T) *httptest.Server {
 		switch r.URL.Path {
 		case prCheckReviewedPath:
 			q := r.URL.Query()
-			if q.Get("limit") == "30" && (strings.Join(q["outcome"], ",") != "pass" || q.Get("state") != "merged" || q.Get("offset") != "60") {
+			if q.Get("limit") == "30" && (strings.Join(q["outcome"], ",") != "pass" || q.Get("state") != "merged" || q.Get("offset") != "60" || q.Get("sort") != "score") {
 				t.Fatalf("list query = %v", q)
 			}
 			if q.Has("number") && (q.Get("repository") != "acme/app" || q.Get("number") != "42") {
@@ -56,10 +56,14 @@ func prCheckServer(t *testing.T) *httptest.Server {
 				map[string]any{"id": "run-2", "outcome": "error", "findings": []any{}},
 				map[string]any{
 					"id": "run-1", "outcome": "violation", "target_base_sha": "base",
-					"findings": []any{map[string]any{
-						"finding_id": "run-1:1", "title": "Member reads another workspace",
-						"attack_path": "member → GET /w/other", "rule_id": "RULE-1",
-					}},
+					// The first finding is unscored, as from a server without scores.
+					"findings": []any{
+						map[string]any{
+							"finding_id": "run-1:1", "title": "Member reads another workspace",
+							"attack_path": "member → GET /w/other", "rule_id": "RULE-1",
+						},
+						map[string]any{"finding_id": "run-1:2", "severity": "high", "score": 0.72},
+					},
 				},
 			})
 		default:
@@ -87,7 +91,7 @@ func TestPRCheckListAndGet(t *testing.T) {
 
 	listCmd := &cobra.Command{Use: "list", RunE: runPRCheckList}
 	addPRCheckListFlags(listCmd)
-	list := run(listCmd, "--outcome", "pass", "--state", "merged", "--limit", "30", "--offset", "60", "-q")
+	list := run(listCmd, "--outcome", "pass", "--state", "merged", "--limit", "30", "--offset", "60", "--sort", "score", "-q")
 	if strings.TrimSpace(list) != "https://github.com/acme/app/pull/42" {
 		t.Fatalf("list = %q", list)
 	}
@@ -99,7 +103,12 @@ func TestPRCheckListAndGet(t *testing.T) {
 		t.Fatal(err)
 	}
 	review := got[0]
-	flaw := review["findings"].([]any)[0].(map[string]any)
+	// Scored first; the unscored finding still comes through, last.
+	flaws := review["findings"].([]any)
+	top, flaw := flaws[0].(map[string]any), flaws[1].(map[string]any)
+	if top["score"] != 0.72 || top["severity"] != "high" || flaw["score"] != nil {
+		t.Fatalf("findings = %#v", flaws)
+	}
 	if flaw["attack_path"] != "member → GET /w/other" || flaw["rule_id"] != nil {
 		t.Fatalf("flaw = %#v", flaw)
 	}

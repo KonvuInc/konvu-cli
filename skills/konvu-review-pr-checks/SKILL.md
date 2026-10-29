@@ -23,11 +23,13 @@ Use `-o json` for every konvu call.
 ```
 konvu finding pr-check counts [--repo R] [--since 30d]   what was analyzed so far
 konvu finding pr-check list [--outcome violation|pass] [--repo R] [--since 30d]
-      [--state open|merged|closed] [--limit N] [--offset N]
+      [--state open|merged|closed] [--limit N] [--offset N] [--sort recent|score]
 konvu finding pr-check get <pr-url>   the flaw: attack path, protections checked,
                                       fix, evidence with file:line quotes
 gh api repos/<repo>/compare/<pr.base_sha>...<pr.head_sha>   the diff Konvu checked
 ```
+
+Each finding has a `severity` and a `score`: the confidence, from 0 to 1, that it is a real security flaw. `get` lists findings highest score first; `list` rows carry `top_severity` and `top_score`, and `--sort score` puts the highest first. Either may be null when a finding was not scored: review those too, after the scored ones. The score orders your review; it never replaces your verdict.
 
 `list` returns 50 PRs by default and at most 100: pass `--limit 100` and page with `--offset` until a page comes back with fewer than 100, then check the total against `counts`. `compare` lists at most 300 changed files: on a bigger PR, say the diff you judged was partial.
 
@@ -43,6 +45,6 @@ When the user gives a PR URL, review that PR only, nothing else:
 ## All PRs
 
 1. Run `counts`, then tell the user the scope in 3 lines.
-2. Flagged PRs: `list --outcome violation`. For each, run `get`, then diff the exact snapshot Konvu checked: `gh api repos/<repo>/compare/<pr.base_sha>...<pr.head_sha>`. Read the cited code at `pr.head_sha`. If those commits are gone, say so and skip the PR. Decide whether the flaw is real. Is the attack path reachable? Does a guard exist that Konvu missed in `protections_checked`? Give a verdict (real, false positive, unsure) with a one-line reason.
+2. Flagged PRs: `list --outcome violation --sort score`, highest score first. For each, run `get`, then diff the exact snapshot Konvu checked: `gh api repos/<repo>/compare/<pr.base_sha>...<pr.head_sha>`. Read the cited code at `pr.head_sha`. If those commits are gone, say so and skip the PR. Decide whether the flaw is real. Is the attack path reachable? Does a guard exist that Konvu missed in `protections_checked`? Give a verdict (real, false positive, unsure) with a one-line reason.
 3. Clean PRs: sample 30 from `list --outcome pass --state merged`, favoring PRs that touch auth, permissions, routes or data access. For each, read the diff and flag a missed security flaw only when you can cite file:line.
 4. End with a table (PR, Konvu's finding, your verdict, reason) and a summary: real vs false positives, misses found in the sample, and whether you'd trust Konvu to warn on PRs.

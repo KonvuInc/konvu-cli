@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -21,12 +22,15 @@ const (
 	prCheckMaxLimit     = 100
 	// Only findings judged to be security flaws; other defects stay in the PR comment.
 	prCheckFindingScope = "security"
+	prCheckSortRecent   = "recent"
 )
 
 var (
 	// Outcomes a completed, non-failed PR check can have.
 	prCheckOutcomes = []string{"violation", "pass"}
 	prCheckStates   = []string{"open", "merged", "closed"}
+	// List orders: newest review first, or highest finding score first.
+	prCheckSorts = []string{prCheckSortRecent, "score"}
 )
 
 // github.com/<owner>/<repo>/pull/<number>
@@ -35,7 +39,7 @@ var prURLRe = regexp.MustCompile(`^https://github\.com/([^/]+/[^/]+)/pull/(\d+)/
 // Finding fields that describe the flaw; rule and attribution internals are left out.
 var prCheckFindingKeys = []string{
 	"finding_id", "title", "summary", "change", "change_reason",
-	"attack_path", "protections_checked", "fix", "evidence",
+	"attack_path", "protections_checked", "fix", "evidence", "severity", "score",
 }
 
 var prCheckCmd = &cobra.Command{
@@ -44,7 +48,11 @@ var prCheckCmd = &cobra.Command{
 	Long: `Review what Konvu's PR check found, in monitor or warn mode.
 
 Each PR is judged on its latest completed run; failed runs are skipped.
-Pair with 'gh pr diff <url>' to judge each finding against the code.`,
+Pair with 'gh pr diff <url>' to judge each finding against the code.
+
+Findings carry a severity and a score: the confidence, from 0 to 1, that the
+finding is a real security flaw. Use the score to review the worst first.
+Both are null when Konvu could not score a finding.`,
 }
 
 var prCheckCountsCmd = &cobra.Command{
@@ -60,13 +68,14 @@ var prCheckListCmd = &cobra.Command{
 	Short: "List analyzed PRs with their outcome and flaws",
 	Example: `  konvu finding pr-check list --outcome violation
   konvu finding pr-check list --outcome pass --state merged --limit 30
+  konvu finding pr-check list --outcome violation --sort score
   konvu finding pr-check list --offset 50 -q`,
 	RunE: runPRCheckList,
 }
 
 var prCheckGetCmd = &cobra.Command{
 	Use:     "get <pr-url>",
-	Short:   "The security flaws found on one PR, with attack path and evidence",
+	Short:   "The security flaws found on one PR, highest score first, with attack path and evidence",
 	Example: `  konvu finding pr-check get https://github.com/acme/app/pull/42`,
 	Args:    cobra.ExactArgs(1),
 	RunE:    runPRCheckGet,
@@ -165,6 +174,8 @@ func transformReviewedPR(raw map[string]any) findings.Row {
 		"mode":          getStr(raw, "ci_mode"),
 		"outcome":       getStr(raw, "outcome"),
 		"finding_count": raw["finding_count"],
+		"top_severity":  raw["top_severity"],
+		"top_score":     raw["top_score"],
 		"findings":      strings.Join(titles, "; "),
 		"run_id":        getStr(raw, "run_id"),
 		"head_sha":      getStr(raw, "head_sha"),
@@ -172,8 +183,11 @@ func transformReviewedPR(raw map[string]any) findings.Row {
 	}
 }
 
-var prCheckTableColumns = []string{"url", "state", "outcome", "finding_count", "findings"}
-var prCheckCSVColumns = []string{"url", "repository", "number", "title", "author", "state", "mode", "outcome", "finding_count", "findings", "run_id", "reviewed_at"}
+var prCheckTableColumns = []string{"url", "state", "outcome", "top_severity", "top_score", "finding_count", "findings"}
+var prCheckCSVColumns = []string{"url", "repository", "number", "title", "author", "state", "mode", "outcome", "top_severity", "top_score", "finding_count", "findings", "run_id", "reviewed_at"}
+
+// Unscored PRs: null in JSON, a blank cell in table and CSV rather than "<nil>".
+var prCheckScoreColumns = []string{"top_severity", "top_score"}
 
 func runPRCheckList(cmd *cobra.Command, args []string) error {
 	params, err := prCheckFilters(cmd)
@@ -196,6 +210,11 @@ func runPRCheckList(cmd *cobra.Command, args []string) error {
 	if offset < 0 {
 		return prCheckUsageError("--offset cannot be negative", "Pass 0 or more.")
 	}
+	order, _ := cmd.Flags().GetString("sort")
+	if err := validValues("sort", []string{order}, prCheckSorts); err != nil {
+		return err
+	}
+	params["sort"] = order
 	params["outcome"] = outcomes
 	params["state"] = states
 	params["limit"] = limit
@@ -216,6 +235,16 @@ func runPRCheckList(cmd *cobra.Command, args []string) error {
 	}
 	if quiet, _ := cmd.Flags().GetBool("quiet"); quiet {
 		return findings.RenderBareIDs(cmd, rows, "url")
+	}
+
+	if format, _ := cmd.Flags().GetString("output"); format == "table" || format == "csv" {
+		for _, row := range rows {
+			for _, key := range prCheckScoreColumns {
+				if row[key] == nil {
+					row[key] = ""
+				}
+			}
+		}
 	}
 	return findings.RenderColumns(cmd, rows, prCheckTableColumns, prCheckCSVColumns)
 }
@@ -295,6 +324,16 @@ func prCheckReview(pr map[string]any, runs []any) findings.Row {
 			flaws = append(flaws, flaw)
 		}
 	}
+
+	// Highest score first; unscored findings (older servers, failed scoring) keep their order, last.
+	sort.SliceStable(flaws, func(i, j int) bool {
+		a, aOK := getFloat(flaws[i].(map[string]any), "score")
+		b, bOK := getFloat(flaws[j].(map[string]any), "score")
+		if aOK != bOK {
+			return aOK
+		}
+		return a > b
+	})
 	return findings.Row{
 		"pr": map[string]any{
 			"url":        getStr(pr, "url"),
@@ -326,6 +365,7 @@ func addPRCheckListFlags(c *cobra.Command) {
 	c.Flags().StringSlice("state", nil, "Filter by PR state (repeatable): "+strings.Join(prCheckStates, ", "))
 	c.Flags().IntP("limit", "n", 50, fmt.Sprintf("Maximum PRs to return (max %d)", prCheckMaxLimit))
 	c.Flags().Int("offset", 0, "Skip N results")
+	c.Flags().String("sort", prCheckSortRecent, "Order: "+strings.Join(prCheckSorts, ", ")+" (score: highest finding score first)")
 	c.Flags().BoolP("quiet", "q", false, "Print bare PR URLs, one per line")
 }
 
