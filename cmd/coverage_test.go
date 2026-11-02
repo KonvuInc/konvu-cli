@@ -102,10 +102,15 @@ func TestScopeRows(t *testing.T) {
 		t.Fatalf("got %d rows, want 2", len(rows))
 	}
 
-	cells := rows[0].cells()
-	want := map[string]any{"scope": "Prod", "product": "SCA", "analysis": "Critical", "reproduction": "off", "remediation": "on", "repositories": 2}
+	// Members the tenant no longer lists are not counted, as on the dashboard.
+	known := map[string]bool{"r1": true}
+	cells := rows[0].cells(known)
+	want := map[string]any{"scope": "Prod", "product": "SCA", "analysis": "Critical", "reproduction": "off", "remediation": "on", "repositories": 1}
 	if !reflect.DeepEqual(cells, want) {
 		t.Errorf("cells = %v, want %v", cells, want)
+	}
+	if got := rows[0].json(known)["repository_ids"]; !reflect.DeepEqual(got, []string{"r1"}) {
+		t.Errorf("json repository_ids = %v, want [r1]", got)
 	}
 
 	// A name both products use needs --product.

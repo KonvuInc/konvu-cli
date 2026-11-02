@@ -129,10 +129,19 @@ func runCoverageList(cmd *cobra.Command, args []string) error {
 	defer client.Close()
 
 	rows := fetchScopeRows(client, format)
+	repos, _ := fetchCoverage(client, format)
+
+	// Scopes can keep repositories the company no longer lists; like the
+	// dashboard, show only the listed ones.
+	known := map[string]bool{}
+	for _, r := range repos {
+		if m, ok := r.(map[string]any); ok {
+			known[getStr(m, "id")] = true
+		}
+	}
 
 	// Keep the scopes covering one repository.
 	if repoFilter != "" {
-		repos, _ := fetchCoverage(client, format)
 		id := resolveRepoIDsOrExit(repos, []string{repoFilter}, format)[0]
 		rows = rowsWithRepo(rows, id)
 	}
@@ -147,7 +156,7 @@ func runCoverageList(cmd *cobra.Command, args []string) error {
 	if format == output.JSON {
 		items := make([]map[string]any, 0, len(rows))
 		for _, row := range rows {
-			items = append(items, row.json())
+			items = append(items, row.json(known))
 		}
 		fmt.Println(output.FormatJSON(map[string]any{"scopes": items}))
 		return nil
@@ -155,7 +164,7 @@ func runCoverageList(cmd *cobra.Command, args []string) error {
 
 	items := make([]any, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, row.cells())
+		items = append(items, row.cells(known))
 	}
 	columns := []string{"scope", "product", "analysis", "reproduction", "remediation", "repositories"}
 	if format == output.CSV {
@@ -421,24 +430,35 @@ func (r scopeRow) repositoryIDs() []string {
 	return ids
 }
 
+// listedIDs returns the row's repositories the company still lists.
+func (r scopeRow) listedIDs(known map[string]bool) []string {
+	ids := []string{}
+	for _, id := range r.repositoryIDs() {
+		if known[id] {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 // json shows each task on, with its severities (null = all), e.g.
 // {"analysis": {"severities": ["CRITICAL"]}, "remediation": {"severities": null}}.
-func (r scopeRow) json() map[string]any {
+func (r scopeRow) json(known map[string]bool) map[string]any {
 	tasks := map[string]any{}
 	for _, task := range coverageTasks {
 		if scope := r.byStep[task.step]; scope != nil {
 			tasks[task.flag] = map[string]any{"severities": scope["severities"]}
 		}
 	}
-	return map[string]any{"name": r.name, "product": r.product, "tasks": tasks, "repository_ids": r.repositoryIDs()}
+	return map[string]any{"name": r.name, "product": r.product, "tasks": tasks, "repository_ids": r.listedIDs(known)}
 }
 
 // cells renders the row as the dashboard's table does.
-func (r scopeRow) cells() map[string]any {
+func (r scopeRow) cells(known map[string]bool) map[string]any {
 	cells := map[string]any{
 		"scope":        r.name,
 		"product":      strings.ToUpper(r.product),
-		"repositories": len(r.repositoryIDs()),
+		"repositories": len(r.listedIDs(known)),
 	}
 	for _, task := range coverageTasks {
 		scope := r.byStep[task.step]
