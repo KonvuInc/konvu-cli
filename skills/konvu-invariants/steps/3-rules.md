@@ -2,6 +2,8 @@ The direction is: **{direction}**, in {repo} ({repo_path}).
 
 Start your message with one line: you're going through that part of the code, a couple of minutes. Then go deep on this direction only: follow the real flow end to end in the code (entry points, checks, where data or actions leave), read what the team said about it, and look outside the repo if the flow continues there, read-only.
 
+Before drafting, run `konvu invariants list -o json` (read-only) and note each security rule's `statement` and `status`. A `validated` one is already active for the company: never draft it again, reworded, narrowed or broadened. A `proposed` one is a suggestion Konvu already made: if your best candidate says the same thing, keep that suggestion's exact wording, so the upload accepts it instead of adding a near-copy. If the command fails (no CLI, not logged in), go on without it.
+
 Read `{skill_dir}/references/rules.md`: it defines a security rule, the right level of detail, how to rank candidates, and the fields to fill. Draft 4 to 6 candidates within this direction, each written one level above the code you found (the outcome, not the mechanism: see the checks in rules.md), then keep **the single most important one**: the one whose break would hurt most, given who the customers are, what they trust the company with, the worst outcomes in `context.json`, what this repo does, and the direction the user picked. Save it as the only entry in `{dir}/invariants.json` (format in `{skill_dir}/references/rules.md`, under Fields). Keep the runners-up in mind in case they want to swap.
 
 Your message, in this order, short and structured:
