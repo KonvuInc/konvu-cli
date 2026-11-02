@@ -45,6 +45,7 @@ All commands support:
 
 ```bash
 konvu invariants list [--status proposed|validated|all]  # Security rules, by rank
+konvu invariants guide [-o json]             # Konvu's guide to a good security rule: Markdown, even piped
 konvu invariants get <id>                    # One rule: controls, code anchors, agent steering
 konvu invariants push --file rules.json [--dry-run]      # Add rules you wrote
 konvu invariants accept <id> [--dry-run]     # Accept a suggested rule, making it active
