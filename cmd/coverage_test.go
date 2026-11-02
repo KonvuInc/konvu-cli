@@ -66,78 +66,62 @@ func TestNormalizeSeverities(t *testing.T) {
 	}
 }
 
-func TestResolveSeverityValue(t *testing.T) {
-	// --all -> nil value (JSON null = all), no error
-	if v, err := resolveSeverityValue(nil, true); err != nil || v != nil {
+func TestParseSeverities(t *testing.T) {
+	// all -> nil value (JSON null = every severity), no error
+	if v, err := parseSeverities([]string{"All"}); err != nil || v != nil {
 		t.Errorf("all: got (%v, %v), want (nil, nil)", v, err)
 	}
-	// --set -> normalized list
-	v, err := resolveSeverityValue([]string{"high"}, false)
+
+	v, err := parseSeverities([]string{"high", "medium"})
 	if err != nil {
-		t.Fatalf("set: unexpected error: %v", err)
+		t.Fatalf("list: unexpected error: %v", err)
 	}
-	if !reflect.DeepEqual(v, []string{"HIGH"}) {
-		t.Errorf("set: got %v, want [HIGH]", v)
+	if !reflect.DeepEqual(v, []string{"HIGH", "MODERATE"}) {
+		t.Errorf("list: got %v, want [HIGH MODERATE]", v)
 	}
-	// neither -> error (never send empty [])
-	if _, err := resolveSeverityValue(nil, false); err == nil {
-		t.Error("expected error when neither --set nor --all given")
-	}
-	// both -> error
-	if _, err := resolveSeverityValue([]string{"high"}, true); err == nil {
-		t.Error("expected error when both --set and --all given")
+
+	// all mixed with a severity is not a severity
+	if _, err := parseSeverities([]string{"all", "high"}); err == nil {
+		t.Error("expected error for all mixed with severities")
 	}
 }
 
-func TestBuildEnableItems(t *testing.T) {
-	enabledByID := map[string]bool{"on": true, "off": false}
+func TestScopeRows(t *testing.T) {
+	scope := func(id, step, product, name string, sevs any, repos ...any) any {
+		return map[string]any{"id": id, "step": step, "product": product, "name": name, "severities": sevs, "repository_ids": repos}
+	}
+	rows := groupScopes([]any{
+		scope("1", "assessment", "sca", "Prod", []any{"CRITICAL"}, "r1"),
+		scope("2", "remediation", "sca", "Prod", nil, "r1", "r2"),
+		scope("3", "assessment", "sast", "Prod", nil, "r2"),
+		scope("4", "prevent", "prevent", "Prod", nil, "r3"),
+	})
 
-	// No --severities: only the currently-disabled repo is seeded with the
-	// default; the already-enabled repo keeps its severities (key omitted).
-	items := buildEnableItems([]string{"on", "off"}, enabledByID, false, nil, []string{"CRITICAL"})
-	for _, it := range items {
-		if it["assessment_enabled"] != true {
-			t.Errorf("%v: assessment_enabled should be true", it)
-		}
-	}
-	if _, present := items[0]["assessment_severities"]; present {
-		t.Errorf("already-enabled repo must NOT carry assessment_severities (silent reset): %v", items[0])
-	}
-	if got, present := items[1]["assessment_severities"]; !present || !reflect.DeepEqual(got, []string{"CRITICAL"}) {
-		t.Errorf("disabled repo should be seeded with default, got present=%v val=%v", present, got)
+	// One row per product and name; Prevent is not a Coverage row.
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
 	}
 
-	// Explicit --severities: applied to every target regardless of state.
-	items = buildEnableItems([]string{"on", "off"}, enabledByID, true, []string{"HIGH"}, nil)
-	for _, it := range items {
-		if got := it["assessment_severities"]; !reflect.DeepEqual(got, []string{"HIGH"}) {
-			t.Errorf("explicit severities should apply to all, got %v", got)
-		}
+	cells := rows[0].cells()
+	want := map[string]any{"scope": "Prod", "product": "SCA", "analysis": "Critical", "reproduction": "off", "remediation": "on", "repositories": 2}
+	if !reflect.DeepEqual(cells, want) {
+		t.Errorf("cells = %v, want %v", cells, want)
 	}
 
-	// Default is nil (all): disabled repo gets explicit null (key present, nil).
-	items = buildEnableItems([]string{"off"}, enabledByID, false, nil, nil)
-	if got, present := items[0]["assessment_severities"]; !present || got != nil {
-		t.Errorf("disabled repo with nil default should send null, got present=%v val=%v", present, got)
+	// A name both products use needs --product.
+	if _, err := findScopeRow(rows, "prod", ""); err == nil || err.Code != "AMBIGUOUS_SCOPE" {
+		t.Errorf("expected AMBIGUOUS_SCOPE, got %v", err)
 	}
-}
+	row, err := findScopeRow(rows, "prod", "sast")
+	if err != nil || row.product != "sast" {
+		t.Errorf("got (%v, %v), want the sast row", row, err)
+	}
+	if _, err := findScopeRow(rows, "nope", ""); err == nil || err.Code != "SCOPE_NOT_FOUND" {
+		t.Errorf("expected SCOPE_NOT_FOUND, got %v", err)
+	}
 
-func TestNormalizeDefaultSeverities(t *testing.T) {
-	// nil/null stays nil (= all severities)
-	if got := normalizeDefaultSeverities(nil); got != nil {
-		t.Errorf("nil -> %v, want nil", got)
-	}
-	// empty array (e.g. admin-stored) is coerced to nil so we never PATCH []
-	if got := normalizeDefaultSeverities([]any{}); got != nil {
-		t.Errorf("empty []any -> %v, want nil", got)
-	}
-	if got := normalizeDefaultSeverities([]string{}); got != nil {
-		t.Errorf("empty []string -> %v, want nil", got)
-	}
-	// non-empty passes through unchanged
-	in := []any{"CRITICAL", "HIGH"}
-	if got := normalizeDefaultSeverities(in); !reflect.DeepEqual(got, in) {
-		t.Errorf("non-empty -> %v, want %v", got, in)
+	if got := rowsWithRepo(rows, "r2"); len(got) != 2 {
+		t.Errorf("rowsWithRepo(r2) = %d rows, want 2", len(got))
 	}
 }
 

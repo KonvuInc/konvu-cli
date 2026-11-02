@@ -577,34 +577,31 @@ konvu remediate brief <plan-id> | claude -p
 konvu remediate brief <plan-id> --output json
 ```
 
-### `konvu coverage` — Configure where AI Assessment runs
+### `konvu coverage` — Configure which repositories Konvu covers
 
-Control which repositories the agents assess and at which severities. Repositories are identified by URL, id, or a unique URL substring.
+Mirrors the dashboard's Coverage page. A scope runs tasks on a set of repositories for one finding type (`sca` or `sast`): `analysis` (Exploitability analysis), `reproduction`, and `remediation`. Scopes are named; pass `--product` when an SCA and a SAST scope share a name. Repositories are identified by URL, id, or a unique URL substring.
 
 ```bash
-# List repositories and their coverage (bare `konvu coverage` also lists)
+# List scopes and their tasks (bare `konvu coverage` also lists)
 konvu coverage list
+konvu coverage list --repo org/api          # scopes covering one repository
 
-# Enable AI Assessment on a repository (starts on the company default severities)
-konvu coverage enable github:org/repo
+# Create a scope
+konvu coverage create "Production" --product sca --repo org/api,org/web \
+  --analysis CRITICAL,HIGH --reproduction CRITICAL --remediation
 
-# Enable scoped to specific severities
-konvu coverage enable org/repo --severities CRITICAL,HIGH
+# Add or remove repositories on every task of a scope
+konvu coverage add "Production" org/billing
+konvu coverage remove "Production" org/web
 
-# Disable AI Assessment
-konvu coverage disable org/repo
+# Change the severities a task runs on
+konvu coverage severities "Production" --analysis all
 
-# Change the severities assessed for a repository
-konvu coverage severities org/repo --set CRITICAL,HIGH
-konvu coverage severities org/repo --all          # assess every severity
-
-# Show or set the company-wide default new repositories inherit
-konvu coverage default
-konvu coverage default --set CRITICAL,HIGH
-konvu coverage default --all
+# Delete a scope
+konvu coverage delete "Production" --product sca
 ```
 
-Severities are `CRITICAL`, `HIGH`, `MEDIUM` (alias for `MODERATE`), `LOW`. `--all` clears the restriction (assess every severity); an empty set is rejected. Use `--dry-run` on `enable`/`disable`/`severities` to preview.
+Severities are `CRITICAL`, `HIGH`, `MEDIUM` (alias for `MODERATE`), `LOW`, or `all`. Remediation runs on every severity. Use `--dry-run` on any change to preview.
 
 ### `konvu inventory` — Understand repositories and their security context
 

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -12,7 +13,7 @@ import (
 )
 
 const coverageConfigPath = "/repositories/assessment_config"
-const coverageDefaultPath = "/repositories/assessment_config/default_severities"
+const coverageScopesPath = "/coverage/scopes"
 
 // Canonical wire values; MODERATE is shown as "Medium" in the dashboard.
 var validSeverities = map[string]bool{
@@ -22,282 +23,483 @@ var validSeverities = map[string]bool{
 	"LOW":      true,
 }
 
+// coverageTask is a task column of the dashboard's Coverage table: its flag,
+// the scope step it is saved as, and whether it runs on picked severities.
+type coverageTask struct {
+	flag, step string
+	severities bool
+}
+
+var coverageTasks = []coverageTask{
+	{"analysis", "assessment", true},
+	{"reproduction", "reproduction", true},
+	{"remediation", "remediation", false},
+}
+
+// Finding types a scope covers.
+var coverageProducts = []string{"sca", "sast"}
+
 var coverageCmd = &cobra.Command{
 	Use:   "coverage",
-	Short: "Configure where AI Assessment runs (repositories and severities)",
+	Short: "Configure which repositories Konvu covers, and with which tasks",
+	Long: `A scope runs tasks on a set of repositories for one finding type (sca or
+sast), like a row of the dashboard's Coverage page:
+
+  analysis      Exploitability analysis, on the severities picked
+  reproduction  Reproduction, on the severities picked
+  remediation   Remediation, on every severity
+
+Scopes are named; pass --product when an SCA and a SAST scope share a name.
+Repositories are identified by URL, id, or a unique URL substring.`,
 }
 
 var coverageListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List repositories and their assessment coverage",
+	Short: "List coverage scopes",
 	RunE:  runCoverageList,
 }
 
-var coverageEnableCmd = &cobra.Command{
-	Use:   "enable <repo>...",
-	Short: "Enable AI Assessment on one or more repositories",
-	Long: `Enable AI Assessment on repositories (identified by URL or id).
+var coverageCreateCmd = &cobra.Command{
+	Use:   "create <name>",
+	Short: "Create a scope",
+	Long: `Create a scope running the tasks passed on the repositories passed.
 
-Without --severities the repository starts on the company default severities.
+Severities are CRITICAL, HIGH, MEDIUM, LOW, or all.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 3 not found, 4 auth failed`,
-	Example: `  konvu coverage enable github:org/repo
-  konvu coverage enable org/repo --severities CRITICAL,HIGH`,
-	RunE: runCoverageEnable,
+	Example: `  konvu coverage create "Production" --product sca --repo org/api,org/web --analysis CRITICAL,HIGH --remediation
+  konvu coverage create "Everything" --product sast --repo org/api --analysis all`,
+	Args: cobra.ExactArgs(1),
+	RunE: runCoverageCreate,
 }
 
-var coverageDisableCmd = &cobra.Command{
-	Use:     "disable <repo>...",
-	Short:   "Disable AI Assessment on one or more repositories",
-	Example: `  konvu coverage disable github:org/repo`,
-	RunE:    runCoverageDisable,
+var coverageAddCmd = &cobra.Command{
+	Use:     "add <scope> <repo>...",
+	Short:   "Add repositories to a scope",
+	Example: `  konvu coverage add "Production" github:org/repo`,
+	Args:    cobra.MinimumNArgs(2),
+	RunE:    runCoverageMembers,
+}
+
+var coverageRemoveCmd = &cobra.Command{
+	Use:     "remove <scope> <repo>...",
+	Short:   "Remove repositories from a scope",
+	Example: `  konvu coverage remove "Production" github:org/repo`,
+	Args:    cobra.MinimumNArgs(2),
+	RunE:    runCoverageMembers,
 }
 
 var coverageSeveritiesCmd = &cobra.Command{
-	Use:   "severities <repo>...",
-	Short: "Set the severities assessed for one or more repositories",
-	Example: `  konvu coverage severities org/repo --set CRITICAL,HIGH
-  konvu coverage severities org/repo --all`,
+	Use:   "severities <scope>",
+	Short: "Change the severities a scope's tasks run on",
+	Example: `  konvu coverage severities "Production" --analysis CRITICAL,HIGH
+  konvu coverage severities "Production" --product sast --reproduction all`,
+	Args: cobra.ExactArgs(1),
 	RunE: runCoverageSeverities,
 }
 
-var coverageDefaultCmd = &cobra.Command{
-	Use:   "default",
-	Short: "Show or set the company-wide default severities new repositories inherit",
-	Example: `  konvu coverage default
-  konvu coverage default --set CRITICAL,HIGH
-  konvu coverage default --all`,
-	RunE: runCoverageDefault,
+var coverageDeleteCmd = &cobra.Command{
+	Use:     "delete <scope>",
+	Short:   "Delete a scope; its tasks stop on its repositories",
+	Example: `  konvu coverage delete "Production" --product sca`,
+	Args:    cobra.ExactArgs(1),
+	RunE:    runCoverageDelete,
+}
+
+// scopeRow is a row of the dashboard's Coverage table: one product's
+// same-name scopes, one per task step.
+type scopeRow struct {
+	name, product string
+	byStep        map[string]map[string]any
+}
+
+// scopeWrite is one API call of a change; a row spans several scopes.
+type scopeWrite struct {
+	Method string         `json:"method"`
+	Path   string         `json:"path"`
+	Body   map[string]any `json:"body,omitempty"`
 }
 
 func runCoverageList(cmd *cobra.Command, args []string) error {
 	repoFilter, _ := cmd.Flags().GetString("repo")
-	outputFlag, _ := cmd.Flags().GetString("output")
 	quiet, _ := cmd.Flags().GetBool("quiet")
-	format := output.DetectOutputFormat(outputFlag)
+	format := output.DetectOutputFormat(mustOutputFlag(cmd))
 
 	client := api.NewClient("", "")
 	defer client.Close()
 
-	data, err := client.Get(coverageConfigPath, nil)
-	if err != nil {
-		handleCoverageError(err, format)
-	}
-	repos := getSlice(data, "repositories")
-	defaultSevs := data["default_severities"]
+	rows := fetchScopeRows(client, format)
 
+	// Keep the scopes covering one repository.
 	if repoFilter != "" {
-		filtered := repos[:0:0]
-		needle := strings.ToLower(repoFilter)
-		for _, r := range repos {
-			m, ok := r.(map[string]any)
-			if ok && strings.Contains(strings.ToLower(getStr(m, "url")), needle) {
-				filtered = append(filtered, r)
-			}
-		}
-		repos = filtered
+		repos, _ := fetchCoverage(client, format)
+		id := resolveRepoIDsOrExit(repos, []string{repoFilter}, format)[0]
+		rows = rowsWithRepo(rows, id)
 	}
 
 	if quiet {
-		items := make([]map[string]any, 0, len(repos))
-		for _, r := range repos {
-			if m, ok := r.(map[string]any); ok {
-				items = append(items, m)
-			}
+		for _, row := range rows {
+			fmt.Println(row.name)
 		}
-		fmt.Println(output.FormatQuiet(items, "id"))
 		return nil
 	}
 
 	if format == output.JSON {
-		fmt.Println(output.FormatJSON(map[string]any{
-			"repositories":       repos,
-			"default_severities": defaultSevs,
-		}))
+		items := make([]map[string]any, 0, len(rows))
+		for _, row := range rows {
+			items = append(items, row.json())
+		}
+		fmt.Println(output.FormatJSON(map[string]any{"scopes": items}))
 		return nil
 	}
 
-	rows := make([]any, 0, len(repos))
-	for _, r := range repos {
-		m, ok := r.(map[string]any)
-		if !ok {
-			continue
-		}
-		enabled, _ := getBool(m, "assessment_enabled")
-		rows = append(rows, map[string]any{
-			"repository": getStr(m, "url"),
-			"assessment": yesNo(enabled),
-			"severities": severitiesDisplay(m["assessment_severities"]),
-		})
+	items := make([]any, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, row.cells())
 	}
-	columns := []string{"repository", "assessment", "severities"}
+	columns := []string{"scope", "product", "analysis", "reproduction", "remediation", "repositories"}
 	if format == output.CSV {
-		fmt.Print(output.FormatCSV(map[string]any{"repositories": rows}, columns, "repositories"))
+		fmt.Print(output.FormatCSV(map[string]any{"scopes": items}, columns, "scopes"))
 		return nil
 	}
-	fmt.Println(output.FormatTable(map[string]any{"repositories": rows}, columns, "repositories", nil))
-	fmt.Printf("Default severities: %s\n", severitiesDisplay(defaultSevs))
+	fmt.Println(output.FormatTable(map[string]any{"scopes": items}, columns, "scopes", nil))
 	return nil
 }
 
-// normalizeDefaultSeverities coerces an empty severity array to nil so callers
-// never forward the forbidden empty list (the API 422s on []); nil/null and a
-// non-empty list pass through unchanged.
-func normalizeDefaultSeverities(v any) any {
-	switch t := v.(type) {
-	case []any:
-		if len(t) == 0 {
-			return nil
-		}
-	case []string:
-		if len(t) == 0 {
-			return nil
-		}
-	}
-	return v
-}
-
-func runCoverageEnable(cmd *cobra.Command, args []string) error {
-	severities, _ := cmd.Flags().GetStringSlice("severities")
+func runCoverageCreate(cmd *cobra.Command, args []string) error {
+	product, _ := cmd.Flags().GetString("product")
+	repoArgs, _ := cmd.Flags().GetStringSlice("repo")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	format := output.DetectOutputFormat(mustOutputFlag(cmd))
 
-	if len(args) == 0 {
-		handleCoverageError(usageError("Specify at least one repository (URL or id)."), format)
+	if !contains(coverageProducts, product) {
+		handleCoverageError(usageError("Pass --product sca or --product sast."), format)
 	}
-
-	client := api.NewClient("", "")
-	defer client.Close()
-
-	repos, defaultSevs := fetchCoverage(client, format)
-	ids := resolveRepoIDsOrExit(repos, args, format)
-
-	enabledByID := map[string]bool{}
-	for _, r := range repos {
-		if m, ok := r.(map[string]any); ok {
-			b, _ := getBool(m, "assessment_enabled")
-			enabledByID[getStr(m, "id")] = b
-		}
-	}
-
-	var explicit any
-	hasExplicit := len(severities) > 0
-	if hasExplicit {
-		explicit = normalizeSeveritiesOrExit(severities, format)
-	}
-	// Empty admin-stored default coerces to nil so we never PATCH [] (422).
-	defaultSev := normalizeDefaultSeverities(defaultSevs)
-
-	items := buildEnableItems(ids, enabledByID, hasExplicit, explicit, defaultSev)
-	applyCoverage(client, items, dryRun, format, "enable")
-	return nil
-}
-
-// buildEnableItems builds the PATCH items for `enable`. Severities are written
-// only when the user passed --severities (applies to all targets), or, absent
-// that, when a repo is currently DISABLED — an off->on transition starts it on
-// the company default, mirroring the dashboard. Already-enabled repos get only
-// assessment_enabled, leaving any per-repo override untouched (no silent reset).
-func buildEnableItems(ids []string, enabledByID map[string]bool, hasExplicit bool, explicit, defaultSev any) []map[string]any {
-	items := make([]map[string]any, 0, len(ids))
-	for _, id := range ids {
-		item := map[string]any{"repository_id": id, "assessment_enabled": true}
-		if hasExplicit {
-			item["assessment_severities"] = explicit
-		} else if !enabledByID[id] {
-			item["assessment_severities"] = defaultSev
-		}
-		items = append(items, item)
-	}
-	return items
-}
-
-func runCoverageDisable(cmd *cobra.Command, args []string) error {
-	dryRun, _ := cmd.Flags().GetBool("dry-run")
-	format := output.DetectOutputFormat(mustOutputFlag(cmd))
-
-	if len(args) == 0 {
-		handleCoverageError(usageError("Specify at least one repository (URL or id)."), format)
+	if len(repoArgs) == 0 {
+		handleCoverageError(usageError("Pass the repositories with --repo."), format)
 	}
 
 	client := api.NewClient("", "")
 	defer client.Close()
 
 	repos, _ := fetchCoverage(client, format)
-	ids := resolveRepoIDsOrExit(repos, args, format)
+	ids := resolveRepoIDsOrExit(repos, repoArgs, format)
 
-	items := make([]map[string]any, 0, len(ids))
-	for _, id := range ids {
-		items = append(items, map[string]any{
-			"repository_id":      id,
-			"assessment_enabled": false,
-		})
+	// One scope per task, all under the same name, as the dashboard saves them.
+	var writes []scopeWrite
+	for _, task := range coverageTasks {
+		on, severities := taskFlag(cmd, task, format)
+		if !on {
+			continue
+		}
+
+		body := map[string]any{"step": task.step, "product": product, "name": args[0], "repository_ids": ids}
+		if task.severities {
+			body["severities"] = severities
+		}
+		writes = append(writes, scopeWrite{http.MethodPost, coverageScopesPath, body})
 	}
-	applyCoverage(client, items, dryRun, format, "disable")
+	if len(writes) == 0 {
+		handleCoverageError(usageError("Pass at least one task: --analysis, --reproduction or --remediation."), format)
+	}
+
+	applyScopeWrites(client, writes, dryRun, format, "create")
+	return nil
+}
+
+// runCoverageMembers adds or removes repositories on every task of a scope.
+func runCoverageMembers(cmd *cobra.Command, args []string) error {
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	format := output.DetectOutputFormat(mustOutputFlag(cmd))
+
+	client := api.NewClient("", "")
+	defer client.Close()
+
+	row := findScopeRowOrExit(cmd, client, args[0], format)
+	repos, _ := fetchCoverage(client, format)
+	ids := resolveRepoIDsOrExit(repos, args[1:], format)
+
+	key := "add_repository_ids"
+	if cmd.Name() == "remove" {
+		key = "remove_repository_ids"
+	}
+
+	var writes []scopeWrite
+	for _, scope := range row.scopes() {
+		writes = append(writes, scopeWrite{http.MethodPatch, scopePath(scope), map[string]any{key: ids}})
+	}
+	applyScopeWrites(client, writes, dryRun, format, cmd.Name())
 	return nil
 }
 
 func runCoverageSeverities(cmd *cobra.Command, args []string) error {
-	set, _ := cmd.Flags().GetStringSlice("set")
-	all, _ := cmd.Flags().GetBool("all")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	format := output.DetectOutputFormat(mustOutputFlag(cmd))
 
-	if len(args) == 0 {
-		handleCoverageError(usageError("Specify at least one repository (URL or id)."), format)
-	}
-	sevVal := resolveSeverityValueOrExit(set, all, format)
-
 	client := api.NewClient("", "")
 	defer client.Close()
 
-	repos, _ := fetchCoverage(client, format)
-	ids := resolveRepoIDsOrExit(repos, args, format)
+	row := findScopeRowOrExit(cmd, client, args[0], format)
 
-	items := make([]map[string]any, 0, len(ids))
-	for _, id := range ids {
-		items = append(items, map[string]any{
-			"repository_id":         id,
-			"assessment_severities": sevVal,
-		})
+	var writes []scopeWrite
+	for _, task := range coverageTasks {
+		if !task.severities {
+			continue
+		}
+
+		on, severities := taskFlag(cmd, task, format)
+		if !on {
+			continue
+		}
+
+		scope := row.byStep[task.step]
+		if scope == nil {
+			handleCoverageError(usageError(fmt.Sprintf("Scope %q does not run %s.", row.name, task.flag)), format)
+		}
+		writes = append(writes, scopeWrite{http.MethodPatch, scopePath(scope), map[string]any{"severities": severities}})
 	}
-	applyCoverage(client, items, dryRun, format, "update")
+	if len(writes) == 0 {
+		handleCoverageError(usageError("Pass --analysis or --reproduction."), format)
+	}
+
+	applyScopeWrites(client, writes, dryRun, format, "update")
 	return nil
 }
 
-func runCoverageDefault(cmd *cobra.Command, args []string) error {
-	set, _ := cmd.Flags().GetStringSlice("set")
-	all, _ := cmd.Flags().GetBool("all")
+func runCoverageDelete(cmd *cobra.Command, args []string) error {
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	format := output.DetectOutputFormat(mustOutputFlag(cmd))
 
 	client := api.NewClient("", "")
 	defer client.Close()
 
-	// No flags: read and show the current default.
-	if len(set) == 0 && !all {
-		data, err := client.Get(coverageConfigPath, nil)
-		if err != nil {
-			handleCoverageError(err, format)
-		}
-		defaultSevs := data["default_severities"]
-		if format == output.JSON {
-			fmt.Println(output.FormatJSON(map[string]any{"default_severities": defaultSevs}))
-		} else {
-			fmt.Printf("Default severities: %s\n", severitiesDisplay(defaultSevs))
-		}
-		return nil
+	row := findScopeRowOrExit(cmd, client, args[0], format)
+
+	var writes []scopeWrite
+	for _, scope := range row.scopes() {
+		writes = append(writes, scopeWrite{Method: http.MethodDelete, Path: scopePath(scope)})
+	}
+	applyScopeWrites(client, writes, dryRun, format, "delete")
+	return nil
+}
+
+// taskFlag reads a task's flag: whether the task is on, and the severities
+// to send (nil = all).
+func taskFlag(cmd *cobra.Command, task coverageTask, format output.OutputFormat) (bool, any) {
+	if !task.severities {
+		on, _ := cmd.Flags().GetBool(task.flag)
+		return on, nil
+	}
+	if !cmd.Flags().Changed(task.flag) {
+		return false, nil
 	}
 
-	sevVal := resolveSeverityValueOrExit(set, all, format)
-	if _, err := client.Put(coverageDefaultPath, map[string]any{"assessment_severities": sevVal}); err != nil {
+	in, _ := cmd.Flags().GetStringSlice(task.flag)
+	severities, err := parseSeverities(in)
+	if err != nil {
 		handleCoverageError(err, format)
 	}
-	if format == output.JSON {
-		fmt.Println(output.FormatJSON(map[string]any{"default_severities": sevVal}))
-	} else {
-		fmt.Printf("Default severities set to: %s\n", severitiesDisplay(sevVal))
+	return true, severities
+}
+
+// parseSeverities turns a severity flag into the value to send: nil (JSON
+// null = every severity) for "all", else the normalized list.
+func parseSeverities(in []string) (any, *clierrors.CLIError) {
+	if len(in) == 1 && strings.EqualFold(strings.TrimSpace(in[0]), "all") {
+		return nil, nil
 	}
-	return nil
+
+	norm, err := normalizeSeverities(in)
+	if err != nil {
+		return nil, err
+	}
+	return norm, nil
+}
+
+func fetchScopeRows(client *api.Client, format output.OutputFormat) []scopeRow {
+	data, err := client.Get(coverageScopesPath, nil)
+	if err != nil {
+		handleCoverageError(err, format)
+	}
+	return groupScopes(getSlice(data, "scopes"))
+}
+
+// groupScopes folds scopes into dashboard rows, in the order they come.
+func groupScopes(scopes []any) []scopeRow {
+	var rows []scopeRow
+	index := map[[2]string]int{}
+	for _, s := range scopes {
+		m, ok := s.(map[string]any)
+		if !ok || !contains(coverageProducts, getStr(m, "product")) {
+			continue
+		}
+
+		key := [2]string{getStr(m, "product"), getStr(m, "name")}
+		i, seen := index[key]
+		if !seen {
+			i = len(rows)
+			index[key] = i
+			rows = append(rows, scopeRow{name: key[1], product: key[0], byStep: map[string]map[string]any{}})
+		}
+		rows[i].byStep[getStr(m, "step")] = m
+	}
+	return rows
+}
+
+func rowsWithRepo(rows []scopeRow, id string) []scopeRow {
+	var kept []scopeRow
+	for _, row := range rows {
+		if contains(row.repositoryIDs(), id) {
+			kept = append(kept, row)
+		}
+	}
+	return kept
+}
+
+func findScopeRowOrExit(cmd *cobra.Command, client *api.Client, name string, format output.OutputFormat) scopeRow {
+	product, _ := cmd.Flags().GetString("product")
+	row, err := findScopeRow(fetchScopeRows(client, format), name, product)
+	if err != nil {
+		handleCoverageError(err, format)
+	}
+	return row
+}
+
+// findScopeRow picks the row named name, narrowed to product when given.
+func findScopeRow(rows []scopeRow, name, product string) (scopeRow, *clierrors.CLIError) {
+	var matches []scopeRow
+	for _, row := range rows {
+		if !strings.EqualFold(row.name, name) {
+			continue
+		}
+		if product != "" && row.product != product {
+			continue
+		}
+		matches = append(matches, row)
+	}
+
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return scopeRow{}, &clierrors.CLIError{
+			Code:       "SCOPE_NOT_FOUND",
+			Message:    fmt.Sprintf("No scope named %q.", name),
+			Suggestion: "Run 'konvu coverage list' to see scopes.",
+			ExitCode:   clierrors.ExitNotFound,
+		}
+	}
+	return scopeRow{}, &clierrors.CLIError{
+		Code:       "AMBIGUOUS_SCOPE",
+		Message:    fmt.Sprintf("An SCA and a SAST scope are both named %q.", name),
+		Suggestion: "Pass --product sca or --product sast.",
+		ExitCode:   clierrors.ExitUsageError,
+	}
+}
+
+// scopes returns the row's scopes in task order.
+func (r scopeRow) scopes() []map[string]any {
+	var out []map[string]any
+	for _, task := range coverageTasks {
+		if scope := r.byStep[task.step]; scope != nil {
+			out = append(out, scope)
+		}
+	}
+	return out
+}
+
+// repositoryIDs returns every repository any of the row's tasks runs on.
+func (r scopeRow) repositoryIDs() []string {
+	var ids []string
+	for _, scope := range r.scopes() {
+		for _, v := range getSlice(scope, "repository_ids") {
+			if id, ok := v.(string); ok && !contains(ids, id) {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
+}
+
+// json shows each task on, with its severities (null = all), e.g.
+// {"analysis": {"severities": ["CRITICAL"]}, "remediation": {"severities": null}}.
+func (r scopeRow) json() map[string]any {
+	tasks := map[string]any{}
+	for _, task := range coverageTasks {
+		if scope := r.byStep[task.step]; scope != nil {
+			tasks[task.flag] = map[string]any{"severities": scope["severities"]}
+		}
+	}
+	return map[string]any{"name": r.name, "product": r.product, "tasks": tasks, "repository_ids": r.repositoryIDs()}
+}
+
+// cells renders the row as the dashboard's table does.
+func (r scopeRow) cells() map[string]any {
+	cells := map[string]any{
+		"scope":        r.name,
+		"product":      strings.ToUpper(r.product),
+		"repositories": len(r.repositoryIDs()),
+	}
+	for _, task := range coverageTasks {
+		scope := r.byStep[task.step]
+		switch {
+		case scope == nil:
+			cells[task.flag] = "off"
+		case task.severities:
+			cells[task.flag] = severitiesDisplay(scope["severities"])
+		default:
+			cells[task.flag] = "on"
+		}
+	}
+	return cells
+}
+
+func scopePath(scope map[string]any) string {
+	return coverageScopesPath + "/" + getStr(scope, "id")
+}
+
+// applyScopeWrites sends the calls in order (or previews them under --dry-run).
+func applyScopeWrites(client *api.Client, writes []scopeWrite, dryRun bool, format output.OutputFormat, action string) {
+	if dryRun {
+		if format == output.JSON {
+			fmt.Println(output.FormatJSON(map[string]any{"action": action, "dry_run": true, "requests": writes}))
+		} else {
+			fmt.Printf("Dry run: would %s with %d request(s).\n", action, len(writes))
+		}
+		return
+	}
+
+	for i, w := range writes {
+		var err error
+		switch w.Method {
+		case http.MethodPost:
+			_, err = client.Post(w.Path, w.Body)
+		case http.MethodPatch:
+			_, err = client.Patch(w.Path, w.Body)
+		case http.MethodDelete:
+			_, err = client.Delete(w.Path, nil)
+		}
+		if err == nil {
+			continue
+		}
+
+		// Earlier requests already applied: say so, so the caller checks.
+		if i > 0 {
+			err = &clierrors.CLIError{
+				Code:       "PARTIALLY_APPLIED",
+				Message:    fmt.Sprintf("%s (%d of %d requests applied)", err.Error(), i, len(writes)),
+				Suggestion: "Run 'konvu coverage list' to see what changed.",
+				ExitCode:   clierrors.ExitGeneralError,
+			}
+		}
+		handleCoverageError(err, format)
+	}
+
+	if format == output.JSON {
+		fmt.Println(output.FormatJSON(map[string]any{"action": action, "dry_run": false, "requests": len(writes)}))
+	} else {
+		fmt.Printf("Applied %s (%d request(s)).\n", action, len(writes))
+	}
 }
 
 // fetchCoverage GETs the config and returns (repositories, default_severities).
@@ -386,42 +588,6 @@ func resolveRepoIDs(repos []any, args []string) ([]string, *clierrors.CLIError) 
 	return ids, nil
 }
 
-func resolveSeverityValueOrExit(set []string, all bool, format output.OutputFormat) any {
-	v, err := resolveSeverityValue(set, all)
-	if err != nil {
-		handleCoverageError(err, format)
-	}
-	return v
-}
-
-// resolveSeverityValue turns --set/--all into the value to send: nil (JSON
-// null = all severities) for --all, or the normalized list. On a nil error,
-// a nil value means "all".
-func resolveSeverityValue(set []string, all bool) (any, *clierrors.CLIError) {
-	if all && len(set) > 0 {
-		return nil, usageError("Pass either --all or --set, not both.")
-	}
-	if all {
-		return nil, nil
-	}
-	if len(set) == 0 {
-		return nil, usageError("Pass --set CRITICAL,HIGH or --all (every severity).")
-	}
-	norm, err := normalizeSeverities(set)
-	if err != nil {
-		return nil, err
-	}
-	return norm, nil
-}
-
-func normalizeSeveritiesOrExit(in []string, format output.OutputFormat) []string {
-	out, err := normalizeSeverities(in)
-	if err != nil {
-		handleCoverageError(err, format)
-	}
-	return out
-}
-
 // normalizeSeverities upper-cases, maps MEDIUM->MODERATE, validates and
 // de-duplicates; never returns an empty slice (empty would 422 server-side).
 func normalizeSeverities(in []string) ([]string, *clierrors.CLIError) {
@@ -433,7 +599,7 @@ func normalizeSeverities(in []string) ([]string, *clierrors.CLIError) {
 			u = "MODERATE"
 		}
 		if !validSeverities[u] {
-			return nil, usageError(fmt.Sprintf("Invalid severity %q. Use CRITICAL, HIGH, MEDIUM, or LOW.", s))
+			return nil, usageError(fmt.Sprintf("Invalid severity %q. Use CRITICAL, HIGH, MEDIUM, LOW, or all.", s))
 		}
 		if !seen[u] {
 			seen[u] = true
@@ -441,35 +607,9 @@ func normalizeSeverities(in []string) ([]string, *clierrors.CLIError) {
 		}
 	}
 	if len(out) == 0 {
-		return nil, usageError("No severities given; use --all to assess every severity.")
+		return nil, usageError("No severities given; use all for every severity.")
 	}
 	return out, nil
-}
-
-// applyCoverage sends the PATCH (or previews it under --dry-run).
-func applyCoverage(client *api.Client, items []map[string]any, dryRun bool, format output.OutputFormat, action string) {
-	noun := "repository"
-	if len(items) != 1 {
-		noun = "repositories"
-	}
-	if dryRun {
-		if format == output.JSON {
-			fmt.Println(output.FormatJSON(map[string]any{
-				"action": action, "dry_run": true, "total": len(items), "items": items,
-			}))
-		} else {
-			fmt.Printf("Dry run: would %s %d %s.\n", action, len(items), noun)
-		}
-		return
-	}
-	if _, err := client.Patch(coverageConfigPath, items); err != nil {
-		handleCoverageError(err, format)
-	}
-	if format == output.JSON {
-		fmt.Println(output.FormatJSON(map[string]any{"action": action, "dry_run": false, "updated": len(items)}))
-	} else {
-		fmt.Printf("Updated %d %s.\n", len(items), noun)
-	}
 }
 
 func severitiesDisplay(v any) string {
@@ -544,7 +684,14 @@ func handleCoverageError(err error, format output.OutputFormat) {
 			cliErr = &clierrors.CLIError{
 				Code:       "INVALID_SEVERITIES",
 				Message:    e.Error(),
-				Suggestion: "Pass --all to assess every severity, or list them like --set CRITICAL,HIGH.",
+				Suggestion: "Severities are CRITICAL, HIGH, MEDIUM, LOW, or all.",
+				ExitCode:   clierrors.ExitUsageError,
+			}
+		case 409:
+			cliErr = &clierrors.CLIError{
+				Code:       "CONFLICT",
+				Message:    e.Error(),
+				Suggestion: "Run 'konvu coverage list' to see scopes.",
 				ExitCode:   clierrors.ExitUsageError,
 			}
 		case 404:
@@ -573,33 +720,34 @@ func handleCoverageError(err error, format output.OutputFormat) {
 }
 
 func init() {
-	coverageListCmd.Flags().StringP("repo", "r", "", "Filter by repository URL/name (substring)")
+	coverageListCmd.Flags().StringP("repo", "r", "", "Only scopes covering this repository (URL, id or unique substring)")
 	coverageListCmd.Flags().StringP("output", "o", "", "Output format: json, table, csv")
-	coverageListCmd.Flags().BoolP("quiet", "q", false, "Print only repository ids")
+	coverageListCmd.Flags().BoolP("quiet", "q", false, "Print only scope names")
 
-	coverageEnableCmd.Flags().StringSlice("severities", nil, "Severities to assess (default: company default)")
-	coverageEnableCmd.Flags().Bool("dry-run", false, "Preview without applying")
-	coverageEnableCmd.Flags().StringP("output", "o", "", "Output format: json, table")
+	coverageCreateCmd.Flags().String("product", "", "Finding type: sca or sast")
+	coverageCreateCmd.Flags().StringSlice("repo", nil, "Repositories to cover")
+	coverageCreateCmd.Flags().StringSlice("analysis", nil, "Run Exploitability analysis on these severities (or all)")
+	coverageCreateCmd.Flags().StringSlice("reproduction", nil, "Run Reproduction on these severities (or all)")
+	coverageCreateCmd.Flags().Bool("remediation", false, "Run Remediation")
 
-	coverageDisableCmd.Flags().Bool("dry-run", false, "Preview without applying")
-	coverageDisableCmd.Flags().StringP("output", "o", "", "Output format: json, table")
+	coverageSeveritiesCmd.Flags().StringSlice("analysis", nil, "Exploitability analysis severities (or all)")
+	coverageSeveritiesCmd.Flags().StringSlice("reproduction", nil, "Reproduction severities (or all)")
 
-	coverageSeveritiesCmd.Flags().StringSlice("set", nil, "Severities to assess (e.g. CRITICAL,HIGH)")
-	coverageSeveritiesCmd.Flags().Bool("all", false, "Assess every severity")
-	coverageSeveritiesCmd.Flags().Bool("dry-run", false, "Preview without applying")
-	coverageSeveritiesCmd.Flags().StringP("output", "o", "", "Output format: json, table")
+	for _, c := range []*cobra.Command{coverageAddCmd, coverageRemoveCmd, coverageSeveritiesCmd, coverageDeleteCmd} {
+		c.Flags().String("product", "", "sca or sast, when both have a scope with this name")
+	}
+	for _, c := range []*cobra.Command{coverageCreateCmd, coverageAddCmd, coverageRemoveCmd, coverageSeveritiesCmd, coverageDeleteCmd} {
+		c.Flags().Bool("dry-run", false, "Preview without applying")
+		c.Flags().StringP("output", "o", "", "Output format: json, table")
+	}
 
-	coverageDefaultCmd.Flags().StringSlice("set", nil, "Severities to assess (e.g. CRITICAL,HIGH)")
-	coverageDefaultCmd.Flags().Bool("all", false, "Assess every severity")
-	coverageDefaultCmd.Flags().StringP("output", "o", "", "Output format: json, table")
-
-	coverageCmd.AddCommand(coverageListCmd, coverageEnableCmd, coverageDisableCmd, coverageSeveritiesCmd, coverageDefaultCmd)
+	coverageCmd.AddCommand(coverageListCmd, coverageCreateCmd, coverageAddCmd, coverageRemoveCmd, coverageSeveritiesCmd, coverageDeleteCmd)
 
 	// Bare `konvu coverage` lists, matching the dismiss alias pattern.
 	coverageCmd.RunE = runCoverageList
-	coverageCmd.Flags().StringP("repo", "r", "", "Filter by repository URL/name (substring)")
+	coverageCmd.Flags().StringP("repo", "r", "", "Only scopes covering this repository (URL, id or unique substring)")
 	coverageCmd.Flags().StringP("output", "o", "", "Output format: json, table, csv")
-	coverageCmd.Flags().BoolP("quiet", "q", false, "Print only repository ids")
+	coverageCmd.Flags().BoolP("quiet", "q", false, "Print only scope names")
 
 	rootCmd.AddCommand(coverageCmd)
 }
