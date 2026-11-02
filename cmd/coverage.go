@@ -432,23 +432,37 @@ func (r scopeRow) repositoryIDs() []string {
 
 // listedIDs returns the row's repositories the company still lists.
 func (r scopeRow) listedIDs(known map[string]bool) []string {
-	ids := []string{}
-	for _, id := range r.repositoryIDs() {
-		if known[id] {
-			ids = append(ids, id)
-		}
-	}
-	return ids
+	return keepListed(r.repositoryIDs(), known)
 }
 
-// json shows each task on, with its severities (null = all), e.g.
-// {"analysis": {"severities": ["CRITICAL"]}, "remediation": {"severities": null}}.
+func keepListed(ids []string, known map[string]bool) []string {
+	kept := []string{}
+	for _, id := range ids {
+		if known[id] {
+			kept = append(kept, id)
+		}
+	}
+	return kept
+}
+
+// json shows each task on, with its severities (null = all) and the
+// repositories it runs on, e.g.
+// {"analysis": {"severities": ["CRITICAL"], "repository_ids": ["r1"]}}.
 func (r scopeRow) json(known map[string]bool) map[string]any {
 	tasks := map[string]any{}
 	for _, task := range coverageTasks {
-		if scope := r.byStep[task.step]; scope != nil {
-			tasks[task.flag] = map[string]any{"severities": scope["severities"]}
+		scope := r.byStep[task.step]
+		if scope == nil {
+			continue
 		}
+
+		var ids []string
+		for _, v := range getSlice(scope, "repository_ids") {
+			if id, ok := v.(string); ok {
+				ids = append(ids, id)
+			}
+		}
+		tasks[task.flag] = map[string]any{"severities": scope["severities"], "repository_ids": keepListed(ids, known)}
 	}
 	return map[string]any{"name": r.name, "product": r.product, "tasks": tasks, "repository_ids": r.listedIDs(known)}
 }

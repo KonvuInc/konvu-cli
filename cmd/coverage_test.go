@@ -109,8 +109,15 @@ func TestScopeRows(t *testing.T) {
 	if !reflect.DeepEqual(cells, want) {
 		t.Errorf("cells = %v, want %v", cells, want)
 	}
-	if got := rows[0].json(known)["repository_ids"]; !reflect.DeepEqual(got, []string{"r1"}) {
-		t.Errorf("json repository_ids = %v, want [r1]", got)
+	// Each task lists its own repositories; the row lists them all.
+	known["r2"] = true
+	got := rows[0].json(known)
+	if !reflect.DeepEqual(got["repository_ids"], []string{"r1", "r2"}) {
+		t.Errorf("json repository_ids = %v, want [r1 r2]", got["repository_ids"])
+	}
+	analysis := got["tasks"].(map[string]any)["analysis"].(map[string]any)
+	if !reflect.DeepEqual(analysis["repository_ids"], []string{"r1"}) {
+		t.Errorf("analysis repository_ids = %v, want [r1]", analysis["repository_ids"])
 	}
 
 	// A name both products use needs --product.
