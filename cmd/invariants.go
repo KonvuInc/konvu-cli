@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
@@ -14,7 +15,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const invariantsPath = "/services/guardrails/v1/prevent/invariants"
+const (
+	invariantsPath      = "/services/guardrails/v1/prevent/invariants"
+	invariantsGuidePath = invariantsPath + "/guide"
+)
 
 // invariantListStatuses are the values `list --status` takes; "all" keeps every live invariant.
 var invariantListStatuses = []string{"all", "proposed", "validated"}
@@ -42,6 +46,27 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed or re
 	}
 	c.Flags().String("status", "all", "Which invariants: proposed (suggested by Konvu), validated (active) or all")
 	c.Flags().StringP("output", "o", "", "Output format: json, table")
+	return c
+}
+
+func newInvariantsGuideCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "guide",
+		Short: "Print Konvu's guide to writing a good security rule",
+		Long: `Print Konvu's guide to writing a good security rule: what one is, the right level of
+detail, and how to rank candidates. Konvu's own suggestions follow the same text.
+
+The guide prints as Markdown, even when piped. -o json prints {"guide", "version"}; the
+version changes whenever the guide does.
+
+Exit codes: 0 success, 1 general error (this Konvu server has no guide yet, or the request
+failed), 2 invalid --output, 4 auth failed or refused`,
+		Example: `  konvu invariants guide
+  konvu invariants guide -o json`,
+		Args: cobra.NoArgs,
+		RunE: runInvariantsGuide,
+	}
+	c.Flags().StringP("output", "o", "", "Output format: markdown (the default) or json")
 	return c
 }
 
@@ -127,6 +152,71 @@ func invariantsWithStatus(items []any, status string) []any {
 		}
 	}
 	return kept
+}
+
+func runInvariantsGuide(cmd *cobra.Command, args []string) error {
+	format, _ := cmd.Flags().GetString("output")
+	format = strings.ToLower(strings.TrimSpace(format))
+	if format != "" && format != "markdown" && format != "json" {
+		return &clierrors.CLIError{
+			Code:       "INVALID_ARGUMENTS",
+			Message:    fmt.Sprintf("unsupported output format %q", format),
+			Suggestion: "Use --output markdown or --output json.",
+			ExitCode:   clierrors.ExitUsageError,
+		}
+	}
+
+	client := api.NewClient("", "")
+	defer client.Close()
+	resp, err := client.Get(invariantsGuidePath, nil)
+	if err != nil {
+		return invariantsGuideError(err)
+	}
+	guide := getStr(resp, "guide")
+	if strings.TrimSpace(guide) == "" {
+		return &clierrors.CLIError{
+			Code:       "GUIDE_EMPTY",
+			Message:    "Konvu sent no security rule guide",
+			Suggestion: "Run the same command again; if it still fails, contact Konvu support.",
+			Retryable:  true,
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
+	if format == "json" {
+		return output.WriteString(cmd.OutOrStdout(), output.FormatJSON(resp)+"\n")
+	}
+	return output.WriteString(cmd.OutOrStdout(), guideText(guide))
+}
+
+// guideText is the guide as the terminal gets it: control characters other than newlines and
+// tabs are dropped so the server's text cannot drive the terminal, and it ends with a newline.
+func guideText(guide string) string {
+	var text strings.Builder
+	text.Grow(len(guide) + 1)
+	for _, character := range strings.ReplaceAll(guide, "\r\n", "\n") {
+		if character == '\n' || character == '\t' || !unicode.IsControl(character) {
+			text.WriteRune(character)
+		}
+	}
+	if !strings.HasSuffix(text.String(), "\n") {
+		text.WriteByte('\n')
+	}
+	return text.String()
+}
+
+// invariantsGuideError maps a failed guide read. An older server has no guide route: the path
+// falls through to the one-invariant route, which answers 404 or 422 (guide is not an id).
+func invariantsGuideError(err error) error {
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) && (apiErr.StatusCode == 404 || apiErr.StatusCode == 422) {
+		return &clierrors.CLIError{
+			Code:       "GUIDE_NOT_AVAILABLE",
+			Message:    "this Konvu server does not have the security rule guide yet",
+			Suggestion: "The guide comes with a newer Konvu server: try again once yours is updated, or contact Konvu support.",
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
+	return invariantsListError(err)
 }
 
 func runInvariantsPush(cmd *cobra.Command, args []string) error {
@@ -315,6 +405,7 @@ func anyRepositoryID(invariants []any) bool {
 func init() {
 	invariantsCmd.AddCommand(
 		newInvariantsListCmd(),
+		newInvariantsGuideCmd(),
 		newInvariantsGetCmd(),
 		newInvariantsPushCmd(),
 		newInvariantsAcceptCmd(),

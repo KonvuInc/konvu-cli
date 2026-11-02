@@ -208,3 +208,130 @@ func TestInvariantsPushNotFoundIsARepositoryOnlyWhenOneWasNamed(t *testing.T) {
 		}
 	}
 }
+
+const testGuide = "# A good security rule\n\nOne sentence about the product that must always be true."
+
+// guideServer answers the guide route with status and body, and records the auth header it got.
+func guideServer(t *testing.T, status int, body any) *string {
+	var auth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != invariantsGuidePath {
+			t.Fatalf("%s %s", r.Method, r.URL.Path)
+		}
+		auth = r.Header.Get("Authorization")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(body)
+	}))
+	t.Cleanup(server.Close)
+	invariantsEnv(t, server)
+	return &auth
+}
+
+func TestInvariantsGuidePrintsTheMarkdownEvenWhenPiped(t *testing.T) {
+	auth := guideServer(t, http.StatusOK, map[string]any{"guide": testGuide, "version": "0123456789ab"})
+
+	out, err := runInvariants(newInvariantsGuideCmd())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != testGuide+"\n" {
+		t.Fatalf("out = %q", out)
+	}
+	if *auth != "Bearer test-token" {
+		t.Fatalf("auth = %q", *auth)
+	}
+}
+
+func TestInvariantsGuideDropsTerminalControlCharacters(t *testing.T) {
+	guideServer(t, http.StatusOK, map[string]any{"guide": "# Rule\r\n\x1b[2Jkeep\ttabs\n", "version": "0123456789ab"})
+
+	out, err := runInvariants(newInvariantsGuideCmd(), "-o", "markdown")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "# Rule\n[2Jkeep\ttabs\n" {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+func TestInvariantsGuideJSON(t *testing.T) {
+	guideServer(t, http.StatusOK, map[string]any{"guide": testGuide, "version": "0123456789ab"})
+
+	out, err := runInvariants(newInvariantsGuideCmd(), "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("output is not JSON: %q", out)
+	}
+	if resp["guide"] != testGuide || resp["version"] != "0123456789ab" {
+		t.Fatalf("resp = %#v", resp)
+	}
+}
+
+func TestInvariantsGuideAuthFailure(t *testing.T) {
+	guideServer(t, http.StatusUnauthorized, map[string]any{"detail": "token expired"})
+
+	_, err := runInvariants(newInvariantsGuideCmd())
+	if e := cliErrorOf(t, err); e.ExitCode != clierrors.ExitAuthFailed || !strings.Contains(e.Suggestion, "konvu login") {
+		t.Fatalf("err = %#v", e)
+	}
+}
+
+func TestInvariantsGuideRefusedCaller(t *testing.T) {
+	guideServer(t, http.StatusForbidden, map[string]any{"detail": "no company for this login"})
+
+	_, err := runInvariants(newInvariantsGuideCmd())
+	if e := cliErrorOf(t, err); e.ExitCode != clierrors.ExitAuthFailed || e.Message != "no company for this login" {
+		t.Fatalf("err = %#v", e)
+	}
+}
+
+func TestInvariantsGuideNeedsALogin(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("a call reached the server without a token: %s", r.URL.Path)
+	}))
+	defer server.Close()
+	invariantsEnv(t, server)
+	t.Setenv("KONVU_ACCESS_TOKEN", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", home)
+
+	_, err := runInvariants(newInvariantsGuideCmd())
+	if e := cliErrorOf(t, err); e.ExitCode != clierrors.ExitAuthFailed || !strings.Contains(e.Suggestion, "konvu login") {
+		t.Fatalf("err = %#v", e)
+	}
+}
+
+func TestInvariantsGuideOnAServerWithoutIt(t *testing.T) {
+	// 422 is what an older server answers: the path reaches its one-invariant route.
+	for _, status := range []int{http.StatusNotFound, http.StatusUnprocessableEntity} {
+		guideServer(t, status, map[string]any{"detail": "Not Found"})
+
+		_, err := runInvariants(newInvariantsGuideCmd())
+		e := cliErrorOf(t, err)
+		if e.Code != "GUIDE_NOT_AVAILABLE" || e.ExitCode != clierrors.ExitGeneralError || !strings.Contains(e.Suggestion, "newer Konvu server") {
+			t.Fatalf("%d: err = %#v", status, e)
+		}
+	}
+}
+
+func TestInvariantsGuideRefusesAnEmptyGuide(t *testing.T) {
+	for _, body := range []any{map[string]any{"guide": "  \n", "version": "0123456789ab"}, map[string]any{"version": "0123456789ab"}} {
+		guideServer(t, http.StatusOK, body)
+
+		out, err := runInvariants(newInvariantsGuideCmd(), "-o", "json")
+		if e := cliErrorOf(t, err); e.Code != "GUIDE_EMPTY" || e.ExitCode != clierrors.ExitGeneralError || out != "" {
+			t.Fatalf("%#v: err = %#v, out = %q", body, e, out)
+		}
+	}
+}
+
+func TestInvariantsGuideRefusesAnUnsupportedOutput(t *testing.T) {
+	_, err := runInvariants(newInvariantsGuideCmd(), "-o", "table")
+	if e := cliErrorOf(t, err); e.ExitCode != clierrors.ExitUsageError {
+		t.Fatalf("err = %#v", e)
+	}
+}
