@@ -50,7 +50,7 @@ Before keeping a candidate, ask whether the product legitimately has to do what 
 
 The strongest rules pair something the team recognizes instantly (a tool, a feature, an artifact of their product: the analytics service, the fix PR, the default branch, the user's own settings) with a concrete harm that would be embarrassing if it happened: "never reaches", "never weakens", "only when their team merges". Reading it, the user should think "that would be a disaster, and it could actually happen".
 
-A generic tenancy rule ("a company's data is seen only by its own users") is true and important, but it reads as boring because every SaaS has it. Use it only when nothing sharper and more specific to this product exists in the direction.
+A generic tenancy rule ("a company's data is seen only by its own users") is true and important, but it reads as boring because every SaaS has it. Never drop it for a narrower rule that protects less: name the data and the part of this product it lives in, so it reads as theirs.
 
 ## Ranking
 
@@ -64,7 +64,7 @@ Drop anything inferred only, anything that contradicts a fact (a feature the pro
 
 Three kinds are easy to miss and often matter most, so check them wherever the direction has them: who inside a customer's account may administer it or change its security settings (roles, admins, members); access that must end when an install, a connection or a member is removed; customer code, secrets or data sent to a model provider or another third party.
 
-Prefer rules about **what customers trust the company with** over internal plumbing (the company's own API keys, its build pipeline): a rule a customer would care about if they read it. Don't restate the "worst outcomes" as rules word for word: a rule is the promise that prevents an outcome, phrased as something that's always true.
+When two rules are worth the same to an attacker, prefer the one about **what customers trust the company with** over internal plumbing (the company's own API keys, its build pipeline): a rule a customer would care about if they read it. Don't restate the "worst outcomes" as rules word for word: a rule is the promise that prevents an outcome, phrased as something that's always true.
 
 ## Fields
 
