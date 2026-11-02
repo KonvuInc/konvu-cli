@@ -105,7 +105,7 @@ func TestScopeRows(t *testing.T) {
 	// Members the tenant no longer lists are not counted, as on the dashboard.
 	known := map[string]bool{"r1": true}
 	cells := rows[0].cells(known)
-	want := map[string]any{"scope": "Prod", "product": "SCA", "analysis": "Critical", "reproduction": "off", "remediation": "on", "repositories": 1}
+	want := map[string]any{"scope": "Prod", "product": "SCA", "exploitability_analysis": "Critical", "reproduction": "—", "remediation": "On", "repositories": 1}
 	if !reflect.DeepEqual(cells, want) {
 		t.Errorf("cells = %v, want %v", cells, want)
 	}
@@ -142,9 +142,10 @@ func TestSeveritiesDisplay(t *testing.T) {
 		in   any
 		want string
 	}{
-		{nil, "all"},
-		{[]any{}, "all"},
-		{[]any{"CRITICAL", "MODERATE"}, "Critical, Medium"},
+		{nil, "All severities"},
+		{[]any{}, "All severities"},
+		{[]any{"CRITICAL", "MODERATE"}, "Critical and Medium"},
+		{[]any{"CRITICAL", "HIGH", "MODERATE"}, "Critical, High and Medium"},
 		{[]string{"LOW"}, "Low"},
 	}
 	for _, c := range cases {

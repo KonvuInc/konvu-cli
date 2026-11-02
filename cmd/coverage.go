@@ -24,16 +24,17 @@ var validSeverities = map[string]bool{
 }
 
 // coverageTask is a task column of the dashboard's Coverage table: its flag,
-// the scope step it is saved as, and whether it runs on picked severities.
+// the scope step it is saved as, its column, and whether it runs on picked
+// severities.
 type coverageTask struct {
-	flag, step string
-	severities bool
+	flag, step, column string
+	severities         bool
 }
 
 var coverageTasks = []coverageTask{
-	{"analysis", "assessment", true},
-	{"reproduction", "reproduction", true},
-	{"remediation", "remediation", false},
+	{"analysis", "assessment", "exploitability_analysis", true},
+	{"reproduction", "reproduction", "reproduction", true},
+	{"remediation", "remediation", "remediation", false},
 }
 
 // Finding types a scope covers.
@@ -166,7 +167,11 @@ func runCoverageList(cmd *cobra.Command, args []string) error {
 	for _, row := range rows {
 		items = append(items, row.cells(known))
 	}
-	columns := []string{"scope", "product", "analysis", "reproduction", "remediation", "repositories"}
+	columns := []string{"scope", "product"}
+	for _, task := range coverageTasks {
+		columns = append(columns, task.column)
+	}
+	columns = append(columns, "repositories")
 	if format == output.CSV {
 		fmt.Print(output.FormatCSV(map[string]any{"scopes": items}, columns, "scopes"))
 		return nil
@@ -478,11 +483,11 @@ func (r scopeRow) cells(known map[string]bool) map[string]any {
 		scope := r.byStep[task.step]
 		switch {
 		case scope == nil:
-			cells[task.flag] = "off"
+			cells[task.column] = "—"
 		case task.severities:
-			cells[task.flag] = severitiesDisplay(scope["severities"])
+			cells[task.column] = severitiesDisplay(scope["severities"])
 		default:
-			cells[task.flag] = "on"
+			cells[task.column] = "On"
 		}
 	}
 	return cells
@@ -646,11 +651,15 @@ func normalizeSeverities(in []string) ([]string, *clierrors.CLIError) {
 	return out, nil
 }
 
+// severitiesDisplay names severities as the dashboard does, e.g.
+// "Critical and High" or "All severities".
 func severitiesDisplay(v any) string {
+	const all = "All severities"
+
 	var raw []any
 	switch t := v.(type) {
 	case nil:
-		return "all"
+		return all
 	case []any:
 		raw = t
 	case []string:
@@ -658,17 +667,20 @@ func severitiesDisplay(v any) string {
 			raw = append(raw, s)
 		}
 	default:
-		return "all"
+		return all
 	}
 	if len(raw) == 0 {
-		return "all"
+		return all
 	}
 	parts := make([]string, 0, len(raw))
 	for _, s := range raw {
 		str, _ := s.(string)
 		parts = append(parts, severityTitle(str))
 	}
-	return strings.Join(parts, ", ")
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }
 
 func severityTitle(s string) string {
