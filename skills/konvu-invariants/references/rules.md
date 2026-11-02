@@ -9,6 +9,7 @@ It must be:
 - **About this company.** It names what they hold (invoices, tokens, findings, payouts) and who must never get it. A rule that fits any company ("inputs are validated") is out.
 - **True as written.** "Data is deleted on request" is false while backups keep it 30 days. State only what you checked: if a detail varies (who hosts a component, where data lives) or you aren't sure of it, leave it out of the sentence.
 - **Checkable.** There must be code or configuration where it holds or breaks. It usually starts in the chosen repo; if it really lives elsewhere (infrastructure code, cloud permissions, another service), look there too, read-only, and base the rule on what you find.
+- **Security, not correctness.** When it breaks, someone gets access, data, credentials or control they should not have: another customer, an outsider, an agent acting on untrusted input. A wrong verdict, a double charge, a stale cache, a size limit or an incompatible version is a bug, not a security rule, even if it feels like integrity. Drop it.
 - **Short and plain.** Under 110 characters: one subject, one verb, one condition. Use the words the team uses for its own things (the token, the analysis, the PR), never a metaphor ("the keys that open"), a made-up role ("agents doing the customer's work") or a vague catch-all ("anything it writes"). The test: a teammate reads it cold and understands it at once. If they'd ask "what does that mean?", rewrite it.
 
 ## The right level of detail
@@ -55,11 +56,13 @@ A generic tenancy rule ("a company's data is seen only by its own users") is tru
 
 Draft your candidates, then pick in this order:
 
-1. **Importance, first and by far.** Does it protect the promise people buy or install this product for, the thing that would be the headline if it broke? A flow with many code paths, or the one the user touched last week, is not important for that reason alone: recent work helps choose a direction, never the rule.
+1. **What an attacker gains when it breaks, first and by far.** Credentials and secrets, another customer's data, admin rights, code execution or an escape from a sandbox come before anything that only harms one record or one run. Within that, prefer the promise people buy or install this product for, the thing that would be the headline if it broke. Being specific to this product, having many code paths, or being the one the user touched last week does not raise a rule: recent work helps choose a direction, never the rule.
 2. **Likelihood**, to break ties: how easily a normal change breaks it (many entry points beat one guarded place).
 3. **Evidence**, to break ties: the code shows it, and a public promise or a team discussion names it.
 
 Drop anything inferred only, anything that contradicts a fact (a feature the product doesn't have), and anything a teammate would read as minor. Keep the top one: the onboarding is about a single, very good security rule. Two rules that share a why are one rule.
+
+Three kinds are easy to miss and often matter most, so check them wherever the direction has them: who inside a customer's account may administer it or change its security settings (roles, admins, members); access that must end when an install, a connection or a member is removed; customer code, secrets or data sent to a model provider or another third party.
 
 Prefer rules about **what customers trust the company with** over internal plumbing (the company's own API keys, its build pipeline): a rule a customer would care about if they read it. Don't restate the "worst outcomes" as rules word for word: a rule is the promise that prevents an outcome, phrased as something that's always true.
 
