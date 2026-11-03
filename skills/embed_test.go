@@ -160,6 +160,49 @@ func TestDashboardSkillsCheckSetupAndCarryTheTrustBoundary(t *testing.T) {
 	}
 }
 
+// The onboarding asks for a Konvu login only when the rule is saved (konvu-upload-invariants):
+// everything before it must run logged out, so the guide ships with konvu-invariants.
+func TestOnboardingNeedsNoLoginBeforeTheSave(t *testing.T) {
+	guide, err := embedded.ReadFile("konvu-invariants/references/guide.md")
+	if err != nil {
+		t.Fatalf("bundled guide: %v", err)
+	}
+	header, body, _ := strings.Cut(string(guide), "\n")
+	if !strings.HasPrefix(header, "<!-- Copy of KonvuTeam/konvu-guardrails backend/services/invariant_proposal/guide.md") {
+		t.Errorf("guide.md must open with the comment naming the file it copies, got %q", header)
+	}
+	if !strings.HasPrefix(body, "## What a security rule is") {
+		t.Error("guide.md does not carry the guide below its header")
+	}
+	step, err := embedded.ReadFile("konvu-invariants/steps/3-rules.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(step), "{skill_dir}/references/guide.md") {
+		t.Error("step 3 does not read the bundled guide")
+	}
+	for _, skill := range []string{"konvu-onboarding", "konvu-invariants"} {
+		err := fs.WalkDir(embedded, skill, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			data, err := embedded.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			for _, needsLogin := range []string{"konvu invariants guide", "konvu login", "konvu whoami"} {
+				if strings.Contains(string(data), needsLogin) {
+					t.Errorf("%s runs %q before the save step", path, needsLogin)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", skill, err)
+		}
+	}
+}
+
 // The decide skill writes on the user's behalf, so it must wait for their pick and act on
 // exactly that.
 func TestDecideSuggestionsWaitsForThePick(t *testing.T) {

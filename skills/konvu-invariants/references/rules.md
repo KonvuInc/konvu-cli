@@ -1,6 +1,6 @@
 # One security rule, and its fields
 
-`konvu invariants guide` defines a security rule, the right level of detail and how to rank candidates. This file only adds what is specific to this skill.
+`guide.md`, next to this file, defines a security rule, the right level of detail and how to rank candidates. This file only adds what is specific to this skill.
 
 ## One rule
 

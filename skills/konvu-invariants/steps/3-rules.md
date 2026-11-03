@@ -1,10 +1,10 @@
 The direction is: **{direction}**, in {repo} ({repo_path}).
 
-First run `konvu invariants guide` (read-only). It prints Konvu's guide to a good security rule: what one is, the right level of detail and how to rank them. Konvu's own suggestions follow the same text. If it fails, don't go on without it: tell the user in one line to log in with `konvu login` (saving the rule needs it anyway), or pass on the error's suggestion if it names something else, then wait. Run it again when they're back.
+First read `{skill_dir}/references/guide.md`. It is Konvu's guide to a good security rule: what one is, the right level of detail and how to rank them. Konvu's own suggestions follow the same text. It ships with this skill, so reading it needs no network and no login.
 
 Then start your message with one line: you're going through that part of the code, a couple of minutes. Then go deep on this direction only: follow the real flow end to end in the code (entry points, checks, where data or actions leave), read what the team said about it, and look outside the repo if the flow continues there, read-only.
 
-Before drafting, run `konvu invariants list -o json` (read-only) and note each security rule's `statement` and `status`. If it fails, go on without it. Otherwise, check every version of the rule in this step against that list, yours or one the user rewords, picks or writes:
+Before drafting, run `konvu invariants list -o json` (read-only) and note each security rule's `statement` and `status`. If it fails for any reason (not logged in, no network, any other error), skip this check silently and go on without it: don't mention it, don't pass on its error or suggestion, and never ask the user to log in here; that happens only when the rule is saved. Otherwise, check every version of the rule in this step against that list, yours or one the user rewords, picks or writes:
 - A `validated` one is already active for the company: never use it again, reworded, narrowed or broadened. If a version the user brings matches one, tell them which in a line and offer the closest runner-up.
 - A `proposed` one is a suggestion Konvu already made: if the rule says the same thing, use that suggestion's exact wording, so the upload accepts it instead of adding a near-copy. If the user wants other words, tell them in a line that theirs will be added next to Konvu's suggestion.
 
