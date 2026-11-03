@@ -652,6 +652,10 @@ Security invariants are the rules your code must never break, written in your wo
 konvu invariants list
 konvu invariants list --status proposed
 
+# Konvu's guide to a good security rule, as Markdown: what one is, the right level of detail, how to rank them
+konvu invariants guide
+konvu invariants guide -o json
+
 # One invariant: its controls with their code anchors, and how Konvu steered coding agents with it
 konvu invariants get <id>
 konvu invariants get <id> -o json
@@ -667,6 +671,8 @@ konvu invariants decline <id>
 ```
 
 `<id>` is an invariant's UUID, as `konvu invariants list` prints it (with or without dashes, any case); anything else exits 2 before any request. `list` exits 2 for an unknown `--status`, 4 when you are not signed in or your login has no company, 1 when the request failed. `get` exits 3 when the id is not one of your company's invariants, 4 when you are not signed in or your login has no company, 1 when the request failed.
+
+`guide` prints the same guide Konvu's own suggestions follow, as Markdown even when piped; `-o json` prints `{"guide", "version"}`, and the version changes whenever the guide does. The `/konvu-invariants` skill reads it before drafting. It exits 4 when you are not signed in or your login has no company, 2 for an `-o` other than `markdown` or `json`, 1 when the Konvu server does not have the guide yet or the request failed.
 
 `accept` sends a `proposed` invariant unchanged, and it keeps its rank; to change its wording first, push the edited rule at the suggestion's rank instead, which replaces it. Only a suggestion is accepted: when it stopped being one before the accept reached Konvu (accepted, declined or replaced meanwhile), `accept` exits 1 and says what was written, if anything. When the server fails, `accept` reads the invariant back: `validated` means it is active (`"mapping_pending": true` in JSON: its mapping to controls may wait for the next code analysis or rule change, nothing to repeat); still `proposed` means not accepted yet, though the request may still be running, so check with `get` before repeating it. `decline` drops a `proposed` invariant for good; one already declined exits 0, so repeating it is safe. Exit codes for both: 1 when the invariant is not a suggestion (`accept`: already active, declined or retired; `decline`: active or retired), changed meanwhile, cannot be accepted unchanged (`accept`: the server refused its text; push an edited version instead), or the request failed; 2 for a malformed id; 3 when it is not one of your company's invariants; 4 when you are not signed in, or not as a person.
 
@@ -752,7 +758,7 @@ Skills are installed to `~/.claude/skills/` where Claude Code discovers them aut
 Security rules (invariants) and PR checks come as these skills:
 
 - `/konvu-onboarding` — a short welcome, then your first security rule with `konvu-invariants`, then how Konvu enforces it
-- `/konvu-invariants` — pick a repo and a theme, draft the rule that matters most, shape it together, then save it
+- `/konvu-invariants` — pick a repo and a theme, draft the rule that matters most by Konvu's guide (`konvu invariants guide`, so it needs `konvu login`), shape it together, then save it
 - `/konvu-upload-invariants` — save security rules you wrote with `konvu invariants push`, after a server-side dry run
 - `/konvu-decide-suggestions` — go through the rules Konvu suggested, checked against your code, then accept or decline the ones you pick
 - `/konvu-audit-rules` — read-only audit of your active rules (all, or the ids you give): where each is enforced, its gaps, agent steering and PR check outcomes

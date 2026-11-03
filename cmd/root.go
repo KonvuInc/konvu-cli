@@ -120,6 +120,7 @@ const helpAllFooter = `EXAMPLES
   konvu inventory -q | xargs -n1 konvu inventory show
   konvu invariants list
   konvu invariants list --status proposed -o json
+  konvu invariants guide
   konvu invariants get <id> -o json
   konvu invariants push --file invariants.json --dry-run
   konvu invariants accept <id> --dry-run
