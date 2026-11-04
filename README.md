@@ -430,7 +430,8 @@ optional external tracking reference. `close` is an alias for `dismiss`.
 konvu finding vulnerability-report dismiss <id> \
   --reason "Tracked externally" \
   --comment "Handled by AppSec" \
-  --external-reference "SEC-1234"
+  --external-reference "SEC-1234" \
+  --cve-id CVE-2026-12345
 ```
 
 Dismissal only closes the report. Rate the assessment separately when you want
