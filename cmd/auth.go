@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/KonvuInc/konvu-cli/pkg/api"
 	"github.com/KonvuInc/konvu-cli/pkg/auth"
 	"github.com/KonvuInc/konvu-cli/pkg/config"
+	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	"github.com/KonvuInc/konvu-cli/pkg/output"
 	"github.com/KonvuInc/konvu-cli/skills"
 	"github.com/spf13/cobra"
@@ -53,6 +55,8 @@ var whoamiCmd = &cobra.Command{
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate with Konvu",
+	// A failed login is not a usage mistake: its one-line error is all the user needs.
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		timeout, _ := cmd.Flags().GetInt("timeout")
 		apiKeyFlag, _ := cmd.Flags().GetString("api-key")
@@ -167,21 +171,55 @@ func loginWithOAuth(timeout int) error {
 		os.Exit(1)
 	}
 
+	return finishOAuthLogin(tokenData)
+}
+
+// finishOAuthLogin saves a browser login only once it reaches the user's company, as the API key
+// path does: a login Konvu then refuses fails here instead of reporting success, and leaves any
+// earlier login untouched.
+func finishOAuthLogin(tokenData map[string]any) error {
+	token, _ := tokenData["access_token"].(string)
+	if token == "" {
+		return &clierrors.CLIError{
+			Code:       "LOGIN_FAILED",
+			Message:    "browser login returned no access token",
+			Suggestion: "Run 'konvu login' again, or use 'konvu login --api-key'.",
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
+
+	client := api.NewClient("", token)
+	defer client.Close()
+	company, err := client.Get("/companies/current", nil)
+	if err != nil {
+		return &clierrors.CLIError{
+			Code:       "LOGIN_FAILED",
+			Message:    "browser login worked, but Konvu could not load your company: " + companyCheckDetail(err),
+			Suggestion: "Run 'konvu login' again; if it keeps failing, contact Konvu support.",
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
+
 	if err := auth.SaveCredentials(config.GetCredentialsPath(), tokenData); err != nil {
 		return err
 	}
 
 	fmt.Println("\nLogin successful!")
-
-	client := api.NewClient("", "")
-	defer client.Close()
-	if company, err := client.Get("/companies/current", nil); err == nil {
-		fmt.Printf("Logged in to: %v\n", company["name"])
-	}
+	fmt.Printf("Logged in to: %v\n", company["name"])
 
 	offerSkills()
 
 	return nil
+}
+
+// companyCheckDetail is why the company check failed, on one line: the server's own reason when
+// it sent one.
+func companyCheckDetail(err error) string {
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) {
+		return fmt.Sprintf("HTTP %d: %s", apiErr.StatusCode, invariantDetail(apiErr))
+	}
+	return sanitizeGuardrailsBaselineText(err.Error())
 }
 
 func init() {
@@ -205,9 +243,10 @@ func init() {
 	rootCmd.AddCommand(whoamiAlias)
 
 	loginAlias := &cobra.Command{
-		Use:   "login",
-		Short: "Authenticate with Konvu",
-		RunE:  loginCmd.RunE,
+		Use:          "login",
+		Short:        "Authenticate with Konvu",
+		SilenceUsage: loginCmd.SilenceUsage,
+		RunE:         loginCmd.RunE,
 	}
 	loginAlias.Flags().IntP("timeout", "t", auth.DefaultLoginTimeout, "Login timeout in seconds")
 	loginAlias.Flags().String("api-key", "", "Authenticate with an API key")
