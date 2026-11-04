@@ -21,7 +21,7 @@ Use `-o json` for every konvu call.
 
 Run `konvu version`.
 
-- If the command is not found, tell them in one line and ask the user before running `konvu login` or `konvu update`. To set it up, follow steps 1 to 3 of https://app.konvu.com/guardrails/INSTALL.md (install the CLI, log in, install the skills), not its onboarding step. Stop here until they confirm the CLI is installed.
+- If the command is not found, tell them in one line and ask the user before running `konvu login` or `konvu update`. To set it up, install the CLI and the skills as https://app.konvu.com/guardrails/INSTALL.md says, but not its onboarding step, then log in with `konvu login`. Stop here until they confirm the CLI is installed.
 - If the CLI is there but outdated or the command is unknown, ask the user before running `konvu update`.
 - If the CLI is present, run `konvu whoami -o json`. If the user is not logged in, ask them to run `konvu login`.
 

@@ -759,7 +759,7 @@ Security rules (invariants) and PR checks come as these skills:
 
 - `/konvu-onboarding` — a short welcome, then your first security rule with `konvu-invariants`, then how Konvu enforces it
 - `/konvu-invariants` — pick a repo and a theme, draft the rule that matters most by Konvu's guide (`konvu invariants guide`, no login needed), shape it together, then save it
-- `/konvu-upload-invariants` — save security rules you wrote with `konvu invariants push`, after a server-side dry run
+- `/konvu-upload-invariants` — save security rules you wrote with `konvu invariants push`, after a server-side dry run; it runs `konvu login` first if needed, where a new user creates their free account
 - `/konvu-decide-suggestions` — go through the rules Konvu suggested, checked against your code, then accept or decline the ones you pick
 - `/konvu-audit-rules` — read-only audit of your active rules (all, or the ids you give): where each is enforced, its gaps, agent steering and PR check outcomes
 - `/konvu-review-pr-checks` — read-only review of what Konvu's PR check found, on every analyzed PR or on one PR URL

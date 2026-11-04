@@ -48,6 +48,6 @@ Your message, in this order:
 4. two or three plain lines on how: Konvu builds a security graph of their whole code and finds the controls that keep this security rule true (the concrete checks in their code); then any change that would break it is caught: a PR that breaks it is blocked in CI, and their coding agent is stopped as the code is written
 5. the diagram from the `show.py enforce` command konvu-invariants gave you when it finished, pasted unchanged with its code fences (recommended)
 6. one line, along the lines of: "That's one security rule. You can write as many as you want, here in your coding agent or anywhere else, and Konvu enforces them all."
-7. the action in bold, in your own words for the moment, e.g. **Want this one guaranteed? Tell me and I'll open Konvu so you can plug in the GitHub App.**
+7. the action in bold, in your own words for the moment: first that if they started from the Konvu page in their browser, they can continue in that tab, then the offer to open Konvu, e.g. **Want this one guaranteed? If you started from the Konvu page in your browser, continue in that tab. Otherwise, tell me and I'll open Konvu so you can plug in the GitHub App.**
 
 When they want to go on, open Konvu for them: `python3 -m webbrowser https://app.konvu.com`. Then close in two short lines: Konvu is open at https://app.konvu.com to plug in the GitHub App, and they can write more security rules anytime with /konvu-invariants.

@@ -21,7 +21,7 @@ Your message, in this order, short and structured:
 6. then, as two short lines:
    - Want to tweak it? Reword it, make it stricter or broader, or tell me where to dig.
    - We'll stick to this one for now; you can write as many as you want later.
-7. the action in bold, in your own words for the moment, e.g. **When it feels right, tell me and I'll save it to Konvu.**
+7. the action in bold, in your own words for the moment, e.g. **Tell me when it feels right.**
 
 Nothing else: no summary of the audit, no list of other candidates unless they ask.
 
