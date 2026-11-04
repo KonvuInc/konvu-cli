@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"testing"
 
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
+	"github.com/KonvuInc/konvu-cli/skills"
 	"github.com/spf13/cobra"
 )
 
@@ -270,13 +273,15 @@ func TestInvariantsGuideJSON(t *testing.T) {
 	}
 }
 
-func TestInvariantsGuideAuthFailure(t *testing.T) {
+// An expired login reads the bundled guide like no login at all: the guide holds no company data.
+func TestInvariantsGuideWithAnExpiredLoginPrintsTheBundledGuide(t *testing.T) {
 	guideServer(t, http.StatusUnauthorized, map[string]any{"detail": "token expired"})
 
-	_, err := runInvariants(newInvariantsGuideCmd())
-	if e := cliErrorOf(t, err); e.ExitCode != clierrors.ExitAuthFailed || !strings.Contains(e.Suggestion, "konvu login") {
-		t.Fatalf("err = %#v", e)
+	out, err := runInvariants(newInvariantsGuideCmd())
+	if err != nil {
+		t.Fatal(err)
 	}
+	assertBundledGuide(t, out)
 }
 
 func TestInvariantsGuideRefusedCaller(t *testing.T) {
@@ -288,7 +293,8 @@ func TestInvariantsGuideRefusedCaller(t *testing.T) {
 	}
 }
 
-func TestInvariantsGuideNeedsALogin(t *testing.T) {
+// Writing a rule needs no account: without a login, the guide is the copy bundled with the CLI.
+func TestInvariantsGuideWithoutALoginPrintsTheBundledGuide(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatalf("a call reached the server without a token: %s", r.URL.Path)
 	}))
@@ -299,9 +305,41 @@ func TestInvariantsGuideNeedsALogin(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", home)
 
-	_, err := runInvariants(newInvariantsGuideCmd())
-	if e := cliErrorOf(t, err); e.ExitCode != clierrors.ExitAuthFailed || !strings.Contains(e.Suggestion, "konvu login") {
-		t.Fatalf("err = %#v", e)
+	c := newInvariantsGuideCmd()
+	stderr := &bytes.Buffer{}
+	c.SetErr(stderr)
+	out, err := runInvariants(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBundledGuide(t, out)
+	if !strings.Contains(stderr.String(), "bundled with this CLI") {
+		t.Fatalf("stderr = %q, want it to say the guide is the bundled copy", stderr.String())
+	}
+
+	out, err = runInvariants(newInvariantsGuideCmd(), "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("output is not JSON: %q", out)
+	}
+	bundled, _ := skills.BundledGuide()
+	sum := sha256.Sum256([]byte(bundled))
+	if resp["guide"] != bundled || resp["version"] != hex.EncodeToString(sum[:])[:12] {
+		t.Fatalf("resp = %#v", resp)
+	}
+}
+
+func assertBundledGuide(t *testing.T, out string) {
+	t.Helper()
+	bundled, err := skills.BundledGuide()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != guideText(bundled) || !strings.Contains(out, "## What a security rule is") {
+		t.Fatalf("out = %q, want the bundled guide", out)
 	}
 }
 

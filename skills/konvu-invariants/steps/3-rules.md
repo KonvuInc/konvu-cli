@@ -1,6 +1,6 @@
 The direction is: **{direction}**, in {repo} ({repo_path}).
 
-First run `konvu invariants guide` (read-only). It prints Konvu's guide to a good security rule: what one is, the right level of detail and how to rank them. Konvu's own suggestions follow the same text. If it fails, don't go on without it: tell the user in one line to log in with `konvu login` (saving the rule needs it anyway), or pass on the error's suggestion if it names something else, then wait. Run it again when they're back.
+First run `konvu invariants guide` (read-only). It prints Konvu's guide to a good security rule: what one is, the right level of detail and how to rank them. Konvu's own suggestions follow the same text. It needs no login: without one it prints the copy bundled with the CLI. If it fails anyway, read that copy at `{skill_dir}/references/guide.md` and go on: writing the rule never needs an account, so don't ask the user to log in here.
 
 Then start your message with one line: you're going through that part of the code, a couple of minutes. Then go deep on this direction only: follow the real flow end to end in the code (entry points, checks, where data or actions leave), read what the team said about it, and look outside the repo if the flow continues there, read-only.
 

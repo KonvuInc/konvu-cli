@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"github.com/KonvuInc/konvu-cli/pkg/api"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	"github.com/KonvuInc/konvu-cli/pkg/output"
+	"github.com/KonvuInc/konvu-cli/skills"
 	"github.com/spf13/cobra"
 )
 
@@ -55,12 +58,14 @@ func newInvariantsGuideCmd() *cobra.Command {
 		Short: "Print Konvu's guide to writing a good security rule",
 		Long: `Print Konvu's guide to writing a good security rule: what one is, the right level of
 detail, and how to rank candidates. Konvu's own suggestions follow the same text.
+Without a valid login it prints the copy bundled with this CLI instead, and says so on
+stderr: writing a rule needs no account, only saving it does.
 
 The guide prints as Markdown, even when piped. -o json prints {"guide", "version"}; the
 version changes whenever the guide does.
 
 Exit codes: 0 success, 1 general error (this Konvu server has no guide yet, or the request
-failed), 2 invalid --output, 4 auth failed or refused`,
+failed), 2 invalid --output, 4 login refused (no company for it)`,
 		Example: `  konvu invariants guide
   konvu invariants guide -o json`,
 		Args: cobra.NoArgs,
@@ -169,6 +174,13 @@ func runInvariantsGuide(cmd *cobra.Command, args []string) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 	resp, err := client.Get(invariantsGuidePath, nil)
+	var authErr *api.AuthenticationError
+	if errors.As(err, &authErr) {
+		if bundled, bundledErr := bundledGuideResponse(); bundledErr == nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), "No valid Konvu login, so this is the guide bundled with this CLI.")
+			resp, err = bundled, nil
+		}
+	}
 	if err != nil {
 		return invariantsGuideError(err)
 	}
@@ -186,6 +198,17 @@ func runInvariantsGuide(cmd *cobra.Command, args []string) error {
 		return output.WriteString(cmd.OutOrStdout(), output.FormatJSON(resp)+"\n")
 	}
 	return output.WriteString(cmd.OutOrStdout(), guideText(guide))
+}
+
+// bundledGuideResponse is the guide this CLI ships, shaped like the server's answer, with the
+// version derived as the server derives its own so the two compare.
+func bundledGuideResponse() (map[string]any, error) {
+	guide, err := skills.BundledGuide()
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256([]byte(guide))
+	return map[string]any{"guide": guide, "version": hex.EncodeToString(sum[:])[:12]}, nil
 }
 
 // guideText is the guide as the terminal gets it: control characters other than newlines and

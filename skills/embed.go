@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -100,6 +101,22 @@ var skillDirs = []SkillDir{
 // SkillDirs returns the list of skill directories that are embedded.
 func SkillDirs() []SkillDir {
 	return skillDirs
+}
+
+// bundledGuidePath is a verbatim copy of konvu-guardrails backend/services/invariant_proposal/guide.md.
+const bundledGuidePath = "konvu-invariants/references/guide.md"
+
+// BundledGuide returns the security rule guide shipped with the konvu-invariants skill, which
+// `konvu invariants guide` prints when there is no login to read Konvu's own copy with.
+func BundledGuide() (string, error) {
+	data, err := embedded.ReadFile(bundledGuidePath)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return "", fmt.Errorf("%s is empty", bundledGuidePath)
+	}
+	return string(data), nil
 }
 
 var (
