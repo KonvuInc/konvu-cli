@@ -430,7 +430,8 @@ optional external tracking reference. `close` is an alias for `dismiss`.
 konvu finding vulnerability-report dismiss <id> \
   --reason "Tracked externally" \
   --comment "Handled by AppSec" \
-  --external-reference "SEC-1234"
+  --external-reference "SEC-1234" \
+  --cve-id CVE-2026-12345
 ```
 
 Dismissal only closes the report. Rate the assessment separately when you want
@@ -448,7 +449,15 @@ report before requesting more work on it:
 konvu finding vulnerability-report reopen <id>
 ```
 
-Use `--dry-run` with `steer`, `dismiss`, or `reopen` to validate and preview the
+Attach a CVE ID to an open or dismissed report, or clear it. It shows in `get`
+and as the `cve_id` field in `list`.
+
+```bash
+konvu finding vulnerability-report cve <id> CVE-2026-12345
+konvu finding vulnerability-report cve <id> --clear
+```
+
+Use `--dry-run` with `steer`, `dismiss`, `reopen`, or `cve` to validate and preview the
 operation without sending it. List dismissed reports with
 `konvu finding vulnerability-report list --disposition dismissed`.
 
