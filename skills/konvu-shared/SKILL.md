@@ -1,6 +1,6 @@
 ---
 name: konvu-shared
-version: 1.0.0
+version: 1.1.0
 description: "Konvu CLI: Auth setup, global flags, env vars, and common patterns."
 metadata:
   requires:
@@ -48,6 +48,7 @@ konvu invariants list [--status proposed|validated|all]  # Security rules, by ra
 konvu invariants guide [-o json]             # Konvu's guide to a good security rule: Markdown, even piped
 konvu invariants get <id>                    # One rule: controls, code anchors, agent steering
 konvu invariants push --file rules.json [--dry-run]      # Add rules you wrote
+konvu invariants push --file rules.json --onboarding K7P2XQ9M  # No login yet: save with a web onboarding code
 konvu invariants accept <id> [--dry-run]     # Accept a suggested rule, making it active
 konvu invariants decline <id>                # Decline a suggested rule
 konvu finding pr-check counts                # What Konvu's PR check analyzed

@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-//go:embed konvu-shared recipe-weekly-triage guardrails-onboarding konvu-onboarding konvu-invariants konvu-upload-invariants konvu-decide-suggestions konvu-audit-rules konvu-review-pr-checks
+//go:embed konvu-shared recipe-weekly-triage konvu-onboarding konvu-invariants konvu-upload-invariants konvu-decide-suggestions konvu-audit-rules konvu-review-pr-checks
 var embedded embed.FS
 
 // SkillDir pairs an embed directory name with its install directory name, and carries what the
@@ -37,15 +37,6 @@ var skillDirs = []SkillDir{
 			"  Weekly Triage — guided review of your security findings with inline",
 			"  rating, bulk dismiss, and ticket creation. Run it in Claude Code",
 			"  with: /konvu-recipe-weekly-triage",
-		},
-	},
-	{
-		EmbedName:   "guardrails-onboarding",
-		InstallName: "konvu-guardrails-onboarding",
-		Pitch: []string{
-			"  Security Context Graphs — map a codebase and explore its Assets, Controls,",
-			"  and Implementations across historical runs. Run it in Claude Code with:",
-			"  /konvu-guardrails-onboarding, or ask it to explore a Security Context Graph.",
 		},
 	},
 	{

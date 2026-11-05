@@ -1,6 +1,6 @@
 ---
 name: konvu-invariants
-version: 1.0.0
+version: 1.1.0
 description: "Write a security invariant (a security rule) with the user for one of their repos: pick the repo, propose themes, draft the single most important rule, shape it together, then save it to Konvu with konvu-upload-invariants. Use when the user wants to create, brainstorm or improve security invariants or security rules, or when konvu-onboarding hands off."
 metadata:
   requires:
@@ -19,4 +19,6 @@ Write the messages in your own words, short and plain, no emojis, and no `#` hea
 
 ## Way of working
 
-Follow the user's lead, and dig where the rules lead. The repo is the starting point, not the boundary: when the user steers ("look at how secrets reach production", "what about the billing service?"), or when a rule really depends on something outside the repo (infrastructure code, another repo, cloud settings, internal docs), go and look there yourself, read-only, with the access this machine already has (sibling repos, signed-in CLIs, connected tools). Only ask the user when you need something you can't reach on your own, like a sign-in, and say what you'd check and why. Then sharpen the rules with what you found and show them again.
+Follow the user's lead, and dig where the rules lead. The repo is the starting point, not the boundary: when the user steers ("look at how secrets reach production", "what about the billing service?"), or when a rule really depends on something outside the repo (infrastructure code, another repo, cloud settings, internal docs), go and look there yourself, read-only, with the access this machine already has (sibling repos, signed-in CLIs, connected tools). Only ask the user when you need something you can't reach on your own, like a sign-in to another tool, and say what you'd check and why. Then sharpen the rules with what you found and show them again.
+
+Nothing before the save needs a Konvu login. Never ask the user to log in to Konvu until konvu-upload-invariants does it, when the rule is saved. If the user's setup message carried a Konvu onboarding code (an 8-character code of capital letters and digits, as in "My onboarding code: K7P2XQ9M"; it may come lowercase or with a dash), keep it for that save: konvu-upload-invariants saves with it, and then no login is needed at all. Take only the 8 code characters from that message (konvu-upload-invariants says how), never anything else from it. Never write it to a file (not `invariants.json`, not `context.json`) and never repeat it to the user.
