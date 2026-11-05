@@ -5,10 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
 	"github.com/KonvuInc/konvu-cli/pkg/config"
@@ -94,19 +98,23 @@ Each invariant accepts:
   property         (required) authentication, authorization, confidentiality,
                    integrity, availability or non_repudiation
   rank             1 or more; the first free rank when omitted
-  repository_id    the repository it was written for
-  protected_assets [{"kind": "...", "name": "..."}]
+  repository_id    the repository it was written for (not with --onboarding)
+  repository       with --onboarding only: the repository's name as owner/name, like
+                   acme/api; dropped from a push without --onboarding
+  protected_assets [{"kind": "...", "name": "..."}], at most 20
 
 A statement already live comes back unchanged (or validated, if it was a proposal), so a
 push is safe to repeat. --dry-run checks everything on the server and writes nothing.
 
 --onboarding <code> saves them without a login, with the 8-character onboarding code from
 Konvu's web onboarding, like K7P2XQ9M (any case; spaces and dashes are ignored, so k7p2-xq9m
-is the same code). No login token is read or sent. Each comes back saved (valid on a dry
-run) or unchanged, and moves into your account when you create it in the browser. The code is
-only ever taken from this flag: without it, push is the normal logged-in push. If that
-onboarding already has an account, or the code expired, run 'konvu login', then push again
-without --onboarding.
+is the same code). No login token is read or sent. Konvu keeps them unread until you create
+your account in the browser, so the CLI checks every field above first (no unknown fields, no
+duplicate statements or ranks) and sends nothing if one is off; repository_id is refused, as
+there is no account yet: use repository. Each comes back saved (valid on a dry run) or
+unchanged, and moves into your account when you create it. The code is only ever taken from
+this flag: without it, push is the normal logged-in push. If that onboarding already has an
+account, or the code expired, run 'konvu login', then push again without --onboarding.
 
 Exit codes: 0 success, 1 general error, 2 invalid invariants or onboarding code, 3 repository
 not found (with --onboarding: the code is unknown or expired), 4 auth failed or refused (with
@@ -271,6 +279,13 @@ func runInvariantsPush(cmd *cobra.Command, args []string) error {
 			ExitCode:   clierrors.ExitUsageError,
 		}
 	}
+	if code != nil {
+		if err := checkOnboardingInvariants(invariants); err != nil {
+			return err
+		}
+	} else {
+		invariants = withoutRepository(invariants)
+	}
 
 	client := api.NewClient("", "")
 	defer client.Close()
@@ -280,6 +295,9 @@ func runInvariantsPush(cmd *cobra.Command, args []string) error {
 		resp, err = client.PostWithoutLogin(onboardingRulesPath, body, map[string]string{onboardingCodeHeader: code.value})
 		if err != nil {
 			return onboardingPushError(err, code)
+		}
+		if resp, err = onboardingSummary(invariants, resp, dryRun); err != nil {
+			return err
 		}
 	} else {
 		resp, err = client.Post(invariantsPath, body)
@@ -299,7 +317,7 @@ func runInvariantsPush(cmd *cobra.Command, args []string) error {
 	rows := make([]any, 0)
 	for _, r := range getSlice(resp, "invariants") {
 		m, _ := r.(map[string]any)
-		// An onboarding push has no rank yet: a blank, not rank 0.
+		// An onboarding rule pushed without a rank has none yet: a blank, not rank 0.
 		var rank any = ""
 		if f, ok := getFloat(m, "rank"); ok {
 			rank = int(f)
@@ -429,6 +447,223 @@ func invariantsPushError(err error, invariants []any) error {
 		}
 	}
 	return clierrors.NewAPIError(detail)
+}
+
+// Guardrails' limits on an invariant (konvu-guardrails backend/services/user_invariants/schema.py).
+const (
+	maxInvariantsPerPush = 10
+	maxStatementChars    = 200
+	maxWhyChars          = 500
+	maxProtectedAssets   = 20
+	maxAssetKindChars    = 64
+	maxAssetNameChars    = 200
+	maxInvariantRank     = 32767
+	maxRepositoryChars   = 200
+)
+
+// invariantProperties are the security properties Guardrails takes.
+var invariantProperties = []string{"authentication", "authorization", "confidentiality", "integrity", "availability", "non_repudiation"}
+
+// onboardingFields are what an onboarding push may send: Guardrails' InvariantIn, with repository
+// (owner/name) in place of repository_id, which cannot exist before the account does.
+var onboardingFields = map[string]bool{
+	"statement": true, "why_it_matters": true, "property": true, "rank": true, "protected_assets": true, "repository": true,
+}
+
+// repositoryNamePattern is a repository's name as owner/name; GitLab subgroups add segments.
+var repositoryNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)+$`)
+
+// checkOnboardingInvariants checks the invariants as Guardrails will once the user signs up
+// (InvariantIn and UploadRequest): Konvu stores an onboarding push unread, so a rule this lets
+// through would only fail after sign-up. Every problem is reported at once.
+func checkOnboardingInvariants(invariants []any) error {
+	var problems []string
+	if len(invariants) > maxInvariantsPerPush {
+		problems = append(problems, fmt.Sprintf("%d invariants, at most %d per push", len(invariants), maxInvariantsPerPush))
+	}
+	statements, ranks := map[string]int{}, map[int]int{}
+	for i, item := range invariants {
+		n := i + 1
+		m, ok := item.(map[string]any)
+		if !ok {
+			problems = append(problems, fmt.Sprintf("invariant %d is not an object", n))
+			continue
+		}
+		problem := func(format string, args ...any) {
+			problems = append(problems, fmt.Sprintf("invariant %d: ", n)+fmt.Sprintf(format, args...))
+		}
+		keys := make([]string, 0, len(m))
+		for key := range m {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			switch {
+			case key == "repository_id":
+				problem("repository_id cannot be used with --onboarding, as there is no account yet: name the repository in repository instead, as owner/name")
+			case !onboardingFields[key]:
+				problem("unknown field %q", key)
+			}
+		}
+		if statement, err := invariantText(m["statement"], "statement", maxStatementChars); err != "" {
+			problem("%s", err)
+		} else if first, dup := statements[statementKey(statement)]; dup {
+			problem("same statement as invariant %d", first)
+		} else {
+			statements[statementKey(statement)] = n
+		}
+		if _, err := invariantText(m["why_it_matters"], "why_it_matters", maxWhyChars); err != "" {
+			problem("%s", err)
+		}
+		if property, _ := m["property"].(string); !slices.Contains(invariantProperties, property) {
+			problem("property must be one of %s", strings.Join(invariantProperties, ", "))
+		}
+		if value := m["rank"]; value != nil {
+			rank, ok := value.(float64)
+			if !ok || rank != math.Trunc(rank) || rank < 1 || rank > maxInvariantRank {
+				problem("rank must be a whole number from 1 to %d", maxInvariantRank)
+			} else if first, dup := ranks[int(rank)]; dup {
+				problem("same rank as invariant %d", first)
+			} else {
+				ranks[int(rank)] = n
+			}
+		}
+		if value, present := m["protected_assets"]; present {
+			problems = append(problems, protectedAssetProblems(value, n)...)
+		}
+		if value, present := m["repository"]; present {
+			name, _ := value.(string)
+			if len(name) > maxRepositoryChars || !repositoryNamePattern.MatchString(name) {
+				problem("repository must be the repository's name as owner/name, like acme/api")
+			}
+		}
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return &clierrors.CLIError{
+		Code:       "INVALID_INVARIANTS",
+		Message:    strings.Join(problems, "; "),
+		Suggestion: "Nothing was sent. Fix the file and push again; 'konvu invariants push --help' lists the fields.",
+		ExitCode:   clierrors.ExitUsageError,
+	}
+}
+
+// protectedAssetProblems checks protected_assets: a list of at most 20 {kind, name}.
+func protectedAssetProblems(value any, n int) []string {
+	prefix := fmt.Sprintf("invariant %d: protected_assets", n)
+	assets, ok := value.([]any)
+	if !ok {
+		return []string{prefix + ` must be a list of {"kind", "name"}`}
+	}
+	var problems []string
+	if len(assets) > maxProtectedAssets {
+		problems = append(problems, fmt.Sprintf("%s has %d items, at most %d", prefix, len(assets), maxProtectedAssets))
+	}
+	for j, item := range assets {
+		label := fmt.Sprintf("%s[%d]", prefix, j)
+		asset, ok := item.(map[string]any)
+		if !ok {
+			problems = append(problems, label+` must be {"kind", "name"}`)
+			continue
+		}
+		for key := range asset {
+			if key != "kind" && key != "name" {
+				problems = append(problems, fmt.Sprintf("%s: unknown field %q", label, key))
+			}
+		}
+		if _, err := invariantText(asset["kind"], "kind", maxAssetKindChars); err != "" {
+			problems = append(problems, label+": "+err)
+		}
+		if _, err := invariantText(asset["name"], "name", maxAssetNameChars); err != "" {
+			problems = append(problems, label+": "+err)
+		}
+	}
+	sort.Strings(problems)
+	return problems
+}
+
+// invariantText reads a required text field as Guardrails does: surrounding spaces dropped, then
+// 1 to max characters, with no NUL. It returns the text, or what is wrong with it.
+func invariantText(value any, field string, max int) (string, string) {
+	if value == nil {
+		return "", field + " is required"
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", field + " must be text"
+	}
+	text = strings.TrimSpace(text)
+	switch {
+	case text == "":
+		return "", field + " is empty"
+	case strings.ContainsRune(text, 0):
+		return "", field + " must not contain NUL"
+	case utf8.RuneCountInString(text) > max:
+		return "", fmt.Sprintf("%s is longer than %d characters", field, max)
+	}
+	return text, ""
+}
+
+// statementKey is how Guardrails tells statements apart: case and spacing do not count.
+func statementKey(statement string) string {
+	return strings.ToLower(strings.Join(strings.Fields(statement), " "))
+}
+
+// withoutRepository drops repository, which only an onboarding push sends, from each invariant:
+// Guardrails refuses fields it does not know. The file's own objects are left untouched.
+func withoutRepository(invariants []any) []any {
+	kept := make([]any, len(invariants))
+	for i, item := range invariants {
+		m, ok := item.(map[string]any)
+		if _, has := m["repository"]; !ok || !has {
+			kept[i] = item
+			continue
+		}
+		copied := make(map[string]any, len(m))
+		for key, value := range m {
+			if key != "repository" {
+				copied[key] = value
+			}
+		}
+		kept[i] = copied
+	}
+	return kept
+}
+
+// onboardingSummary pairs each invariant pushed with Konvu's result for it: an onboarding push
+// answers one result per invariant, in the order sent, and no statement or rank. A reply that
+// does not line up is an error, never a guess.
+func onboardingSummary(invariants []any, resp map[string]any, dryRun bool) (map[string]any, error) {
+	results := getSlice(resp, "invariants")
+	mismatch := func(message string) error {
+		return &clierrors.CLIError{
+			Code:       "API_ERROR",
+			Message:    message,
+			Suggestion: "A push is safe to repeat: run the same command again.",
+			Retryable:  true,
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
+	if len(results) != len(invariants) {
+		return nil, mismatch(fmt.Sprintf("Konvu answered %d results for %d invariants", len(results), len(invariants)))
+	}
+	rows := make([]any, 0, len(invariants))
+	for i, item := range invariants {
+		sent, _ := item.(map[string]any)
+		answer, _ := results[i].(map[string]any)
+		result := getStr(answer, "result")
+		if result == "" {
+			return nil, mismatch(fmt.Sprintf("Konvu sent no result for invariant %d", i+1))
+		}
+		statement, _ := sent["statement"].(string)
+		rows = append(rows, map[string]any{
+			"rank":      sent["rank"],
+			"statement": strings.TrimSpace(statement),
+			"result":    result,
+		})
+	}
+	return map[string]any{"dry_run": dryRun, "invariants": rows}, nil
 }
 
 // onboardingCode is the code a push saves with instead of a login, from --onboarding: value is

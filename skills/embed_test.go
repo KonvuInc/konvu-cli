@@ -220,6 +220,8 @@ func TestUploadSavesWithTheOnboardingCode(t *testing.T) {
 		"run `konvu login` (step 2), then do the dry run and push again without `--onboarding`",
 		"never an environment variable",
 		"never write it to a file", "never repeat it to the user",
+		"with an onboarding code, `repository`: the repo the rule is about, as `owner/name` from its git remote",
+		"Never `repository_id` with a code",
 	} {
 		if !strings.Contains(string(upload), want) {
 			t.Errorf("konvu-upload-invariants: missing %q", want)
@@ -241,6 +243,21 @@ func TestUploadSavesWithTheOnboardingCode(t *testing.T) {
 		if strings.Contains(body, "onb_") {
 			t.Errorf("%s still describes the old onb_ codes", path)
 		}
+	}
+	// A first rule saved with a code has no account to compare with: no existing-rules check.
+	step, err := embedded.ReadFile("konvu-invariants/steps/3-rules.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(step), "skip the existing-rules check below and the \"already covered\" case that depends on it, and never run `konvu invariants list`") {
+		t.Error("step 3 still checks existing rules with an onboarding code")
+	}
+	handoff, err := embedded.ReadFile("konvu-invariants/steps/4-upload.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(handoff), "sets the rule's `repository` from the git remote of {repo_path}") {
+		t.Error("step 4 does not hand the repo to the upload")
 	}
 }
 

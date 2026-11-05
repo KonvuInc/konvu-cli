@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -373,9 +374,20 @@ func onboardingServer(t *testing.T, status int, body any) *onboardingRequest {
 	return got
 }
 
-func onboardingResult(result string) map[string]any {
-	return map[string]any{"invariants": []any{map[string]any{
-		"statement": "Tokens never reach logs.", "rank": nil, "result": result,
+// onboardingResult is what the onboarding route answers: one result per invariant sent, in order,
+// and nothing else.
+func onboardingResult(results ...string) map[string]any {
+	items := make([]any, 0, len(results))
+	for _, result := range results {
+		items = append(items, map[string]any{"result": result})
+	}
+	return map[string]any{"invariants": items}
+}
+
+// guardrailsResult is what the logged-in push route answers for one invariant.
+func guardrailsResult(result string) map[string]any {
+	return map[string]any{"dry_run": false, "invariants": []any{map[string]any{
+		"statement": "Tokens never reach logs.", "rank": 1, "result": result,
 	}}}
 }
 
@@ -402,7 +414,9 @@ func TestInvariantsPushWithOnboardingCodeSavesWithoutALogin(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("output is not JSON: %q", out)
 	}
-	if resp["invariants"].([]any)[0].(map[string]any)["result"] != "saved" {
+	// The route answers results only: the statement comes from the file.
+	row := resp["invariants"].([]any)[0].(map[string]any)
+	if row["result"] != "saved" || row["statement"] != "Tokens never reach logs." || row["rank"] != nil || resp["dry_run"] != false {
 		t.Fatalf("resp = %#v", resp)
 	}
 }
@@ -448,7 +462,7 @@ func TestInvariantsPushIgnoresAnOnboardingCodeInTheEnvironment(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path, auth, code = r.URL.Path, r.Header.Get("Authorization"), r.Header.Get(onboardingCodeHeader)
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(onboardingResult("created"))
+		_ = json.NewEncoder(w).Encode(guardrailsResult("created"))
 	}))
 	defer server.Close()
 	invariantsEnv(t, server)
@@ -571,5 +585,153 @@ func TestUploadSkillKnowsTheOnboardingErrors(t *testing.T) {
 		if !strings.Contains(string(skill), `"`+phrase+`"`) {
 			t.Errorf("konvu-upload-invariants does not handle %q", phrase)
 		}
+	}
+}
+
+func TestInvariantsPushOnboardingPairsResultsWithTheFile(t *testing.T) {
+	onboardingServer(t, http.StatusOK, onboardingResult("saved", "unchanged"))
+	file := writeInvariants(t, `[
+		{"statement": "  Tokens never reach logs. ", "why_it_matters": "x", "property": "confidentiality", "rank": 2},
+		{"statement": "Only admins delete projects.", "why_it_matters": "y", "property": "authorization"}
+	]`)
+
+	out, err := runInvariants(newInvariantsPushCmd(), "--file", file, "--onboarding", testOnboardingCode, "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resp struct {
+		Invariants []map[string]any `json:"invariants"`
+	}
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("output is not JSON: %q", out)
+	}
+	if len(resp.Invariants) != 2 ||
+		resp.Invariants[0]["statement"] != "Tokens never reach logs." || resp.Invariants[0]["result"] != "saved" || resp.Invariants[0]["rank"] != float64(2) ||
+		resp.Invariants[1]["statement"] != "Only admins delete projects." || resp.Invariants[1]["result"] != "unchanged" {
+		t.Fatalf("resp = %#v", resp.Invariants)
+	}
+
+	table, err := runInvariants(newInvariantsPushCmd(), "--file", file, "--onboarding", testOnboardingCode, "-o", "table")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(table, "Only admins delete projects.") || !strings.Contains(table, "unchanged") {
+		t.Fatalf("table = %q", table)
+	}
+}
+
+func TestInvariantsPushOnboardingRefusesResultsThatDoNotLineUp(t *testing.T) {
+	file := writeInvariants(t, `[
+		{"statement": "A.", "why_it_matters": "x", "property": "integrity"},
+		{"statement": "B.", "why_it_matters": "x", "property": "integrity"}
+	]`)
+	for _, answer := range []map[string]any{
+		onboardingResult("saved"),
+		onboardingResult("saved", "saved", "saved"),
+		onboardingResult("saved", ""),
+		{"invariants": []any{map[string]any{"result": "saved"}, "saved"}},
+	} {
+		onboardingServer(t, http.StatusOK, answer)
+
+		out, err := runInvariants(newInvariantsPushCmd(), "--file", file, "--onboarding", testOnboardingCode)
+		if e := cliErrorOf(t, err); e.Code != "API_ERROR" || !e.Retryable || out != "" {
+			t.Fatalf("%#v: err = %#v, out = %q", answer, e, out)
+		}
+	}
+}
+
+// Konvu stores an onboarding push unread, so the CLI refuses what Guardrails would refuse after
+// sign-up, and sends nothing.
+func TestInvariantsPushOnboardingChecksTheInvariantsFirst(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("invalid invariants reached the server: %s", r.URL.Path)
+	}))
+	defer server.Close()
+	invariantsEnv(t, server)
+
+	long := func(n int) string { return strings.Repeat("a", n) }
+	rule := func(extra string) string {
+		return `[{"statement": "A.", "why_it_matters": "x", "property": "integrity"` + extra + `}]`
+	}
+	assets := func(n int) string {
+		items := make([]string, n)
+		for i := range items {
+			items[i] = `{"kind": "credential", "name": "token"}`
+		}
+		return `, "protected_assets": [` + strings.Join(items, ", ") + `]`
+	}
+	ten := make([]string, 11)
+	for i := range ten {
+		ten[i] = fmt.Sprintf(`{"statement": "Rule %d.", "why_it_matters": "x", "property": "integrity"}`, i)
+	}
+	for body, want := range map[string]string{
+		`[{"why_it_matters": "x", "property": "integrity"}]`:                                    "invariant 1: statement is required",
+		`[{"statement": "  ", "why_it_matters": "x", "property": "integrity"}]`:                 "invariant 1: statement is empty",
+		`[{"statement": 3, "why_it_matters": "x", "property": "integrity"}]`:                    "invariant 1: statement must be text",
+		`[{"statement": "` + long(201) + `", "why_it_matters": "x", "property": "integrity"}]`:  "statement is longer than 200 characters",
+		`[{"statement": "A.", "property": "integrity"}]`:                                        "invariant 1: why_it_matters is required",
+		`[{"statement": "A.", "why_it_matters": "` + long(501) + `", "property": "integrity"}]`: "why_it_matters is longer than 500 characters",
+		`[{"statement": "A.", "why_it_matters": "x\u0000", "property": "integrity"}]`:           "why_it_matters must not contain NUL",
+		`[{"statement": "A.", "why_it_matters": "x"}]`:                                          "property must be one of",
+		`[{"statement": "A.", "why_it_matters": "x", "property": "Integrity"}]`:                 "property must be one of",
+		rule(`, "rank": 0`):                     "rank must be a whole number from 1 to 32767",
+		rule(`, "rank": 1.5`):                   "rank must be a whole number",
+		rule(`, "rank": "2"`):                   "rank must be a whole number",
+		rule(`, "rank": 32768`):                 "rank must be a whole number",
+		rule(assets(21)):                        "protected_assets has 21 items, at most 20",
+		rule(`, "protected_assets": {}`):        "protected_assets must be a list",
+		rule(`, "protected_assets": null`):      "protected_assets must be a list",
+		rule(`, "protected_assets": ["token"]`): `protected_assets[0] must be {"kind", "name"}`,
+		rule(`, "protected_assets": [{"kind": "` + long(65) + `", "name": "t"}]`):  "protected_assets[0]: kind is longer than 64 characters",
+		rule(`, "protected_assets": [{"kind": "k", "name": "` + long(201) + `"}]`): "protected_assets[0]: name is longer than 200 characters",
+		rule(`, "protected_assets": [{"kind": "k"}]`):                              "protected_assets[0]: name is required",
+		rule(`, "protected_assets": [{"kind": "k", "name": "t", "why": "w"}]`):     `protected_assets[0]: unknown field "why"`,
+		rule(`, "repository_id": "6f1c0a6e-0000-4000-8000-000000000000"`):          "repository_id cannot be used with --onboarding",
+		rule(`, "repository": "api"`):                                              "repository must be the repository's name as owner/name",
+		rule(`, "repository": "https://github.com/acme/api"`):                      "repository must be the repository's name as owner/name",
+		rule(`, "repository": null`):                                               "repository must be the repository's name as owner/name",
+		rule(`, "evidence": ["a"]`):                                                `invariant 1: unknown field "evidence"`,
+		`[` + strings.Join(ten, ", ") + `]`:                                        "11 invariants, at most 10 per push",
+		`[{"statement": "A  b.", "why_it_matters": "x", "property": "integrity"}, {"statement": "a B.", "why_it_matters": "x", "property": "integrity"}]`:                  "invariant 2: same statement as invariant 1",
+		`[{"statement": "A.", "why_it_matters": "x", "property": "integrity", "rank": 1}, {"statement": "B.", "why_it_matters": "x", "property": "integrity", "rank": 1}]`: "invariant 2: same rank as invariant 1",
+		`["A."]`: "invariant 1 is not an object",
+	} {
+		_, err := runInvariants(newInvariantsPushCmd(), "--file", writeInvariants(t, body), "--onboarding", testOnboardingCode)
+		e := cliErrorOf(t, err)
+		if e.Code != "INVALID_INVARIANTS" || e.ExitCode != clierrors.ExitUsageError || !strings.Contains(e.Message, want) {
+			t.Errorf("%.80s: err = %#v, want %q", body, e, want)
+		}
+	}
+}
+
+func TestInvariantsPushOnboardingSendsTheRepositoryAsIs(t *testing.T) {
+	got := onboardingServer(t, http.StatusOK, onboardingResult("saved"))
+	file := writeInvariants(t, `[{"statement": "A.", "why_it_matters": "x", "property": "integrity", "rank": 1, "repository": "acme/api",
+		"protected_assets": [{"kind": "credential", "name": "Claude login token"}]}]`)
+
+	if _, err := runInvariants(newInvariantsPushCmd(), "--file", file, "--onboarding", testOnboardingCode); err != nil {
+		t.Fatal(err)
+	}
+	sent := got.body["invariants"].([]any)[0].(map[string]any)
+	if sent["repository"] != "acme/api" || sent["rank"] != float64(1) || len(sent["protected_assets"].([]any)) != 1 {
+		t.Fatalf("sent = %#v", sent)
+	}
+}
+
+// Guardrails refuses fields it does not know, so a logged-in push drops repository, which only
+// the onboarding route takes, and keeps everything else.
+func TestInvariantsPushWithoutOnboardingDropsTheRepository(t *testing.T) {
+	var posted map[string]any
+	server := invariantsServer(t, &posted, http.StatusCreated)
+	defer server.Close()
+	invariantsEnv(t, server)
+
+	file := writeInvariants(t, `[{"statement": "A.", "why_it_matters": "x", "property": "integrity", "repository": "acme/api", "repository_id": "r1"}]`)
+	if _, err := runInvariants(newInvariantsPushCmd(), "--file", file); err != nil {
+		t.Fatal(err)
+	}
+	sent := posted["invariants"].([]any)[0].(map[string]any)
+	if _, has := sent["repository"]; has || sent["repository_id"] != "r1" || sent["statement"] != "A." {
+		t.Fatalf("sent = %#v", sent)
 	}
 }
