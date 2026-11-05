@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/url"
 	"os"
 	"regexp"
 	"slices"
@@ -111,8 +112,11 @@ Konvu's web onboarding, like K7P2XQ9M (any case; spaces and dashes are ignored, 
 is the same code). No login token is read or sent. Konvu keeps them unread until you create
 your account in the browser, so the CLI checks every field above first (no unknown fields, no
 duplicate statements or ranks) and sends nothing if one is off; repository_id is refused, as
-there is no account yet: use repository. Each comes back saved (valid on a dry run) or
-unchanged, and moves into your account when you create it. The code is only ever taken from
+there is no account yet: use repository. A dry run names the company the onboarding belongs to
+("Saves to the Konvu onboarding for acme.com"; "domain" in JSON): check it is yours before
+saving, since the code decides who gets the rules. Redirects are never followed, so the code
+and the rules reach no other server. Each comes back saved (valid on a dry run) or unchanged,
+and moves into your account when you create it. The code is only ever taken from
 this flag: without it, push is the normal logged-in push. If that onboarding already has an
 account, or the code expired, run 'konvu login', then push again without --onboarding.
 
@@ -314,6 +318,20 @@ func runInvariantsPush(cmd *cobra.Command, args []string) error {
 	} else if code != nil {
 		output.PrintStderr("Saved to your Konvu onboarding: go back to your Konvu tab and create your account to keep it.")
 	}
+	cols := []string{"rank", "result", "statement"}
+	if code != nil {
+		// Where the rules go, before anything else: the code may not be the user's own.
+		if domain := getStr(resp, "domain"); domain != "" {
+			verb := "Saved"
+			if dryRun {
+				verb = "Saves"
+			}
+			if err := output.WriteString(cmd.OutOrStdout(), verb+" to the Konvu onboarding for "+domain+"\n\n"); err != nil {
+				return err
+			}
+		}
+		cols = []string{"rank", "result", "repository", "statement"}
+	}
 	rows := make([]any, 0)
 	for _, r := range getSlice(resp, "invariants") {
 		m, _ := r.(map[string]any)
@@ -323,12 +341,12 @@ func runInvariantsPush(cmd *cobra.Command, args []string) error {
 			rank = int(f)
 		}
 		rows = append(rows, map[string]any{
-			"rank":      rank,
-			"result":    getStr(m, "result"),
-			"statement": getStr(m, "statement"),
+			"rank":       rank,
+			"result":     getStr(m, "result"),
+			"repository": getStr(m, "repository"),
+			"statement":  getStr(m, "statement"),
 		})
 	}
-	cols := []string{"rank", "result", "statement"}
 	fmt.Fprint(cmd.OutOrStdout(), output.FormatTable(map[string]any{"invariants": rows}, cols, "invariants", nil))
 	return nil
 }
@@ -631,11 +649,35 @@ func withoutRepository(invariants []any) []any {
 	return kept
 }
 
+// domainPattern is a domain name, like acme.com: the only text Konvu's answer may name the
+// onboarding's company with, so it reads plainly when the user is asked to confirm it.
+var domainPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$`)
+
+// onboardingDomain is the company domain of the onboarding the code belongs to, lowercased, or
+// "" when Konvu sent none or something that is not a domain name.
+func onboardingDomain(resp map[string]any) string {
+	domain := strings.ToLower(strings.TrimSpace(getStr(resp, "domain")))
+	if len(domain) > 253 || !domainPattern.MatchString(domain) {
+		return ""
+	}
+	return domain
+}
+
 // onboardingSummary pairs each invariant pushed with Konvu's result for it: an onboarding push
-// answers one result per invariant, in the order sent, and no statement or rank. A reply that
-// does not line up is an error, never a guess.
+// answers one result per invariant, in the order sent, and no statement or rank. It names the
+// onboarding's company domain, which a dry run must have: it is how the user checks the code is
+// theirs before anything is saved. A reply that does not line up is an error, never a guess.
 func onboardingSummary(invariants []any, resp map[string]any, dryRun bool) (map[string]any, error) {
 	results := getSlice(resp, "invariants")
+	domain := onboardingDomain(resp)
+	if dryRun && domain == "" {
+		return nil, &clierrors.CLIError{
+			Code:       "ONBOARDING_DOMAIN_MISSING",
+			Message:    "Konvu did not say which company's onboarding this code belongs to",
+			Suggestion: "Nothing was written. Check the code is the one your Konvu tab shows and run the dry run again, or run " + onboardingLoginStep + ".",
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
 	mismatch := func(message string) error {
 		return &clierrors.CLIError{
 			Code:       "API_ERROR",
@@ -657,13 +699,17 @@ func onboardingSummary(invariants []any, resp map[string]any, dryRun bool) (map[
 			return nil, mismatch(fmt.Sprintf("Konvu sent no result for invariant %d", i+1))
 		}
 		statement, _ := sent["statement"].(string)
-		rows = append(rows, map[string]any{
-			"rank":      sent["rank"],
-			"statement": strings.TrimSpace(statement),
-			"result":    result,
-		})
+		row := map[string]any{"rank": sent["rank"], "statement": strings.TrimSpace(statement), "result": result}
+		if repository, ok := sent["repository"].(string); ok {
+			row["repository"] = repository
+		}
+		rows = append(rows, row)
 	}
-	return map[string]any{"dry_run": dryRun, "invariants": rows}, nil
+	summary := map[string]any{"dry_run": dryRun, "invariants": rows}
+	if domain != "" {
+		summary["domain"] = domain
+	}
+	return summary, nil
 }
 
 // onboardingCode is the code a push saves with instead of a login, from --onboarding: value is
@@ -740,6 +786,19 @@ func onboardingPushError(err error, code *onboardingCode) error {
 			Message:    "Konvu refused onboarding code " + code.hint(),
 			Suggestion: loginFirst,
 			ExitCode:   clierrors.ExitAuthFailed,
+		}
+	}
+	var redirect *api.RedirectError
+	if errors.As(err, &redirect) {
+		to := ""
+		if where, parseErr := url.Parse(redirect.Location); parseErr == nil && where.Host != "" {
+			to = " to " + sanitizeGuardrailsBaselineText(where.Host)
+		}
+		return &clierrors.CLIError{
+			Code:       "REDIRECT_REFUSED",
+			Message:    fmt.Sprintf("Konvu's API answered %d, a redirect%s; push --onboarding never follows one, so the code and the rules went nowhere else", redirect.StatusCode, to),
+			Suggestion: "Check that KONVU_API_URL, if set, is Konvu's API itself (the default is " + config.DefaultAPIBaseURL + "), then run the same command again.",
+			ExitCode:   clierrors.ExitGeneralError,
 		}
 	}
 	var apiErr *api.APIError

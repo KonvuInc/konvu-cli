@@ -374,14 +374,14 @@ func onboardingServer(t *testing.T, status int, body any) *onboardingRequest {
 	return got
 }
 
-// onboardingResult is what the onboarding route answers: one result per invariant sent, in order,
-// and nothing else.
+// onboardingResult is what the onboarding route answers: the onboarding's company domain, and one
+// result per invariant sent, in order.
 func onboardingResult(results ...string) map[string]any {
 	items := make([]any, 0, len(results))
 	for _, result := range results {
 		items = append(items, map[string]any{"result": result})
 	}
-	return map[string]any{"invariants": items}
+	return map[string]any{"domain": "acme.com", "invariants": items}
 }
 
 // guardrailsResult is what the logged-in push route answers for one invariant.
@@ -416,7 +416,7 @@ func TestInvariantsPushWithOnboardingCodeSavesWithoutALogin(t *testing.T) {
 	}
 	// The route answers results only: the statement comes from the file.
 	row := resp["invariants"].([]any)[0].(map[string]any)
-	if row["result"] != "saved" || row["statement"] != "Tokens never reach logs." || row["rank"] != nil || resp["dry_run"] != false {
+	if row["result"] != "saved" || row["statement"] != "Tokens never reach logs." || row["rank"] != nil || resp["dry_run"] != false || resp["domain"] != "acme.com" {
 		t.Fatalf("resp = %#v", resp)
 	}
 }
@@ -433,6 +433,9 @@ func TestInvariantsPushWithOnboardingCodeDryRun(t *testing.T) {
 	}
 	if !strings.Contains(out, "valid") || !strings.Contains(out, "Tokens never reach logs.") {
 		t.Fatalf("out = %q", out)
+	}
+	if !strings.HasPrefix(out, "Saves to the Konvu onboarding for acme.com\n") {
+		t.Fatalf("the dry run does not say where the rules go: %q", out)
 	}
 	// The rank is null until the account exists: it must not print as rank 0.
 	if strings.Contains(out, "0 ") {
@@ -733,5 +736,90 @@ func TestInvariantsPushWithoutOnboardingDropsTheRepository(t *testing.T) {
 	sent := posted["invariants"].([]any)[0].(map[string]any)
 	if _, has := sent["repository"]; has || sent["repository_id"] != "r1" || sent["statement"] != "A." {
 		t.Fatalf("sent = %#v", sent)
+	}
+}
+
+// The onboarding code must never reach another server: push --onboarding follows no redirect,
+// which Go would otherwise follow with the code header, and with the body on a 307 or 308.
+func TestInvariantsPushOnboardingFollowsNoRedirect(t *testing.T) {
+	var elsewhere int
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		elsewhere++
+		t.Errorf("the redirect was followed: code %q", r.Header.Get(onboardingCodeHeader))
+	}))
+	defer other.Close()
+
+	for _, status := range []int{
+		http.StatusMultipleChoices, http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
+		http.StatusNotModified, http.StatusTemporaryRedirect, http.StatusPermanentRedirect,
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Location", other.URL+r.URL.Path)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_ = json.NewEncoder(w).Encode(onboardingResult("saved"))
+		}))
+		invariantsEnv(t, server)
+
+		out, err := runInvariants(newInvariantsPushCmd(), "--file", writeInvariants(t, onboardingInvariants), "--onboarding", testOnboardingCode)
+		server.Close()
+		e := cliErrorOf(t, err)
+		if e.Code != "REDIRECT_REFUSED" || e.Retryable || e.ExitCode != clierrors.ExitGeneralError || out != "" {
+			t.Fatalf("%d: err = %#v, out = %q", status, e, out)
+		}
+		if strings.Contains(e.Message+e.Suggestion, testOnboardingCode) {
+			t.Fatalf("%d: the error carries the code: %#v", status, e)
+		}
+	}
+	if elsewhere != 0 {
+		t.Fatalf("the other server got %d requests", elsewhere)
+	}
+}
+
+// The dry run is how the user checks the code is theirs: without a company domain, or with text
+// that is not one, it refuses to go on. A save already made still reports its results.
+func TestInvariantsPushOnboardingDryRunNeedsTheDomain(t *testing.T) {
+	for _, domain := range []any{nil, "", "acme", "acme.com (yours)", "acme.com\x1b[2J", 3} {
+		answer := onboardingResult("valid")
+		answer["domain"] = domain
+		onboardingServer(t, http.StatusOK, answer)
+
+		out, err := runInvariants(newInvariantsPushCmd(), "--file", writeInvariants(t, onboardingInvariants), "--onboarding", testOnboardingCode, "--dry-run")
+		if e := cliErrorOf(t, err); e.Code != "ONBOARDING_DOMAIN_MISSING" || e.Retryable || out != "" {
+			t.Fatalf("%#v: err = %#v, out = %q", domain, e, out)
+		}
+	}
+
+	answer := onboardingResult("saved")
+	delete(answer, "domain")
+	onboardingServer(t, http.StatusOK, answer)
+	out, err := runInvariants(newInvariantsPushCmd(), "--file", writeInvariants(t, onboardingInvariants), "--onboarding", testOnboardingCode, "-o", "table")
+	if err != nil || strings.Contains(out, "Konvu onboarding for") || !strings.Contains(out, "saved") {
+		t.Fatalf("err = %v, out = %q", err, out)
+	}
+}
+
+func TestInvariantsPushOnboardingShowsTheDomainAndRepository(t *testing.T) {
+	answer := onboardingResult("valid")
+	answer["domain"] = " Acme.COM "
+	onboardingServer(t, http.StatusOK, answer)
+	file := writeInvariants(t, `[{"statement": "A.", "why_it_matters": "x", "property": "integrity", "repository": "acme/api"}]`)
+
+	out, err := runInvariants(newInvariantsPushCmd(), "--file", file, "--onboarding", testOnboardingCode, "--dry-run", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("output is not JSON: %q", out)
+	}
+	row := resp["invariants"].([]any)[0].(map[string]any)
+	if resp["domain"] != "acme.com" || resp["dry_run"] != true || row["repository"] != "acme/api" || row["result"] != "valid" {
+		t.Fatalf("resp = %#v", resp)
+	}
+
+	table, err := runInvariants(newInvariantsPushCmd(), "--file", file, "--onboarding", testOnboardingCode, "--dry-run", "-o", "table")
+	if err != nil || !strings.HasPrefix(table, "Saves to the Konvu onboarding for acme.com\n") || !strings.Contains(table, "acme/api") {
+		t.Fatalf("err = %v, table = %q", err, table)
 	}
 }

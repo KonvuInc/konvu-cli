@@ -27,6 +27,16 @@ type APIError struct {
 
 func (e *APIError) Error() string { return e.Message }
 
+// RedirectError is a 3xx answer that was not followed. Location is the server's text, unchecked.
+type RedirectError struct {
+	StatusCode int
+	Location   string
+}
+
+func (e *RedirectError) Error() string {
+	return fmt.Sprintf("the server answered %d, a redirect, which was not followed", e.StatusCode)
+}
+
 type Client struct {
 	baseURL       string
 	explicitToken string
@@ -243,17 +253,26 @@ func (c *Client) Post(path string, data map[string]any) (map[string]any, error) 
 	if err != nil {
 		return nil, err
 	}
-	return c.postJSON(path, data, map[string]string{"Authorization": auth})
+	return c.postJSON(c.httpClient, path, data, map[string]string{"Authorization": auth})
 }
 
 // PostWithoutLogin sends a JSON POST that carries headers instead of the login token, for a
 // route that identifies the caller another way (an onboarding code). It never reads or sends
-// the login token, so it works logged out.
+// the login token, so it works logged out. It never follows a redirect either: Go resends custom
+// headers on one, and a 307 or 308 resends the body, maybe to another host. Any 3xx comes back
+// as a RedirectError.
 func (c *Client) PostWithoutLogin(path string, data map[string]any, headers map[string]string) (map[string]any, error) {
-	return c.postJSON(path, data, headers)
+	client := &http.Client{
+		Timeout:   c.httpClient.Timeout,
+		Transport: c.httpClient.Transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	return c.postJSON(client, path, data, headers)
 }
 
-func (c *Client) postJSON(path string, data map[string]any, headers map[string]string) (map[string]any, error) {
+func (c *Client) postJSON(client *http.Client, path string, data map[string]any, headers map[string]string) (map[string]any, error) {
 	reqURL := c.baseURL + path
 
 	var body io.Reader
@@ -277,12 +296,16 @@ func (c *Client) postJSON(path string, data map[string]any, headers map[string]s
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
+	// A 3xx still here was not followed, so its body is no answer to this request.
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return nil, &RedirectError{StatusCode: resp.StatusCode, Location: resp.Header.Get("Location")}
+	}
 	if err := c.checkResponse(resp); err != nil {
 		return nil, err
 	}
