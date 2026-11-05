@@ -239,6 +239,21 @@ func (c *Client) GetList(path string, params map[string]any) ([]any, error) {
 }
 
 func (c *Client) Post(path string, data map[string]any) (map[string]any, error) {
+	auth, err := c.authHeader()
+	if err != nil {
+		return nil, err
+	}
+	return c.postJSON(path, data, map[string]string{"Authorization": auth})
+}
+
+// PostWithoutLogin sends a JSON POST that carries headers instead of the login token, for a
+// route that identifies the caller another way (an onboarding code). It never reads or sends
+// the login token, so it works logged out.
+func (c *Client) PostWithoutLogin(path string, data map[string]any, headers map[string]string) (map[string]any, error) {
+	return c.postJSON(path, data, headers)
+}
+
+func (c *Client) postJSON(path string, data map[string]any, headers map[string]string) (map[string]any, error) {
 	reqURL := c.baseURL + path
 
 	var body io.Reader
@@ -255,11 +270,9 @@ func (c *Client) Post(path string, data map[string]any) (map[string]any, error) 
 		return nil, err
 	}
 
-	auth, err := c.authHeader()
-	if err != nil {
-		return nil, err
+	for name, value := range headers {
+		req.Header.Set(name, value)
 	}
-	req.Header.Set("Authorization", auth)
 	if data != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

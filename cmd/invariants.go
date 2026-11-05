@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"unicode"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
+	"github.com/KonvuInc/konvu-cli/pkg/config"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	"github.com/KonvuInc/konvu-cli/pkg/output"
 	"github.com/spf13/cobra"
@@ -18,7 +20,16 @@ import (
 const (
 	invariantsPath      = "/services/guardrails/v1/prevent/invariants"
 	invariantsGuidePath = invariantsPath + "/guide"
+
+	// A push with an onboarding code goes here instead, with no login token.
+	onboardingRulesPath  = "/onboarding/rules"
+	onboardingCodeHeader = "X-Onboarding-Code"
+	onboardingCodeEnv    = "KONVU_ONBOARDING_CODE"
 )
+
+// onboardingCodePattern is the shape of a code from Konvu's web onboarding: onb_ and URL-safe
+// characters. Anything else is refused before a request, so it never reaches a header.
+var onboardingCodePattern = regexp.MustCompile(`^onb_[A-Za-z0-9_-]{16,128}$`)
 
 // invariantListStatuses are the values `list --status` takes; "all" keeps every live invariant.
 var invariantListStatuses = []string{"all", "proposed", "validated"}
@@ -89,14 +100,24 @@ Each invariant accepts:
 A statement already live comes back unchanged (or validated, if it was a proposal), so a
 push is safe to repeat. --dry-run checks everything on the server and writes nothing.
 
-Exit codes: 0 success, 1 general error, 2 invalid invariants, 3 repository not found, 4 auth failed or refused`,
+--onboarding <code> saves them without a login, with the onboarding code from Konvu's web
+onboarding (onb_...); KONVU_ONBOARDING_CODE is read when the flag is absent. No login token is
+read or sent. Each comes back saved (valid on a dry run) or unchanged, and moves into your
+account when you create it in the browser. If that onboarding already has an account, log in
+and push without the code.
+
+Exit codes: 0 success, 1 general error, 2 invalid invariants or onboarding code, 3 repository
+not found (with --onboarding: the code is unknown or expired), 4 auth failed or refused (with
+--onboarding: the onboarding already has an account, or Konvu refused the code)`,
 		Example: `  konvu invariants push --file invariants.json --dry-run
   konvu invariants push --file invariants.json
-  cat invariants.json | konvu invariants push --file -`,
+  cat invariants.json | konvu invariants push --file -
+  konvu invariants push --file invariants.json --onboarding <code>`,
 		RunE: runInvariantsPush,
 	}
 	c.Flags().String("file", "", "JSON file of invariants, or '-' for stdin")
 	c.Flags().Bool("dry-run", false, "Check on the server without writing anything")
+	c.Flags().String("onboarding", "", "Onboarding code from Konvu's web onboarding (onb_...): save without a login (default: $"+onboardingCodeEnv+")")
 	c.Flags().StringP("output", "o", "", "Output format: json, table")
 	return c
 }
@@ -226,6 +247,10 @@ func runInvariantsPush(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	code, err := pushOnboardingCode(cmd)
+	if err != nil {
+		return err
+	}
 
 	if file == "" {
 		return &clierrors.CLIError{
@@ -247,12 +272,18 @@ func runInvariantsPush(cmd *cobra.Command, args []string) error {
 
 	client := api.NewClient("", "")
 	defer client.Close()
-	resp, err := client.Post(invariantsPath, map[string]any{
-		"dry_run":    dryRun,
-		"invariants": invariants,
-	})
-	if err != nil {
-		return invariantsPushError(err, invariants)
+	body := map[string]any{"dry_run": dryRun, "invariants": invariants}
+	var resp map[string]any
+	if code != nil {
+		resp, err = client.PostWithoutLogin(onboardingRulesPath, body, map[string]string{onboardingCodeHeader: code.value})
+		if err != nil {
+			return onboardingPushError(err, code)
+		}
+	} else {
+		resp, err = client.Post(invariantsPath, body)
+		if err != nil {
+			return invariantsPushError(err, invariants)
+		}
 	}
 	if format == output.JSON {
 		fmt.Fprintln(cmd.OutOrStdout(), output.FormatJSON(resp))
@@ -260,12 +291,19 @@ func runInvariantsPush(cmd *cobra.Command, args []string) error {
 	}
 	if dryRun {
 		output.PrintStderr("Dry run: nothing was written. Run without --dry-run to add them.")
+	} else if code != nil {
+		output.PrintStderr("Saved to your Konvu onboarding: go back to your Konvu tab and create your account to keep it.")
 	}
 	rows := make([]any, 0)
 	for _, r := range getSlice(resp, "invariants") {
 		m, _ := r.(map[string]any)
+		// An onboarding push has no rank yet: a blank, not rank 0.
+		var rank any = ""
+		if f, ok := getFloat(m, "rank"); ok {
+			rank = int(f)
+		}
 		rows = append(rows, map[string]any{
-			"rank":      intField(m, "rank"),
+			"rank":      rank,
 			"result":    getStr(m, "result"),
 			"statement": getStr(m, "statement"),
 		})
@@ -389,6 +427,127 @@ func invariantsPushError(err error, invariants []any) error {
 		}
 	}
 	return clierrors.NewAPIError(detail)
+}
+
+// onboardingCode is the code a push saves with instead of a login, and whether it came from
+// KONVU_ONBOARDING_CODE rather than --onboarding.
+type onboardingCode struct {
+	value   string
+	fromEnv bool
+}
+
+// hint is the code as errors may show it: its first characters only.
+func (c *onboardingCode) hint() string {
+	return c.value[:6] + "…"
+}
+
+// redact replaces the whole code in text (a server's detail can echo a header) with its hint.
+func (c *onboardingCode) redact(text string) string {
+	return strings.ReplaceAll(text, c.value, c.hint())
+}
+
+// afterLogin is how to push again without the code once logged in, wherever it was given.
+func (c *onboardingCode) afterLogin() string {
+	if c.fromEnv {
+		return "unset " + onboardingCodeEnv + " and push again"
+	}
+	return "push again without --onboarding"
+}
+
+// pushOnboardingCode reads the push's onboarding code: --onboarding, else KONVU_ONBOARDING_CODE.
+// nil means a normal, logged-in push. A code that is given but empty or malformed is refused,
+// never treated as absent, so the push cannot fall back to the login without the user knowing.
+func pushOnboardingCode(cmd *cobra.Command) (*onboardingCode, error) {
+	code := &onboardingCode{}
+	source := "--onboarding"
+	if cmd.Flags().Changed("onboarding") {
+		code.value, _ = cmd.Flags().GetString("onboarding")
+		code.value = strings.TrimSpace(code.value)
+	} else if env := strings.TrimSpace(os.Getenv(onboardingCodeEnv)); env != "" {
+		code.value, code.fromEnv, source = env, true, onboardingCodeEnv
+	} else {
+		return nil, nil
+	}
+	if !onboardingCodePattern.MatchString(code.value) {
+		return nil, &clierrors.CLIError{
+			Code:       "INVALID_ONBOARDING_CODE",
+			Message:    source + " is not a Konvu onboarding code",
+			Suggestion: "Copy the code from your Konvu tab (it starts with onb_), or run 'konvu login', then " + code.afterLogin() + ".",
+			ExitCode:   clierrors.ExitUsageError,
+		}
+	}
+	return code, nil
+}
+
+// onboardingPushError maps a refused onboarding push to its next step. Only a refused or
+// already-claimed code sends the user to 'konvu login', and no message carries the whole code.
+func onboardingPushError(err error, code *onboardingCode) error {
+	loginInstead := "Run 'konvu login', then " + code.afterLogin() + "."
+	var authErr *api.AuthenticationError
+	if errors.As(err, &authErr) {
+		return &clierrors.CLIError{
+			Code:       "ONBOARDING_CODE_REFUSED",
+			Message:    "Konvu refused onboarding code " + code.hint(),
+			Suggestion: loginInstead,
+			ExitCode:   clierrors.ExitAuthFailed,
+		}
+	}
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) {
+		return &clierrors.CLIError{
+			Code:       "API_ERROR",
+			Message:    code.redact(err.Error()),
+			Suggestion: "A push is safe to repeat: run the same command again.",
+			Retryable:  true,
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
+	detail := sanitizeGuardrailsBaselineText(api.ServerDetail([]byte(code.redact(strings.TrimPrefix(apiErr.Message, "API error: ")))))
+	switch {
+	case apiErr.StatusCode == 404:
+		return &clierrors.CLIError{
+			Code:       "ONBOARDING_CODE_NOT_FOUND",
+			Message:    "onboarding code " + code.hint() + " is unknown or has expired",
+			Suggestion: "Get a new code from the Konvu onboarding at " + config.GetDashboardURL() + "/start, or run 'konvu login', then " + code.afterLogin() + ".",
+			ExitCode:   clierrors.ExitNotFound,
+		}
+	case apiErr.StatusCode == 409:
+		return &clierrors.CLIError{
+			Code:       "ONBOARDING_HAS_ACCOUNT",
+			Message:    "this onboarding already has a Konvu account",
+			Suggestion: loginInstead,
+			ExitCode:   clierrors.ExitAuthFailed,
+		}
+	case apiErr.StatusCode == 422:
+		return &clierrors.CLIError{
+			Code:       "INVALID_INVARIANTS",
+			Message:    detail,
+			Suggestion: "Run 'konvu invariants push --help' for the expected format.",
+			ExitCode:   clierrors.ExitUsageError,
+		}
+	case apiErr.StatusCode == 429:
+		return &clierrors.CLIError{
+			Code:       "RATE_LIMITED",
+			Message:    "Konvu got too many onboarding saves: it is rate limiting them",
+			Suggestion: "Wait a minute, then run the same command again: a push is safe to repeat.",
+			Retryable:  true,
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	case apiErr.StatusCode >= 500:
+		return &clierrors.CLIError{
+			Code:       "API_ERROR",
+			Message:    detail,
+			Suggestion: "A push is safe to repeat: run the same command again.",
+			Retryable:  true,
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	}
+	return &clierrors.CLIError{
+		Code:       "API_ERROR",
+		Message:    detail,
+		Suggestion: loginInstead,
+		ExitCode:   clierrors.ExitGeneralError,
+	}
 }
 
 // anyRepositoryID reports whether a pushed invariant names a repository, the only way a

@@ -664,6 +664,9 @@ konvu invariants get <id> -o json
 konvu invariants push --file invariants.json --dry-run
 konvu invariants push --file invariants.json
 
+# No login yet: save them with the code from Konvu's web onboarding, then create your account in the browser
+konvu invariants push --file invariants.json --onboarding <code>
+
 # Decide on a suggestion: accept it (it becomes active, attributed to you) or decline it
 konvu invariants accept <id> --dry-run
 konvu invariants accept <id>
@@ -677,6 +680,8 @@ konvu invariants decline <id>
 `accept` sends a `proposed` invariant unchanged, and it keeps its rank; to change its wording first, push the edited rule at the suggestion's rank instead, which replaces it. Only a suggestion is accepted: when it stopped being one before the accept reached Konvu (accepted, declined or replaced meanwhile), `accept` exits 1 and says what was written, if anything. When the server fails, `accept` reads the invariant back: `validated` means it is active (`"mapping_pending": true` in JSON: its mapping to controls may wait for the next code analysis or rule change, nothing to repeat); still `proposed` means not accepted yet, though the request may still be running, so check with `get` before repeating it. `decline` drops a `proposed` invariant for good; one already declined exits 0, so repeating it is safe. Exit codes for both: 1 when the invariant is not a suggestion (`accept`: already active, declined or retired; `decline`: active or retired), changed meanwhile, cannot be accepted unchanged (`accept`: the server refused its text; push an edited version instead), or the request failed; 2 for a malformed id; 3 when it is not one of your company's invariants; 4 when you are not signed in, or not as a person.
 
 `push` reads a JSON array (or `{"invariants": [...]}`) of 1 to 10 invariants, each with `statement`, `why_it_matters` and `property`, and optionally `rank`, `repository_id` and `protected_assets`; `konvu invariants push --help` lists the fields. They are stored as validated and attributed to you. A statement already live comes back `unchanged` (or `validated` if it was a proposal), so a push is safe to repeat. Exit codes: 2 when the invariants are malformed, 3 when `repository_id` is not one of your repositories, 4 when you are not signed in as a person, 1 when a rank is unavailable or the request failed (run the same push again: it is safe to repeat).
+
+`push --onboarding <code>` (or `KONVU_ONBOARDING_CODE` when the flag is absent) needs no login: it saves the invariants to the Konvu web onboarding that gave you the code (`onb_...`), and they move into your account when you create it in the browser. It never reads or sends your login token. Each comes back `saved` (`valid` on a dry run) or `unchanged`. Errors never print the whole code. Exit codes: 2 when the code or the invariants are malformed, 3 when the code is unknown or expired, 4 when that onboarding already has an account (run `konvu login`, then push again without the code) or Konvu refused the code, 1 when rate limited or the request failed.
 
 ### `konvu skills path` — Locate bundled skills
 
@@ -759,7 +764,7 @@ Security rules (invariants) and PR checks come as these skills:
 
 - `/konvu-onboarding` — a short welcome, then your first security rule with `konvu-invariants`, then how Konvu enforces it; it asks you to log in only when the rule is saved
 - `/konvu-invariants` — pick a repo and a theme, draft the rule that matters most by Konvu's guide (bundled with the skill), shape it together, then save it; `konvu login` is needed only for that save
-- `/konvu-upload-invariants` — save security rules you wrote with `konvu invariants push`, after a server-side dry run; this is where it asks you to log in, if you aren't yet
+- `/konvu-upload-invariants` — save security rules you wrote with `konvu invariants push`, after a server-side dry run; this is where it asks you to log in, if you aren't yet, unless your setup message carried a code from Konvu's web onboarding: then it saves with that code, no login, and you create your account in the browser
 - `/konvu-decide-suggestions` — go through the rules Konvu suggested, checked against your code, then accept or decline the ones you pick
 - `/konvu-audit-rules` — read-only audit of your active rules (all, or the ids you give): where each is enforced, its gaps, agent steering and PR check outcomes
 - `/konvu-review-pr-checks` — read-only review of what Konvu's PR check found, on every analyzed PR or on one PR URL
@@ -812,6 +817,7 @@ Filter by assessment: `--assessment exploitable`, combine with severity: `--seve
 |---|---|---|
 | `KONVU_ACCESS_TOKEN` | — | API key or access token (alternative to `konvu login`) |
 | `KONVU_API_URL` | `https://api.konvu.com` | API base URL |
+| `KONVU_ONBOARDING_CODE` | — | Onboarding code for `konvu invariants push` when `--onboarding` is absent (saves without a login) |
 | `KONVU_APP_URL` | `https://app.konvu.com` | Dashboard URL (used in `konvu remediate` install-link suggestions) |
 | `KONVU_ZITADEL_DOMAIN` | `https://auth.konvu.com` | OAuth provider |
 | `KONVU_ZITADEL_CLIENT_ID` | — | OAuth client ID (required for OAuth login) |
