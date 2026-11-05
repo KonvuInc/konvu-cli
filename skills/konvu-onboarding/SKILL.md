@@ -1,6 +1,6 @@
 ---
 name: konvu-onboarding
-version: 1.0.0
+version: 1.1.0
 description: "Konvu Prevent onboarding in the coding agent: a welcome, then the user and their agent write their first security rule with konvu-invariants and save it to Konvu, then they see how Konvu enforces it. Use when the user says /konvu-onboarding, asks to start the Konvu onboarding, or right after installing Konvu."
 metadata:
   requires:
@@ -10,6 +10,8 @@ metadata:
 # Konvu onboarding
 
 Three parts, in order: the welcome (this skill), the first security rule (the **konvu-invariants** skill, which saves it with **konvu-upload-invariants**), then the ending (this skill). `<invariants-dir>` below is the konvu-invariants skill's folder, next to this one; quote it in commands if it has spaces.
+
+If the user's setup message carried a Konvu onboarding code (`onb_` followed by about 32 characters, as in "My onboarding code: onb_..."), keep it for the save: konvu-upload-invariants saves the rule with it, without a Konvu login, and the user creates their account in their Konvu tab afterwards. Never write it to a file and never repeat it to the user.
 
 ## 1 · Welcome
 
@@ -51,3 +53,5 @@ Your message, in this order:
 7. the action in bold, in your own words for the moment, e.g. **Want this one guaranteed? Tell me and I'll open Konvu so you can plug in the GitHub App.**
 
 When they want to go on, open Konvu for them: `python3 -m webbrowser https://app.konvu.com`. Then close in two short lines: Konvu is open at https://app.konvu.com to plug in the GitHub App, and they can write more security rules anytime with /konvu-invariants.
+
+If the rule was saved with an onboarding code, the user has no Konvu account yet and their Konvu tab is already open: make item 7 going back to that tab to create their account and keep this rule, e.g. **Head back to your Konvu tab and create your account to keep this rule.** Don't open Konvu for them; close in one line: they can write more security rules anytime with /konvu-invariants.

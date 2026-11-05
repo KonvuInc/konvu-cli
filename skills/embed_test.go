@@ -203,6 +203,38 @@ func TestOnboardingNeedsNoLoginBeforeTheSave(t *testing.T) {
 	}
 }
 
+// A setup message from Konvu's web onboarding carries a code: the onboarding keeps it for the save,
+// the upload saves with it instead of a login and falls back to the login when that onboarding
+// already has an account, and the code stays out of files and replies.
+func TestUploadSavesWithTheOnboardingCode(t *testing.T) {
+	upload, err := embedded.ReadFile("konvu-upload-invariants/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"With an onboarding code, skip this step: no `konvu whoami`, no `konvu login`.",
+		"`konvu invariants push --file <file> --dry-run -o json`, plus `--onboarding <code>` when you have one.",
+		"`konvu invariants push --file <file> -o json`, plus `--onboarding <code>` when you have one.",
+		`"Saved. Go back to your Konvu tab: your rule is there, create your account to keep it."`,
+		`"this onboarding already has a Konvu account"`,
+		"do step 2 (login) and the dry run and push again without `--onboarding`",
+		"never write it to a file", "never repeat it to the user",
+	} {
+		if !strings.Contains(string(upload), want) {
+			t.Errorf("konvu-upload-invariants: missing %q", want)
+		}
+	}
+	for _, path := range []string{"konvu-onboarding/SKILL.md", "konvu-invariants/SKILL.md", "konvu-invariants/steps/4-upload.md"} {
+		data, err := embedded.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), "setup message carried a Konvu onboarding code") {
+			t.Errorf("%s does not carry the onboarding code to the save", path)
+		}
+	}
+}
+
 // The decide skill writes on the user's behalf, so it must wait for their pick and act on
 // exactly that.
 func TestDecideSuggestionsWaitsForThePick(t *testing.T) {

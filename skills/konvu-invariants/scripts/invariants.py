@@ -42,7 +42,8 @@ FINISHED = (
     "The security rule is written and uploaded. If konvu-onboarding brought you here, go back to it for its "
     "last step now; its diagram command is `{show} enforce {dir_q}`. Otherwise close in one line: it is saved "
     "in Konvu, which maps it to the controls in their code once the GitHub App is plugged in, and they can "
-    "write more anytime."
+    "write more anytime (saved with an onboarding code: it waits in their Konvu tab until they create their "
+    "account there)."
 )
 
 
