@@ -11,7 +11,7 @@ metadata:
 
 Three parts, in order: the welcome (this skill), the first security rule (the **konvu-invariants** skill, which saves it with **konvu-upload-invariants**), then the ending (this skill). `<invariants-dir>` below is the konvu-invariants skill's folder, next to this one; quote it in commands if it has spaces.
 
-If the user's setup message carried a Konvu onboarding code (`onb_` followed by about 32 characters, as in "My onboarding code: onb_..."), keep it for the save: konvu-upload-invariants saves the rule with it, without a Konvu login, and the user creates their account in their Konvu tab afterwards. Never write it to a file and never repeat it to the user.
+If the user's setup message carried a Konvu onboarding code (an 8-character code of capital letters and digits, as in "My onboarding code: K7P2XQ9M"; it may come lowercase or with a dash), keep it for the save: konvu-upload-invariants saves the rule with it, without a Konvu login, and the user creates their account in their Konvu tab afterwards. Never write it to a file and never repeat it to the user.
 
 ## 1 · Welcome
 

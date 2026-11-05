@@ -337,8 +337,8 @@ func TestInvariantsGuideRefusesAnUnsupportedOutput(t *testing.T) {
 }
 
 const (
-	testOnboardingCode = "onb_Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4z"
-	testOnboardingHint = "onb_Ab…"
+	testOnboardingCode = "R4WN8HZT"
+	testOnboardingHint = "R4…"
 )
 
 // onboardingRequest is what the onboarding route received.
@@ -462,6 +462,20 @@ func TestInvariantsPushIgnoresAnOnboardingCodeInTheEnvironment(t *testing.T) {
 	}
 }
 
+// Konvu reads a code in any case, with spaces and dashes ignored: the header carries it normalized.
+func TestInvariantsPushNormalizesTheOnboardingCode(t *testing.T) {
+	for _, given := range []string{"R4WN8HZT", "r4wn8hzt", "R4WN-8HZT", "r4wn-8hzt", " r4wn 8hzt\n", "R4-WN-8H-ZT"} {
+		got := onboardingServer(t, http.StatusOK, onboardingResult("saved"))
+
+		if _, err := runInvariants(newInvariantsPushCmd(), "--file", writeInvariants(t, onboardingInvariants), "--onboarding", given); err != nil {
+			t.Fatalf("%q: %v", given, err)
+		}
+		if got.code != testOnboardingCode {
+			t.Fatalf("%q: header = %q", given, got.code)
+		}
+	}
+}
+
 func TestInvariantsPushRefusesAMalformedOnboardingCode(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("a malformed code reached the server: %s", r.URL.Path)
@@ -469,13 +483,20 @@ func TestInvariantsPushRefusesAMalformedOnboardingCode(t *testing.T) {
 	defer server.Close()
 	invariantsEnv(t, server)
 
-	for _, flag := range []string{"", "  ", "onb_short", "abc_Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4z", testOnboardingCode + "\r\nX-Evil: 1"} {
+	for _, flag := range []string{
+		"", "  ", "-",
+		"R4WN8HZ", "R4WN8HZTX", // 7 and 9 characters
+		"R4WN8HZ0", "R4WN8HZO", "R4WN8HZ1", "R4WN8HZI", "R4WN8HZL", "r4wn8hzl", // look-alikes Konvu never issues
+		"R4WN_8HZT", "R4WN.8HZT", "R4WN8HZſ", // ſ uppercases to S outside ASCII
+		"onb_Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4z", // the old format
+		testOnboardingCode + "\r\nX-Evil: 1",
+	} {
 		_, err := runInvariants(newInvariantsPushCmd(), "--file", writeInvariants(t, onboardingInvariants), "--onboarding", flag)
 		e := cliErrorOf(t, err)
 		if e.Code != "INVALID_ONBOARDING_CODE" || e.ExitCode != clierrors.ExitUsageError {
 			t.Fatalf("%q: err = %#v", flag, e)
 		}
-		if strings.TrimSpace(flag) != "" && strings.Contains(e.Message+e.Suggestion, strings.TrimSpace(flag)) {
+		if len(strings.TrimSpace(flag)) >= 7 && strings.Contains(e.Message+e.Suggestion, strings.TrimSpace(flag)) {
 			t.Fatalf("%q: the error echoes the code: %#v", flag, e)
 		}
 	}
@@ -496,14 +517,14 @@ func TestInvariantsPushOnboardingErrors(t *testing.T) {
 		http.StatusBadGateway:          {"API_ERROR", clierrors.ExitGeneralError, true, false},
 	} {
 		// The server echoes the code, as a FastAPI validation error does with a header's input.
-		onboardingServer(t, status, map[string]any{"detail": "bad header " + testOnboardingCode})
+		onboardingServer(t, status, map[string]any{"detail": "bad header " + testOnboardingCode + " (r4wn-8hzt)"})
 
-		_, err := runInvariants(newInvariantsPushCmd(), "--file", writeInvariants(t, onboardingInvariants), "--onboarding", testOnboardingCode)
+		_, err := runInvariants(newInvariantsPushCmd(), "--file", writeInvariants(t, onboardingInvariants), "--onboarding", "r4wn-8hzt")
 		e := cliErrorOf(t, err)
 		if e.Code != want.code || e.ExitCode != want.exit || e.Retryable != want.retryable {
 			t.Fatalf("%d: err = %#v", status, e)
 		}
-		if strings.Contains(e.Message+e.Suggestion, testOnboardingCode) {
+		if strings.Contains(e.Message+e.Suggestion, testOnboardingCode) || strings.Contains(e.Message+e.Suggestion, "r4wn-8hzt") {
 			t.Fatalf("%d: the error carries the whole code: %#v", status, e)
 		}
 		if login := strings.Contains(e.Suggestion, "Run 'konvu login', then push again without --onboarding.") ||

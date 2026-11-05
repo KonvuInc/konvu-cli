@@ -225,13 +225,21 @@ func TestUploadSavesWithTheOnboardingCode(t *testing.T) {
 			t.Errorf("konvu-upload-invariants: missing %q", want)
 		}
 	}
-	for _, path := range []string{"konvu-onboarding/SKILL.md", "konvu-invariants/SKILL.md", "konvu-invariants/steps/4-upload.md"} {
+	for _, path := range []string{"konvu-upload-invariants/SKILL.md", "konvu-onboarding/SKILL.md", "konvu-invariants/SKILL.md", "konvu-invariants/steps/4-upload.md"} {
 		data, err := embedded.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(data), "setup message carried a Konvu onboarding code") {
+		body := string(data)
+		if !strings.Contains(body, "setup message carried a Konvu onboarding code") {
 			t.Errorf("%s does not carry the onboarding code to the save", path)
+		}
+		// The agent spots the code by the setup message's own words and the 8-character format.
+		if !strings.Contains(body, `"My onboarding code: K7P2XQ9M"`) {
+			t.Errorf("%s does not show the setup message's code format", path)
+		}
+		if strings.Contains(body, "onb_") {
+			t.Errorf("%s still describes the old onb_ codes", path)
 		}
 	}
 }

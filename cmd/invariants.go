@@ -26,9 +26,10 @@ const (
 	onboardingCodeHeader = "X-Onboarding-Code"
 )
 
-// onboardingCodePattern is the shape of a code from Konvu's web onboarding: onb_ and URL-safe
-// characters. Anything else is refused before a request, so it never reaches a header.
-var onboardingCodePattern = regexp.MustCompile(`^onb_[A-Za-z0-9_-]{16,128}$`)
+// onboardingCodePattern is a code from Konvu's web onboarding once normalized: 8 capital letters
+// and digits, without the look-alikes 0, O, 1, I and L. Anything else is refused before a
+// request, so it never reaches a header.
+var onboardingCodePattern = regexp.MustCompile(`^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$`)
 
 // invariantListStatuses are the values `list --status` takes; "all" keeps every live invariant.
 var invariantListStatuses = []string{"all", "proposed", "validated"}
@@ -99,8 +100,9 @@ Each invariant accepts:
 A statement already live comes back unchanged (or validated, if it was a proposal), so a
 push is safe to repeat. --dry-run checks everything on the server and writes nothing.
 
---onboarding <code> saves them without a login, with the onboarding code from Konvu's web
-onboarding (onb_...). No login token is read or sent. Each comes back saved (valid on a dry
+--onboarding <code> saves them without a login, with the 8-character onboarding code from
+Konvu's web onboarding, like K7P2XQ9M (any case; spaces and dashes are ignored, so k7p2-xq9m
+is the same code). No login token is read or sent. Each comes back saved (valid on a dry
 run) or unchanged, and moves into your account when you create it in the browser. The code is
 only ever taken from this flag: without it, push is the normal logged-in push. If that
 onboarding already has an account, or the code expired, run 'konvu login', then push again
@@ -112,12 +114,12 @@ not found (with --onboarding: the code is unknown or expired), 4 auth failed or 
 		Example: `  konvu invariants push --file invariants.json --dry-run
   konvu invariants push --file invariants.json
   cat invariants.json | konvu invariants push --file -
-  konvu invariants push --file invariants.json --onboarding <code>`,
+  konvu invariants push --file invariants.json --onboarding K7P2XQ9M`,
 		RunE: runInvariantsPush,
 	}
 	c.Flags().String("file", "", "JSON file of invariants, or '-' for stdin")
 	c.Flags().Bool("dry-run", false, "Check on the server without writing anything")
-	c.Flags().String("onboarding", "", "Onboarding code from Konvu's web onboarding (onb_...): save without a login")
+	c.Flags().String("onboarding", "", "8-character onboarding code from Konvu's web onboarding (like K7P2XQ9M): save without a login")
 	c.Flags().StringP("output", "o", "", "Output format: json, table")
 	return c
 }
@@ -429,19 +431,43 @@ func invariantsPushError(err error, invariants []any) error {
 	return clierrors.NewAPIError(detail)
 }
 
-// onboardingCode is the code a push saves with instead of a login, from --onboarding.
+// onboardingCode is the code a push saves with instead of a login, from --onboarding: value is
+// normalized (what the header carries), given is what the user typed.
 type onboardingCode struct {
 	value string
+	given string
 }
 
-// hint is the code as errors may show it: its first characters only.
+// hint is the code as errors may show it: its first 2 characters only.
 func (c *onboardingCode) hint() string {
-	return c.value[:6] + "…"
+	return c.value[:2] + "…"
 }
 
-// redact replaces the whole code in text (a server's detail can echo a header) with its hint.
+// redact replaces the whole code in text (a server's detail can echo a header), as sent or as
+// typed, with its hint.
 func (c *onboardingCode) redact(text string) string {
-	return strings.ReplaceAll(text, c.value, c.hint())
+	text = strings.ReplaceAll(text, c.value, c.hint())
+	if c.given != "" {
+		text = strings.ReplaceAll(text, c.given, c.hint())
+	}
+	return text
+}
+
+// normalizeOnboardingCode is the code as Konvu reads it: spaces and dashes dropped, ASCII
+// letters uppercased. Any other character is kept, so the pattern refuses it; uppercasing only
+// ASCII stops a letter like ſ from turning into a valid S.
+func normalizeOnboardingCode(given string) string {
+	var code strings.Builder
+	for _, r := range given {
+		switch {
+		case r == '-' || unicode.IsSpace(r):
+		case r >= 'a' && r <= 'z':
+			code.WriteRune(r - 'a' + 'A')
+		default:
+			code.WriteRune(r)
+		}
+	}
+	return code.String()
 }
 
 // onboardingLoginStep is the way out once the code cannot save: log in, then push without it.
@@ -455,13 +481,13 @@ func pushOnboardingCode(cmd *cobra.Command) (*onboardingCode, error) {
 	if !cmd.Flags().Changed("onboarding") {
 		return nil, nil
 	}
-	value, _ := cmd.Flags().GetString("onboarding")
-	code := &onboardingCode{value: strings.TrimSpace(value)}
+	given, _ := cmd.Flags().GetString("onboarding")
+	code := &onboardingCode{value: normalizeOnboardingCode(given), given: strings.TrimSpace(given)}
 	if !onboardingCodePattern.MatchString(code.value) {
 		return nil, &clierrors.CLIError{
 			Code:       "INVALID_ONBOARDING_CODE",
 			Message:    "--onboarding is not a Konvu onboarding code",
-			Suggestion: "Copy the code from your Konvu tab (it starts with onb_), or run " + onboardingLoginStep + ".",
+			Suggestion: "Copy the 8-character code from your Konvu tab (like K7P2XQ9M), or run " + onboardingLoginStep + ".",
 			ExitCode:   clierrors.ExitUsageError,
 		}
 	}

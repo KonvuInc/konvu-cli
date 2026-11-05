@@ -665,7 +665,7 @@ konvu invariants push --file invariants.json --dry-run
 konvu invariants push --file invariants.json
 
 # No login yet: save them with the code from Konvu's web onboarding, then create your account in the browser
-konvu invariants push --file invariants.json --onboarding <code>
+konvu invariants push --file invariants.json --onboarding K7P2XQ9M
 
 # Decide on a suggestion: accept it (it becomes active, attributed to you) or decline it
 konvu invariants accept <id> --dry-run
@@ -681,7 +681,7 @@ konvu invariants decline <id>
 
 `push` reads a JSON array (or `{"invariants": [...]}`) of 1 to 10 invariants, each with `statement`, `why_it_matters` and `property`, and optionally `rank`, `repository_id` and `protected_assets`; `konvu invariants push --help` lists the fields. They are stored as validated and attributed to you. A statement already live comes back `unchanged` (or `validated` if it was a proposal), so a push is safe to repeat. Exit codes: 2 when the invariants are malformed, 3 when `repository_id` is not one of your repositories, 4 when you are not signed in as a person, 1 when a rank is unavailable or the request failed (run the same push again: it is safe to repeat).
 
-`push --onboarding <code>` needs no login: it saves the invariants to the Konvu web onboarding that gave you the code (`onb_...`), and they move into your account when you create it in the browser. It never reads or sends your login token. The code is only ever taken from the flag (there is no environment variable for it), so without `--onboarding` a push is always the normal logged-in one. Each comes back `saved` (`valid` on a dry run) or `unchanged`. Errors never print the whole code. Exit codes: 2 when the code or the invariants are malformed, 3 when the code is unknown or expired, 4 when that onboarding already has an account or Konvu refused the code, 1 when rate limited or the request failed. After a 409 or an expired code, run `konvu login`, then push again without `--onboarding`.
+`push --onboarding <code>` needs no login: it saves the invariants to the Konvu web onboarding that gave you the code (8 capital letters and digits, like `K7P2XQ9M`; any case, and spaces and dashes are ignored, so `k7p2-xq9m` is the same code), and they move into your account when you create it in the browser. It never reads or sends your login token. The code is only ever taken from the flag (there is no environment variable for it), so without `--onboarding` a push is always the normal logged-in one. Each comes back `saved` (`valid` on a dry run) or `unchanged`. Errors show at most its first 2 characters. Exit codes: 2 when the code or the invariants are malformed, 3 when the code is unknown or expired, 4 when that onboarding already has an account or Konvu refused the code, 1 when rate limited or the request failed. After a 409 or an expired code, run `konvu login`, then push again without `--onboarding`.
 
 ### `konvu skills path` — Locate bundled skills
 
