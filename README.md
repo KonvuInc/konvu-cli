@@ -681,7 +681,7 @@ konvu invariants decline <id>
 
 `push` reads a JSON array (or `{"invariants": [...]}`) of 1 to 10 invariants, each with `statement`, `why_it_matters` and `property`, and optionally `rank`, `repository_id` and `protected_assets`; `konvu invariants push --help` lists the fields. They are stored as validated and attributed to you. A statement already live comes back `unchanged` (or `validated` if it was a proposal), so a push is safe to repeat. Exit codes: 2 when the invariants are malformed, 3 when `repository_id` is not one of your repositories, 4 when you are not signed in as a person, 1 when a rank is unavailable or the request failed (run the same push again: it is safe to repeat).
 
-`push --onboarding <code>` (or `KONVU_ONBOARDING_CODE` when the flag is absent) needs no login: it saves the invariants to the Konvu web onboarding that gave you the code (`onb_...`), and they move into your account when you create it in the browser. It never reads or sends your login token. Each comes back `saved` (`valid` on a dry run) or `unchanged`. Errors never print the whole code. Exit codes: 2 when the code or the invariants are malformed, 3 when the code is unknown or expired, 4 when that onboarding already has an account (run `konvu login`, then push again without the code) or Konvu refused the code, 1 when rate limited or the request failed.
+`push --onboarding <code>` needs no login: it saves the invariants to the Konvu web onboarding that gave you the code (`onb_...`), and they move into your account when you create it in the browser. It never reads or sends your login token. The code is only ever taken from the flag (there is no environment variable for it), so without `--onboarding` a push is always the normal logged-in one. Each comes back `saved` (`valid` on a dry run) or `unchanged`. Errors never print the whole code. Exit codes: 2 when the code or the invariants are malformed, 3 when the code is unknown or expired, 4 when that onboarding already has an account or Konvu refused the code, 1 when rate limited or the request failed. After a 409 or an expired code, run `konvu login`, then push again without `--onboarding`.
 
 ### `konvu skills path` — Locate bundled skills
 
@@ -817,7 +817,6 @@ Filter by assessment: `--assessment exploitable`, combine with severity: `--seve
 |---|---|---|
 | `KONVU_ACCESS_TOKEN` | — | API key or access token (alternative to `konvu login`) |
 | `KONVU_API_URL` | `https://api.konvu.com` | API base URL |
-| `KONVU_ONBOARDING_CODE` | — | Onboarding code for `konvu invariants push` when `--onboarding` is absent (saves without a login) |
 | `KONVU_APP_URL` | `https://app.konvu.com` | Dashboard URL (used in `konvu remediate` install-link suggestions) |
 | `KONVU_ZITADEL_DOMAIN` | `https://auth.konvu.com` | OAuth provider |
 | `KONVU_ZITADEL_CLIENT_ID` | — | OAuth client ID (required for OAuth login) |

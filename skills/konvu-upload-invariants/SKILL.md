@@ -11,7 +11,7 @@ metadata:
 
 Adds the user's security rules to their company in Konvu, with `konvu invariants push`. The server checks everything and attributes them to the logged-in user. Konvu then maps each one to the controls in their code.
 
-**Onboarding code.** If the user's setup message carried a Konvu onboarding code (`onb_` followed by about 32 characters, as in "My onboarding code: onb_..."), save with it: no Konvu login, the rule waits in the user's Konvu tab, and it moves into their account when they create it there. The code goes only into the `--onboarding` of the two push commands below: never write it to a file (not the invariants file, notes or memory), and never repeat it to the user; if you must refer to it, `onb_` and two characters are enough. No code: everything below runs as written, without `--onboarding`.
+**Onboarding code.** If the user's setup message carried a Konvu onboarding code (`onb_` followed by about 32 characters, as in "My onboarding code: onb_..."), save with it: no Konvu login, the rule waits in the user's Konvu tab, and it moves into their account when they create it there. The code goes only into the `--onboarding` flag of the two push commands below, the one place the CLI reads it (never an environment variable): never write it to a file (not the invariants file, notes or memory), and never repeat it to the user; if you must refer to it, `onb_` and two characters are enough. No code: everything below runs as written, without `--onboarding`.
 
 1. **The CLI.** `konvu version`. If it's missing, tell the user to install it (`curl -sSL https://raw.githubusercontent.com/KonvuInc/konvu-cli/main/scripts/install.sh | sh`, see its README) and stop.
 2. **Login.** With an onboarding code, skip this step: no `konvu whoami`, no `konvu login`. Otherwise `konvu whoami`. If it fails, run `konvu login` and tell the user in one line to confirm the code in the browser window it opens; with an API key, they can run `konvu login --api-key <key>` themselves instead, so the key stays out of the chat. Never print a token.
@@ -23,7 +23,7 @@ Adds the user's security rules to their company in Konvu, with `konvu invariants
    - Without one, a 502 "not yet mapped" means saved: run the same push once more. Report one short line per rule: added (`created`), now validated (`validated`, it was a Konvu proposal) or already there (`unchanged`), with its rank.
 
 **Onboarding code errors** (dry run or push):
-- "this onboarding already has a Konvu account": the user already created their account in the browser. Say so in one line, drop the code, then do step 2 (login) and the dry run and push again without `--onboarding`, and report as without a code.
-- "unknown or has expired": say so in one line, and ask whether they want to paste a new code from their Konvu tab, or log in instead (step 2, then push without `--onboarding`).
+- "this onboarding already has a Konvu account": the user already created their account in the browser. Say so in one line, drop the code, run `konvu login` (step 2), then do the dry run and push again without `--onboarding`, and report as without a code.
+- "unknown or has expired": say so in one line, and ask whether they want to paste a new code from their Konvu tab, or log in instead: run `konvu login` (step 2), then do the dry run and push again without `--onboarding`.
 - `--onboarding` is an unknown flag: their CLI is older than these skills. Ask the user before running `konvu update`, then push again.
 - Anything else: follow the error's suggestion, as in step 4.

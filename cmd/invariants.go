@@ -24,7 +24,6 @@ const (
 	// A push with an onboarding code goes here instead, with no login token.
 	onboardingRulesPath  = "/onboarding/rules"
 	onboardingCodeHeader = "X-Onboarding-Code"
-	onboardingCodeEnv    = "KONVU_ONBOARDING_CODE"
 )
 
 // onboardingCodePattern is the shape of a code from Konvu's web onboarding: onb_ and URL-safe
@@ -101,10 +100,11 @@ A statement already live comes back unchanged (or validated, if it was a proposa
 push is safe to repeat. --dry-run checks everything on the server and writes nothing.
 
 --onboarding <code> saves them without a login, with the onboarding code from Konvu's web
-onboarding (onb_...); KONVU_ONBOARDING_CODE is read when the flag is absent. No login token is
-read or sent. Each comes back saved (valid on a dry run) or unchanged, and moves into your
-account when you create it in the browser. If that onboarding already has an account, log in
-and push without the code.
+onboarding (onb_...). No login token is read or sent. Each comes back saved (valid on a dry
+run) or unchanged, and moves into your account when you create it in the browser. The code is
+only ever taken from this flag: without it, push is the normal logged-in push. If that
+onboarding already has an account, or the code expired, run 'konvu login', then push again
+without --onboarding.
 
 Exit codes: 0 success, 1 general error, 2 invalid invariants or onboarding code, 3 repository
 not found (with --onboarding: the code is unknown or expired), 4 auth failed or refused (with
@@ -117,7 +117,7 @@ not found (with --onboarding: the code is unknown or expired), 4 auth failed or 
 	}
 	c.Flags().String("file", "", "JSON file of invariants, or '-' for stdin")
 	c.Flags().Bool("dry-run", false, "Check on the server without writing anything")
-	c.Flags().String("onboarding", "", "Onboarding code from Konvu's web onboarding (onb_...): save without a login (default: $"+onboardingCodeEnv+")")
+	c.Flags().String("onboarding", "", "Onboarding code from Konvu's web onboarding (onb_...): save without a login")
 	c.Flags().StringP("output", "o", "", "Output format: json, table")
 	return c
 }
@@ -429,11 +429,9 @@ func invariantsPushError(err error, invariants []any) error {
 	return clierrors.NewAPIError(detail)
 }
 
-// onboardingCode is the code a push saves with instead of a login, and whether it came from
-// KONVU_ONBOARDING_CODE rather than --onboarding.
+// onboardingCode is the code a push saves with instead of a login, from --onboarding.
 type onboardingCode struct {
-	value   string
-	fromEnv bool
+	value string
 }
 
 // hint is the code as errors may show it: its first characters only.
@@ -446,33 +444,24 @@ func (c *onboardingCode) redact(text string) string {
 	return strings.ReplaceAll(text, c.value, c.hint())
 }
 
-// afterLogin is how to push again without the code once logged in, wherever it was given.
-func (c *onboardingCode) afterLogin() string {
-	if c.fromEnv {
-		return "unset " + onboardingCodeEnv + " and push again"
-	}
-	return "push again without --onboarding"
-}
+// onboardingLoginStep is the way out once the code cannot save: log in, then push without it.
+// The code only ever comes from the flag, so dropping the flag is all it takes.
+const onboardingLoginStep = "'konvu login', then push again without --onboarding"
 
-// pushOnboardingCode reads the push's onboarding code: --onboarding, else KONVU_ONBOARDING_CODE.
-// nil means a normal, logged-in push. A code that is given but empty or malformed is refused,
-// never treated as absent, so the push cannot fall back to the login without the user knowing.
+// pushOnboardingCode reads the push's onboarding code from --onboarding, the only place it comes
+// from: nil means a normal, logged-in push. A code that is given but empty or malformed is
+// refused, never treated as absent, so the push cannot fall back to the login unnoticed.
 func pushOnboardingCode(cmd *cobra.Command) (*onboardingCode, error) {
-	code := &onboardingCode{}
-	source := "--onboarding"
-	if cmd.Flags().Changed("onboarding") {
-		code.value, _ = cmd.Flags().GetString("onboarding")
-		code.value = strings.TrimSpace(code.value)
-	} else if env := strings.TrimSpace(os.Getenv(onboardingCodeEnv)); env != "" {
-		code.value, code.fromEnv, source = env, true, onboardingCodeEnv
-	} else {
+	if !cmd.Flags().Changed("onboarding") {
 		return nil, nil
 	}
+	value, _ := cmd.Flags().GetString("onboarding")
+	code := &onboardingCode{value: strings.TrimSpace(value)}
 	if !onboardingCodePattern.MatchString(code.value) {
 		return nil, &clierrors.CLIError{
 			Code:       "INVALID_ONBOARDING_CODE",
-			Message:    source + " is not a Konvu onboarding code",
-			Suggestion: "Copy the code from your Konvu tab (it starts with onb_), or run 'konvu login', then " + code.afterLogin() + ".",
+			Message:    "--onboarding is not a Konvu onboarding code",
+			Suggestion: "Copy the code from your Konvu tab (it starts with onb_), or run " + onboardingLoginStep + ".",
 			ExitCode:   clierrors.ExitUsageError,
 		}
 	}
@@ -482,13 +471,13 @@ func pushOnboardingCode(cmd *cobra.Command) (*onboardingCode, error) {
 // onboardingPushError maps a refused onboarding push to its next step. Only a refused or
 // already-claimed code sends the user to 'konvu login', and no message carries the whole code.
 func onboardingPushError(err error, code *onboardingCode) error {
-	loginInstead := "Run 'konvu login', then " + code.afterLogin() + "."
+	loginFirst := "Run " + onboardingLoginStep + "."
 	var authErr *api.AuthenticationError
 	if errors.As(err, &authErr) {
 		return &clierrors.CLIError{
 			Code:       "ONBOARDING_CODE_REFUSED",
 			Message:    "Konvu refused onboarding code " + code.hint(),
-			Suggestion: loginInstead,
+			Suggestion: loginFirst,
 			ExitCode:   clierrors.ExitAuthFailed,
 		}
 	}
@@ -508,14 +497,14 @@ func onboardingPushError(err error, code *onboardingCode) error {
 		return &clierrors.CLIError{
 			Code:       "ONBOARDING_CODE_NOT_FOUND",
 			Message:    "onboarding code " + code.hint() + " is unknown or has expired",
-			Suggestion: "Get a new code from the Konvu onboarding at " + config.GetDashboardURL() + "/start, or run 'konvu login', then " + code.afterLogin() + ".",
+			Suggestion: "Get a new code from the Konvu onboarding at " + config.GetDashboardURL() + "/start, or run " + onboardingLoginStep + ".",
 			ExitCode:   clierrors.ExitNotFound,
 		}
 	case apiErr.StatusCode == 409:
 		return &clierrors.CLIError{
 			Code:       "ONBOARDING_HAS_ACCOUNT",
 			Message:    "this onboarding already has a Konvu account",
-			Suggestion: loginInstead,
+			Suggestion: loginFirst,
 			ExitCode:   clierrors.ExitAuthFailed,
 		}
 	case apiErr.StatusCode == 422:
@@ -545,7 +534,7 @@ func onboardingPushError(err error, code *onboardingCode) error {
 	return &clierrors.CLIError{
 		Code:       "API_ERROR",
 		Message:    detail,
-		Suggestion: loginInstead,
+		Suggestion: loginFirst,
 		ExitCode:   clierrors.ExitGeneralError,
 	}
 }

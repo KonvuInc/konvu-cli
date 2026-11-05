@@ -28,7 +28,6 @@ All commands support:
 |----------|---------|
 | `KONVU_API_URL` | API base URL (default: https://api.konvu.com) |
 | `KONVU_ACCESS_TOKEN` | Token auth (skips OAuth) |
-| `KONVU_ONBOARDING_CODE` | Onboarding code for `konvu invariants push` (same as `--onboarding`: no login) |
 | `KONVU_ZITADEL_DOMAIN` | OAuth domain |
 | `KONVU_ZITADEL_CLIENT_ID` | OAuth client ID |
 

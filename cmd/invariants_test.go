@@ -52,7 +52,6 @@ func invariantsEnv(t *testing.T, server *httptest.Server) {
 	t.Setenv("KONVU_API_URL", server.URL)
 	t.Setenv("KONVU_ACCESS_TOKEN", "test-token")
 	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
-	t.Setenv(onboardingCodeEnv, "")
 }
 
 func runInvariants(c *cobra.Command, args ...string) (string, error) {
@@ -442,52 +441,24 @@ func TestInvariantsPushWithOnboardingCodeWorksLoggedOut(t *testing.T) {
 	}
 }
 
-func TestInvariantsPushOnboardingCodeFromFlagOrEnv(t *testing.T) {
-	const envCode = "onb_EnvEnvEnvEnvEnvEnvEnvEnvEnvEnvEn"
-	for name, tc := range map[string]struct {
-		env  string
-		args []string
-		want string
-	}{
-		"env only":           {env: envCode, want: envCode},
-		"flag only":          {args: []string{"--onboarding", testOnboardingCode}, want: testOnboardingCode},
-		"flag wins over env": {env: envCode, args: []string{"--onboarding", testOnboardingCode}, want: testOnboardingCode},
-		"env padded":         {env: "  " + envCode + "\n", want: envCode},
-	} {
-		got := onboardingServer(t, http.StatusOK, onboardingResult("saved"))
-		t.Setenv(onboardingCodeEnv, tc.env)
-
-		args := append([]string{"--file", writeInvariants(t, onboardingInvariants)}, tc.args...)
-		if _, err := runInvariants(newInvariantsPushCmd(), args...); err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		if got.code != tc.want || len(got.auth) != 0 {
-			t.Fatalf("%s: code = %q, auth = %q", name, got.code, got.auth)
-		}
-	}
-}
-
-func TestInvariantsPushWithoutOnboardingCodeStillLogsIn(t *testing.T) {
-	var posted map[string]any
-	var auth string
+// The code only ever comes from --onboarding: a KONVU_ONBOARDING_CODE left in the environment
+// (after a 409, say) must never turn a logged-in push into an onboarding one.
+func TestInvariantsPushIgnoresAnOnboardingCodeInTheEnvironment(t *testing.T) {
+	var path, auth, code string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != invariantsPath {
-			t.Errorf("path = %q", r.URL.Path)
-		}
-		auth = r.Header.Get("Authorization")
-		_ = json.NewDecoder(r.Body).Decode(&posted)
+		path, auth, code = r.URL.Path, r.Header.Get("Authorization"), r.Header.Get(onboardingCodeHeader)
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(onboardingResult("created"))
 	}))
 	defer server.Close()
 	invariantsEnv(t, server)
-	t.Setenv(onboardingCodeEnv, "   ")
+	t.Setenv("KONVU_ONBOARDING_CODE", testOnboardingCode)
 
 	if _, err := runInvariants(newInvariantsPushCmd(), "--file", writeInvariants(t, onboardingInvariants)); err != nil {
 		t.Fatal(err)
 	}
-	if auth != "Bearer test-token" {
-		t.Fatalf("auth = %q", auth)
+	if path != invariantsPath || auth != "Bearer test-token" || code != "" {
+		t.Fatalf("path = %q, auth = %q, code = %q", path, auth, code)
 	}
 }
 
@@ -498,25 +469,14 @@ func TestInvariantsPushRefusesAMalformedOnboardingCode(t *testing.T) {
 	defer server.Close()
 	invariantsEnv(t, server)
 
-	for _, tc := range []struct{ env, flag, source string }{
-		{flag: "", source: "--onboarding"},
-		{flag: "  ", source: "--onboarding"},
-		{flag: "onb_short", source: "--onboarding"},
-		{flag: testOnboardingCode + "\r\nX-Evil: 1", source: "--onboarding"},
-		{env: "abc_Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4z", source: onboardingCodeEnv},
-	} {
-		t.Setenv(onboardingCodeEnv, tc.env)
-		args := []string{"--file", writeInvariants(t, onboardingInvariants)}
-		if tc.env == "" {
-			args = append(args, "--onboarding", tc.flag)
-		}
-		_, err := runInvariants(newInvariantsPushCmd(), args...)
+	for _, flag := range []string{"", "  ", "onb_short", "abc_Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4z", testOnboardingCode + "\r\nX-Evil: 1"} {
+		_, err := runInvariants(newInvariantsPushCmd(), "--file", writeInvariants(t, onboardingInvariants), "--onboarding", flag)
 		e := cliErrorOf(t, err)
-		if e.Code != "INVALID_ONBOARDING_CODE" || e.ExitCode != clierrors.ExitUsageError || !strings.HasPrefix(e.Message, tc.source) {
-			t.Fatalf("%+v: err = %#v", tc, e)
+		if e.Code != "INVALID_ONBOARDING_CODE" || e.ExitCode != clierrors.ExitUsageError {
+			t.Fatalf("%q: err = %#v", flag, e)
 		}
-		if strings.TrimSpace(tc.flag) != "" && strings.Contains(e.Message+e.Suggestion, strings.TrimSpace(tc.flag)) {
-			t.Fatalf("%+v: the error echoes the code: %#v", tc, e)
+		if strings.TrimSpace(flag) != "" && strings.Contains(e.Message+e.Suggestion, strings.TrimSpace(flag)) {
+			t.Fatalf("%q: the error echoes the code: %#v", flag, e)
 		}
 	}
 }
@@ -562,13 +522,12 @@ func TestInvariantsPushOnboardingErrorsNameTheCode(t *testing.T) {
 	}
 }
 
-func TestInvariantsPushOnboardingAccountFromEnvSaysToUnsetIt(t *testing.T) {
+func TestInvariantsPushOnboardingWithAnAccountSaysToLogIn(t *testing.T) {
 	onboardingServer(t, http.StatusConflict, map[string]any{"detail": "already has an account"})
-	t.Setenv(onboardingCodeEnv, testOnboardingCode)
 
-	_, err := runInvariants(newInvariantsPushCmd(), "--file", writeInvariants(t, onboardingInvariants))
+	_, err := runInvariants(newInvariantsPushCmd(), "--file", writeInvariants(t, onboardingInvariants), "--onboarding", testOnboardingCode)
 	e := cliErrorOf(t, err)
-	if e.Message != "this onboarding already has a Konvu account" || e.Suggestion != "Run 'konvu login', then unset KONVU_ONBOARDING_CODE and push again." {
+	if e.Message != "this onboarding already has a Konvu account" || e.Suggestion != "Run 'konvu login', then push again without --onboarding." {
 		t.Fatalf("err = %#v", e)
 	}
 }

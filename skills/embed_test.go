@@ -217,7 +217,8 @@ func TestUploadSavesWithTheOnboardingCode(t *testing.T) {
 		"`konvu invariants push --file <file> -o json`, plus `--onboarding <code>` when you have one.",
 		`"Saved. Go back to your Konvu tab: your rule is there, create your account to keep it."`,
 		`"this onboarding already has a Konvu account"`,
-		"do step 2 (login) and the dry run and push again without `--onboarding`",
+		"run `konvu login` (step 2), then do the dry run and push again without `--onboarding`",
+		"never an environment variable",
 		"never write it to a file", "never repeat it to the user",
 	} {
 		if !strings.Contains(string(upload), want) {
