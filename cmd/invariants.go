@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -99,13 +100,17 @@ Each invariant accepts:
   property         (required) authentication, authorization, confidentiality,
                    integrity, availability or non_repudiation
   rank             1 or more; the first free rank when omitted
-  repository_id    the repository it was written for (not with --onboarding)
-  repository       with --onboarding only: the repository's name as owner/name, like
-                   acme/api; dropped from a push without --onboarding
+  repository       the repository it was written for, as owner/name like acme/api (its git
+                   remote's owner and name). Logged in, the CLI sends the id of your Konvu
+                   repository of that name instead; if none or more than one matches, the
+                   lookup fails, or Konvu has not mapped it yet, the invariant goes without
+                   a repository, with a warning on stderr
+  repository_id    the Konvu repository's id; it wins over repository (not with --onboarding)
   protected_assets [{"kind": "...", "name": "..."}], at most 20
 
-A statement already live comes back unchanged (or validated, if it was a proposal), so a
-push is safe to repeat. --dry-run checks everything on the server and writes nothing.
+A statement already live comes back unchanged (or validated, if it was a proposal), keeping
+its repository, so a push is safe to repeat. --dry-run checks everything on the server and
+writes nothing.
 
 --onboarding <code> saves them without a login, with the 8-character onboarding code from
 Konvu's web onboarding, like K7P2XQ9M (any case; spaces and dashes are ignored, so k7p2-xq9m
@@ -120,7 +125,7 @@ and moves into your account when you create it. The code is only ever taken from
 this flag: without it, push is the normal logged-in push. If that onboarding already has an
 account, or the code expired, run 'konvu login', then push again without --onboarding.
 
-Exit codes: 0 success, 1 general error, 2 invalid invariants or onboarding code, 3 repository
+Exit codes: 0 success, 1 general error, 2 invalid invariants or onboarding code, 3 repository_id
 not found (with --onboarding: the code is unknown or expired), 4 auth failed or refused (with
 --onboarding: the onboarding already has an account, or Konvu refused the code)`,
 		Example: `  konvu invariants push --file invariants.json --dry-run
@@ -287,12 +292,14 @@ func runInvariantsPush(cmd *cobra.Command, args []string) error {
 		if err := checkOnboardingInvariants(invariants); err != nil {
 			return err
 		}
-	} else {
-		invariants = withoutRepository(invariants)
 	}
 
 	client := api.NewClient("", "")
 	defer client.Close()
+	var lookedUp []string
+	if code == nil {
+		invariants, lookedUp = withRepositoryIDs(cmd.ErrOrStderr(), client, invariants)
+	}
 	body := map[string]any{"dry_run": dryRun, "invariants": invariants}
 	var resp map[string]any
 	if code != nil {
@@ -305,6 +312,18 @@ func runInvariantsPush(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		resp, err = client.Post(invariantsPath, body)
+		var apiErr *api.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 && slices.ContainsFunc(lookedUp, isNamed) {
+			// Guardrails refuses the whole push, before writing anything, for a repository it has
+			// not mapped yet: send it once more without the ids looked up here.
+			invariants = withoutLookedUpIDs(invariants, lookedUp)
+			body["invariants"] = invariants
+			if resp, err = client.Post(invariantsPath, body); err == nil {
+				for _, name := range distinctNames(lookedUp) {
+					warnf(cmd.ErrOrStderr(), "Konvu has not mapped repository %s yet, so its invariants go without a repository.", name)
+				}
+			}
+		}
 		if err != nil {
 			return invariantsPushError(err, invariants)
 		}
@@ -628,25 +647,200 @@ func statementKey(statement string) string {
 	return strings.ToLower(strings.Join(strings.Fields(statement), " "))
 }
 
-// withoutRepository drops repository, which only an onboarding push sends, from each invariant:
-// Guardrails refuses fields it does not know. The file's own objects are left untouched.
-func withoutRepository(invariants []any) []any {
-	kept := make([]any, len(invariants))
+// withRepositoryIDs readies a logged-in push for Guardrails, which refuses repository: an
+// invariant naming its repository as owner/name, and no repository_id, gets the id of the
+// company's Konvu repository of that name instead. A name that is malformed, matches none or more
+// than one, or a failed lookup leaves the invariant without a repository, with a warning on
+// stderr, and the push goes on. It returns the invariants to send (the file's own objects are
+// left untouched) and, for each, the name whose id it looked up, or "".
+func withRepositoryIDs(stderr io.Writer, client *api.Client, invariants []any) ([]any, []string) {
+	sent := make([]any, len(invariants))
+	wanted := make([]string, len(invariants))
 	for i, item := range invariants {
+		sent[i] = item
 		m, ok := item.(map[string]any)
-		if _, has := m["repository"]; !ok || !has {
-			kept[i] = item
+		value, has := m["repository"]
+		if !ok || !has {
 			continue
 		}
-		copied := make(map[string]any, len(m))
-		for key, value := range m {
-			if key != "repository" {
-				copied[key] = value
-			}
+		sent[i] = withoutField(m, "repository")
+		// An explicit repository_id wins, and a null repository names none.
+		if m["repository_id"] != nil || value == nil {
+			continue
 		}
-		kept[i] = copied
+		name, _ := value.(string)
+		name = strings.TrimSpace(name)
+		if len(name) > maxRepositoryChars || !repositoryNamePattern.MatchString(name) {
+			warnf(stderr, "invariant %d's repository is not owner/name (like acme/api), so it goes without a repository.", i+1)
+			continue
+		}
+		wanted[i] = name
+	}
+	if !slices.ContainsFunc(wanted, isNamed) {
+		return sent, nil
+	}
+
+	byName, lookupErr := konvuRepositoriesByName(client, repositoryLookupTimeout)
+	lookedUp := make([]string, len(invariants))
+	warned := map[string]bool{}
+	for i, name := range wanted {
+		key := strings.ToLower(name)
+		matches := byName[key]
+		switch {
+		case name == "":
+			continue
+		case lookupErr == nil && len(matches) == 1:
+			sent[i].(map[string]any)["repository_id"] = matches[0].id
+			lookedUp[i] = name
+			continue
+		case warned[key]:
+			continue
+		}
+		warned[key] = true
+		switch {
+		case lookupErr != nil:
+			warnf(stderr, "could not look up Konvu repository %s (%s), so its invariants go without a repository.", name, lookupReason(lookupErr))
+		case len(matches) == 0:
+			warnf(stderr, "none of your Konvu repositories is %s, so its invariants go without a repository.", name)
+		default:
+			found := make([]string, len(matches))
+			for j, match := range matches {
+				found[j] = match.label + " (id " + match.id + ")"
+			}
+			warnf(stderr, "%d Konvu repositories are %s (%s), so its invariants go without a repository: set repository_id to the one you mean.", len(matches), name, strings.Join(found, ", "))
+		}
+	}
+	return sent, lookedUp
+}
+
+// konvuRepository is one of the company's Konvu repositories: its id, and where it lives, like
+// github:acme/api.
+type konvuRepository struct{ id, label string }
+
+// konvuRepositoriesByName lists the company's Konvu repositories (the ones coverage lists) by
+// lowercased owner/name: a GitHub and a GitLab repository can share one. A lookup that takes
+// longer than timeout fails, so a stalled one never holds the push.
+func konvuRepositoriesByName(client *api.Client, timeout time.Duration) (map[string][]konvuRepository, error) {
+	type answer struct {
+		data map[string]any
+		err  error
+	}
+	answers := make(chan answer, 1)
+	go func() {
+		data, err := client.Get(coverageConfigPath, nil)
+		answers <- answer{data, err}
+	}()
+	var got answer
+	select {
+	case got = <-answers:
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("no answer within %s", timeout)
+	}
+	if got.err != nil {
+		return nil, got.err
+	}
+	repos, ok := got.data["repositories"].([]any)
+	if !ok {
+		return nil, errors.New("Konvu sent no repository list")
+	}
+	byName := map[string][]konvuRepository{}
+	seen := map[string]bool{}
+	for _, item := range repos {
+		repo, _ := item.(map[string]any)
+		id := strings.ToLower(getStr(repo, "id"))
+		name, label := konvuRepositoryName(getStr(repo, "url"))
+		if name == "" || !uuidRe.MatchString(id) || seen[id] {
+			continue
+		}
+		seen[id] = true
+		key := strings.ToLower(name)
+		byName[key] = append(byName[key], konvuRepository{id: id, label: label})
+	}
+	for _, matches := range byName {
+		sort.Slice(matches, func(a, b int) bool {
+			if matches[a].label != matches[b].label {
+				return matches[a].label < matches[b].label
+			}
+			return matches[a].id < matches[b].id
+		})
+	}
+	return byName, nil
+}
+
+// konvuRepositoryName reads a Konvu repository URL, like github:acme/api or
+// https://gitlab.example.com/acme/team/api.git: its owner/name, GitLab subgroups included, and
+// where it lives, like github:acme/api or gitlab.example.com/acme/team/api. Both are "" when the
+// URL names no repository.
+func konvuRepositoryName(repoURL string) (name, label string) {
+	parsed, err := url.Parse(strings.TrimSpace(repoURL))
+	if err != nil || parsed.Scheme == "" {
+		return "", ""
+	}
+	path, where := parsed.Opaque, parsed.Scheme+":"
+	if path == "" {
+		if parsed.Host == "" {
+			return "", ""
+		}
+		// Escaped, so an encoded slash never turns into a name.
+		path, where = parsed.EscapedPath(), parsed.Host+"/"
+	}
+	path = strings.TrimSuffix(strings.Trim(path, "/"), ".git")
+	if len(path) > maxRepositoryChars || !repositoryNamePattern.MatchString(path) {
+		return "", ""
+	}
+	return path, sanitizeGuardrailsBaselineText(where + path)
+}
+
+// lookupReason is why the repository lookup failed, short enough for a one-line warning.
+func lookupReason(err error) string {
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) {
+		return fmt.Sprintf("Konvu answered %d", apiErr.StatusCode)
+	}
+	return sanitizeGuardrailsBaselineText(err.Error())
+}
+
+// withoutLookedUpIDs drops repository_id from each invariant whose id this push looked up.
+func withoutLookedUpIDs(invariants []any, lookedUp []string) []any {
+	kept := make([]any, len(invariants))
+	for i, item := range invariants {
+		kept[i] = item
+		if m, ok := item.(map[string]any); ok && i < len(lookedUp) && lookedUp[i] != "" {
+			kept[i] = withoutField(m, "repository_id")
+		}
 	}
 	return kept
+}
+
+// distinctNames is the repository names given, each once whatever its case, in order.
+func distinctNames(names []string) []string {
+	var distinct []string
+	seen := map[string]bool{}
+	for _, name := range names {
+		if key := strings.ToLower(name); name != "" && !seen[key] {
+			seen[key] = true
+			distinct = append(distinct, name)
+		}
+	}
+	return distinct
+}
+
+func isNamed(name string) bool { return name != "" }
+
+// withoutField is a copy of m without key.
+func withoutField(m map[string]any, key string) map[string]any {
+	copied := make(map[string]any, len(m))
+	for k, v := range m {
+		if k != key {
+			copied[k] = v
+		}
+	}
+	return copied
+}
+
+// warnf prints a warning on stderr, never stdout, so -o json output stays valid.
+func warnf(stderr io.Writer, format string, args ...any) {
+	_ = output.WriteString(stderr, "Warning: "+fmt.Sprintf(format, args...)+"\n")
 }
 
 // domainPattern is a domain name, like acme.com: the only text Konvu's answer may name the
