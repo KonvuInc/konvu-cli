@@ -61,7 +61,7 @@ func TestCatalogApplySendsTheFileAndDryRun(t *testing.T) {
 	}))
 	defer server.Close()
 	invariantsEnv(t, server)
-	file := writeInvariants(t, `{"products": [{"name": "Acme"}], "apps": []}`)
+	file := writeInvariants(t, `{"products": [{"name": "Acme"}], "modules": [], "apps": []}`)
 	out, err := runInvariants(newInventoryCatalogCmd(), "apply", "--file", file, "--dry-run", "-o", "table")
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestCatalogApplyListsEveryProblem(t *testing.T) {
 			"detail": []any{"App 'X': product 'Nope' is not listed", "App 'X' is listed twice"},
 		}}},
 	})
-	file := writeInvariants(t, `{"products": [], "apps": [{"name": "X"}]}`)
+	file := writeInvariants(t, `{"products": [], "modules": [], "apps": [{"name": "X"}]}`)
 	_, err := runInvariants(newInventoryCatalogCmd(), "apply", "--file", file)
 	var cliErr *clierrors.CLIError
 	if !errors.As(err, &cliErr) || cliErr.ExitCode != clierrors.ExitUsageError {
@@ -162,7 +162,7 @@ func TestComponentsListPagesThroughEveryComponent(t *testing.T) {
 }
 
 func TestCatalogApplyRefusesAPartialFile(t *testing.T) {
-	for _, body := range []string{`{"products": []}`, `{"products": [], "app": []}`, `{"products": [], "apps": [], "extra": 1}`} {
+	for _, body := range []string{`{"products": [], "modules": []}`, `{"products": [], "modules": [], "app": []}`, `{"products": [], "modules": [], "apps": [], "extra": 1}`} {
 		file := writeInvariants(t, body)
 		_, err := runInvariants(newInventoryCatalogCmd(), "apply", "--file", file)
 		var cliErr *clierrors.CLIError
@@ -178,7 +178,7 @@ func TestCatalogApplyListsValidationObjects(t *testing.T) {
 			"detail": []any{map[string]any{"loc": []any{"body", "apps", 0, "name"}, "msg": "Field required"}},
 		}}},
 	})
-	file := writeInvariants(t, `{"products": [], "apps": [{}]}`)
+	file := writeInvariants(t, `{"products": [], "modules": [], "apps": [{}]}`)
 	_, err := runInvariants(newInventoryCatalogCmd(), "apply", "--file", file)
 	var cliErr *clierrors.CLIError
 	if !errors.As(err, &cliErr) || !strings.Contains(cliErr.Message, "Field required") {
@@ -237,5 +237,14 @@ func TestErrorsArePrintedAsJSONWithJSONOutput(t *testing.T) {
 	out, err := runInvariants(newInventoryCatalogCmd(), "get", "-o", "json")
 	if err == nil || !strings.Contains(out, `"FORBIDDEN"`) {
 		t.Fatalf("got %v, output %q", err, out)
+	}
+}
+
+func TestCatalogApplyListsEveryFileProblemAtOnce(t *testing.T) {
+	file := writeInvariants(t, `{"products": [], "x2": 1, "x1": 1}`)
+	_, err := runInvariants(newInventoryCatalogCmd(), "apply", "--file", file)
+	var cliErr *clierrors.CLIError
+	if !errors.As(err, &cliErr) || !strings.Contains(cliErr.Message, `no "modules" list; no "apps" list; unknown keys "x1", "x2"`) {
+		t.Fatalf("got %v", err)
 	}
 }

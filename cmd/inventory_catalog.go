@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
@@ -52,7 +53,7 @@ by later rebuilds, and the components you place in an app stay there.`,
 		Short: "Make the catalog match a file",
 		Long: `Make the catalog match --file (or stdin with '-'), a document like 'catalog get -o json'.
 
-The file replaces the whole catalog, so "products" and "apps" are required. An app
+The file replaces the whole catalog, so "products", "modules" and "apps" are required. An app
 with an "id" is that app (rename it by changing its name); one without an id is
 created. An app left out of the file is deleted, and its components go back to
 Konvu to group. An app's product, when set, must be listed, and its module must be
@@ -447,18 +448,27 @@ func readCatalogFile(path string) (map[string]any, error) {
 	if err := json.Unmarshal(data, &doc); err != nil || doc == nil {
 		return nil, errors.New("expected a JSON object like the output of 'konvu inventory catalog get -o json'")
 	}
-	// A key left out would delete what it lists: both lists are required.
-	for _, key := range []string{"products", "apps"} {
+	// A key left out would delete what it lists: every list is required.
+	var problems []string
+	for _, key := range []string{"products", "modules", "apps"} {
 		if _, ok := doc[key].([]any); !ok {
-			return nil, fmt.Errorf("the file has no %q list; apply replaces the whole catalog, so start from 'catalog get'", key)
+			problems = append(problems, fmt.Sprintf("no %q list", key))
 		}
 	}
+	var unknown []string
 	for key := range doc {
 		switch key {
 		case "products", "modules", "apps", "unassigned":
 		default:
-			return nil, fmt.Errorf("unknown key %q", key)
+			unknown = append(unknown, fmt.Sprintf("%q", key))
 		}
+	}
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		problems = append(problems, "unknown keys "+strings.Join(unknown, ", "))
+	}
+	if len(problems) > 0 {
+		return nil, fmt.Errorf("the file has %s; apply replaces the whole catalog, so start from 'catalog get'", strings.Join(problems, "; "))
 	}
 	return doc, nil
 }
