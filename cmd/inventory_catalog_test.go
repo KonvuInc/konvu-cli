@@ -61,7 +61,7 @@ func TestCatalogApplySendsTheFileAndDryRun(t *testing.T) {
 	}))
 	defer server.Close()
 	invariantsEnv(t, server)
-	file := writeInvariants(t, `{"products": [{"name": "Acme"}], "modules": [], "apps": []}`)
+	file := writeInvariants(t, `{"revision": "r1", "products": [{"name": "Acme"}], "modules": [], "apps": []}`)
 	out, err := runInvariants(newInventoryCatalogCmd(), "apply", "--file", file, "--dry-run", "-o", "table")
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestCatalogApplyListsEveryProblem(t *testing.T) {
 			"detail": []any{"App 'X': product 'Nope' is not listed", "App 'X' is listed twice"},
 		}}},
 	})
-	file := writeInvariants(t, `{"products": [], "modules": [], "apps": [{"name": "X"}]}`)
+	file := writeInvariants(t, `{"revision": "r1", "products": [], "modules": [], "apps": [{"name": "X"}]}`)
 	_, err := runInvariants(newInventoryCatalogCmd(), "apply", "--file", file)
 	var cliErr *clierrors.CLIError
 	if !errors.As(err, &cliErr) || cliErr.ExitCode != clierrors.ExitUsageError {
@@ -178,7 +178,7 @@ func TestCatalogApplyListsValidationObjects(t *testing.T) {
 			"detail": []any{map[string]any{"loc": []any{"body", "apps", 0, "name"}, "msg": "Field required"}},
 		}}},
 	})
-	file := writeInvariants(t, `{"products": [], "modules": [], "apps": [{}]}`)
+	file := writeInvariants(t, `{"revision": "r1", "products": [], "modules": [], "apps": [{}]}`)
 	_, err := runInvariants(newInventoryCatalogCmd(), "apply", "--file", file)
 	var cliErr *clierrors.CLIError
 	if !errors.As(err, &cliErr) || !strings.Contains(cliErr.Message, "Field required") {
@@ -244,7 +244,29 @@ func TestCatalogApplyListsEveryFileProblemAtOnce(t *testing.T) {
 	file := writeInvariants(t, `{"products": [], "x2": 1, "x1": 1}`)
 	_, err := runInvariants(newInventoryCatalogCmd(), "apply", "--file", file)
 	var cliErr *clierrors.CLIError
-	if !errors.As(err, &cliErr) || !strings.Contains(cliErr.Message, `no "modules" list; no "apps" list; unknown keys "x1", "x2"`) {
+	if !errors.As(err, &cliErr) || !strings.Contains(cliErr.Message, `no "modules" list; no "apps" list; no "revision"; unknown keys "x1", "x2"`) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestCatalogApplyOfAStaleReadSaysToReadAgain(t *testing.T) {
+	reviewServer(t, map[string][]invariantReply{
+		"PUT /inventory/catalog": {{http.StatusConflict, map[string]any{"detail": "The catalog changed since it was read"}}},
+	})
+	file := writeInvariants(t, `{"revision": "r1", "products": [], "modules": [], "apps": []}`)
+	_, err := runInvariants(newInventoryCatalogCmd(), "apply", "--file", file)
+	var cliErr *clierrors.CLIError
+	if !errors.As(err, &cliErr) || cliErr.Code != "CATALOG_CHANGED" {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestComponentsListPrintsAnEmptyListAsAnArray(t *testing.T) {
+	reviewServer(t, map[string][]invariantReply{
+		"GET /inventory/components": {{http.StatusOK, map[string]any{"items": []any{}, "next": nil}}},
+	})
+	out, err := runInvariants(newInventoryComponentsCmd(), "list", "--unassigned", "-o", "json")
+	if err != nil || strings.TrimSpace(out) != "[]" {
+		t.Fatalf("got %v, %q", err, out)
 	}
 }

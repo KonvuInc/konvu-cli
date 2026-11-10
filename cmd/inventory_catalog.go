@@ -53,7 +53,10 @@ by later rebuilds, and the components you place in an app stay there.`,
 		Short: "Make the catalog match a file",
 		Long: `Make the catalog match --file (or stdin with '-'), a document like 'catalog get -o json'.
 
-The file replaces the whole catalog, so "products", "modules" and "apps" are required. An app
+The file replaces the whole catalog, so "products", "modules" and "apps" are required,
+and "revision" too: it names the catalog the file was read from, and an apply is
+refused, writing nothing, once the catalog changed since (someone else's edit or a
+rebuild). Get the catalog again and redo the edit then. An app
 with an "id" is that app (rename it by changing its name); one without an id is
 created. An app left out of the file is deleted, and its components go back to
 Konvu to group. An app's product, when set, must be listed, and its module must be
@@ -363,7 +366,7 @@ func withJSONErrors(run func(*cobra.Command, []string) error) func(*cobra.Comman
 
 // listComponents pages through every component matching name.
 func listComponents(client *api.Client, name string, unassigned bool) ([]any, error) {
-	var items []any
+	items := []any{}
 	params := map[string]any{"limit": 200}
 	if name != "" {
 		params["name"] = name
@@ -455,10 +458,13 @@ func readCatalogFile(path string) (map[string]any, error) {
 			problems = append(problems, fmt.Sprintf("no %q list", key))
 		}
 	}
+	if revision, _ := doc["revision"].(string); revision == "" {
+		problems = append(problems, `no "revision"`)
+	}
 	var unknown []string
 	for key := range doc {
 		switch key {
-		case "products", "modules", "apps", "unassigned":
+		case "products", "modules", "apps", "unassigned", "revision":
 		default:
 			unknown = append(unknown, fmt.Sprintf("%q", key))
 		}
@@ -496,6 +502,13 @@ func catalogCallError(err error, applying bool) error {
 			Message:    invariantDetail(apiErr),
 			Suggestion: "Ask Konvu to enable products and apps from your code, or run 'konvu whoami' to check your company.",
 			ExitCode:   clierrors.ExitAuthFailed,
+		}
+	case 409:
+		return &clierrors.CLIError{
+			Code:       "CATALOG_CHANGED",
+			Message:    invariantDetail(apiErr),
+			Suggestion: "Nothing was written. Run 'konvu inventory catalog get -o json' again and redo the edit on the new file.",
+			ExitCode:   clierrors.ExitGeneralError,
 		}
 	case 404:
 		return &clierrors.CLIError{
