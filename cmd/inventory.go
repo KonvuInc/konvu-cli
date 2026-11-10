@@ -37,7 +37,11 @@ repository browser. When piped, or when -o or -q is set, it prints the same
 repository listing as 'inventory list'.
 
 Use 'inventory map <local-path>' to create a Security Context Graph locally.
-Use 'inventory map history' to browse its stored runs.`,
+Use 'inventory map history' to browse its stored runs.
+
+'inventory list' and 'inventory show' are about repositories. Your products, apps
+and components are under 'inventory catalog', 'inventory apps' and
+'inventory components'.`,
 	Example: `  konvu inventory
   konvu inventory list -o json
   konvu inventory map .

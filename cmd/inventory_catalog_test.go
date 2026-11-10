@@ -80,7 +80,7 @@ func TestCatalogApplyListsEveryProblem(t *testing.T) {
 			"detail": []any{"App 'X': product 'Nope' is not listed", "App 'X' is listed twice"},
 		}}},
 	})
-	file := writeInvariants(t, `{"apps": [{"name": "X"}]}`)
+	file := writeInvariants(t, `{"products": [], "apps": [{"name": "X"}]}`)
 	_, err := runInvariants(newInventoryCatalogCmd(), "apply", "--file", file)
 	var cliErr *clierrors.CLIError
 	if !errors.As(err, &cliErr) || cliErr.ExitCode != clierrors.ExitUsageError {
@@ -158,5 +158,74 @@ func TestComponentsListPagesThroughEveryComponent(t *testing.T) {
 	}
 	if len(queries) != 2 || !strings.Contains(queries[0], "unassigned=true") || !strings.Contains(out, "acme/job") {
 		t.Errorf("queries %v, output %q", queries, out)
+	}
+}
+
+func TestCatalogApplyRefusesAPartialFile(t *testing.T) {
+	for _, body := range []string{`{"products": []}`, `{"products": [], "app": []}`, `{"products": [], "apps": [], "extra": 1}`} {
+		file := writeInvariants(t, body)
+		_, err := runInvariants(newInventoryCatalogCmd(), "apply", "--file", file)
+		var cliErr *clierrors.CLIError
+		if !errors.As(err, &cliErr) || cliErr.Code != "INVALID_CATALOG" {
+			t.Errorf("%s: got %v", body, err)
+		}
+	}
+}
+
+func TestCatalogApplyListsValidationObjects(t *testing.T) {
+	reviewServer(t, map[string][]invariantReply{
+		"PUT /inventory/catalog": {{http.StatusUnprocessableEntity, map[string]any{
+			"detail": []any{map[string]any{"loc": []any{"body", "apps", 0, "name"}, "msg": "Field required"}},
+		}}},
+	})
+	file := writeInvariants(t, `{"products": [], "apps": [{}]}`)
+	_, err := runInvariants(newInventoryCatalogCmd(), "apply", "--file", file)
+	var cliErr *clierrors.CLIError
+	if !errors.As(err, &cliErr) || !strings.Contains(cliErr.Message, "Field required") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestShowTakesADashedID(t *testing.T) {
+	dashed := "0190aaaa-bbbb-cccc-dddd-eeeeffff0001"
+	_, calls := reviewServer(t, map[string][]invariantReply{
+		"GET /inventory/apps/" + testAppID:       {{http.StatusOK, map[string]any{"app": map[string]any{"name": "Billing"}}}},
+		"GET /inventory/components/" + testAppID: {{http.StatusOK, map[string]any{"component": map[string]any{"name": "acme/api"}}}},
+	})
+	if _, err := runInvariants(newInventoryAppsCmd(), "show", dashed, "-o", "json"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runInvariants(newInventoryComponentsCmd(), "show", dashed, "-o", "json"); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls()) != 2 {
+		t.Errorf("expected one call each, got %v", calls())
+	}
+}
+
+func TestComponentsListStopsOnAnEchoedCursor(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = w.Write([]byte(`{"items": [{"id": "a1", "name": "acme/api"}], "next": "a1"}`))
+	}))
+	defer server.Close()
+	invariantsEnv(t, server)
+	if _, err := runInvariants(newInventoryComponentsCmd(), "list", "-o", "json"); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Errorf("calls = %d", calls)
+	}
+}
+
+func TestComponentsListBadArgumentIsNotAFileProblem(t *testing.T) {
+	reviewServer(t, map[string][]invariantReply{
+		"GET /inventory/components": {{http.StatusUnprocessableEntity, map[string]any{"detail": "name too long"}}},
+	})
+	_, err := runInvariants(newInventoryComponentsCmd(), "list", "--name", "x")
+	var cliErr *clierrors.CLIError
+	if !errors.As(err, &cliErr) || cliErr.Code != "INVALID_ARGUMENTS" {
+		t.Fatalf("got %v", err)
 	}
 }

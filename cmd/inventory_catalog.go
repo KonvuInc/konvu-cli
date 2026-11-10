@@ -52,16 +52,18 @@ by later rebuilds, and the components you place in an app stay there.`,
 		Short: "Make the catalog match a file",
 		Long: `Make the catalog match --file (or stdin with '-'), a document like 'catalog get -o json'.
 
-An app with an "id" is that app (rename it by changing its name); one without an
-id is created. An app left out of the file is deleted, and its components go back
-to Konvu to group. Every app's product must be listed, and its module must be one
-of that product's modules. Components are named as in 'catalog get'; a component
-may sit in several apps. "origin" and "unassigned" are ignored.
+The file replaces the whole catalog, so "products" and "apps" are required. An app
+with an "id" is that app (rename it by changing its name); one without an id is
+created. An app left out of the file is deleted, and its components go back to
+Konvu to group. An app's product, when set, must be listed, and its module must be
+one of that product's modules (an app's unchanged product and module always
+stand). Components are named as in 'catalog get'; a component may sit in several
+apps. "origin" and "unassigned" are ignored.
 
 --dry-run lists the changes and writes nothing. Nothing is written either when the
 file has a problem: every problem is listed.
 
-Exit codes: 0 success, 1 general error, 2 invalid file, 4 auth failed or not enabled`,
+Exit codes: 0 success, 1 general error, 2 invalid file, 3 not found, 4 auth failed or not enabled`,
 		Example: `  konvu inventory catalog apply --file catalog.json --dry-run
   konvu inventory catalog get -o json | jq '...' | konvu inventory catalog apply --file -`,
 		Args: cobra.NoArgs,
@@ -188,7 +190,7 @@ func runInventoryCatalogApply(cmd *cobra.Command, _ []string) error {
 	}
 	result, err := client.Put(path, doc)
 	if err != nil {
-		return inventoryCatalogError(err)
+		return catalogCallError(err, true)
 	}
 	if format == output.JSON {
 		return output.WriteString(cmd.OutOrStdout(), output.FormatJSON(result)+"\n")
@@ -234,13 +236,15 @@ func runInventoryAppsShow(cmd *cobra.Command, args []string) error {
 	}
 	client := api.NewClient("", "")
 	defer client.Close()
-	catalog, err := client.Get(inventoryCatalogPath, nil)
-	if err != nil {
-		return inventoryCatalogError(err)
-	}
-	id, err := pickByNameOrID(getSlice(catalog, "apps"), args[0], "app")
-	if err != nil {
-		return err
+	id := hexID(args[0])
+	if id == "" {
+		catalog, err := client.Get(inventoryCatalogPath, nil)
+		if err != nil {
+			return inventoryCatalogError(err)
+		}
+		if id, err = pickByName(getSlice(catalog, "apps"), args[0], "app"); err != nil {
+			return err
+		}
 	}
 	detail, err := client.Get(inventoryAppsPath+url.PathEscape(id), nil)
 	if err != nil {
@@ -262,7 +266,7 @@ func runInventoryAppsShow(cmd *cobra.Command, args []string) error {
 		member, _ := m.(map[string]any)
 		rows = append(rows, map[string]any{
 			"name": clean(getStr(member, "name")),
-			"kind": getStr(member, "kind"),
+			"kind": clean(getStr(member, "kind")),
 		})
 	}
 	b.WriteString("\n")
@@ -292,7 +296,7 @@ func runInventoryComponentsList(cmd *cobra.Command, _ []string) error {
 		m, _ := item.(map[string]any)
 		rows = append(rows, map[string]any{
 			"name":        clean(getStr(m, "name")),
-			"kind":        getStr(m, "kind"),
+			"kind":        clean(getStr(m, "kind")),
 			"connections": intOf(m["connections"]),
 			"id":          getStr(m, "id"),
 		})
@@ -308,13 +312,15 @@ func runInventoryComponentsShow(cmd *cobra.Command, args []string) error {
 	}
 	client := api.NewClient("", "")
 	defer client.Close()
-	items, err := listComponents(client, args[0], false)
-	if err != nil {
-		return inventoryCatalogError(err)
-	}
-	id, err := pickByNameOrID(items, args[0], "component")
-	if err != nil {
-		return err
+	id := hexID(args[0])
+	if id == "" {
+		items, err := listComponents(client, args[0], false)
+		if err != nil {
+			return inventoryCatalogError(err)
+		}
+		if id, err = pickByName(items, args[0], "component"); err != nil {
+			return err
+		}
 	}
 	detail, err := client.Get(inventoryComponentsPath+"/"+url.PathEscape(id), nil)
 	if err != nil {
@@ -325,14 +331,14 @@ func runInventoryComponentsShow(cmd *cobra.Command, args []string) error {
 	}
 	component, _ := detail["component"].(map[string]any)
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s (%s)\n", clean(getStr(component, "name")), getStr(component, "kind"))
+	fmt.Fprintf(&b, "%s (%s)\n", clean(getStr(component, "name")), clean(getStr(component, "kind")))
 	for _, s := range getSlice(detail, "sources") {
 		m, _ := s.(map[string]any)
 		fmt.Fprintf(&b, "  source     %s %s\n", clean(getStr(m, "url")), clean(getStr(m, "path_prefix")))
 	}
 	for _, i := range getSlice(detail, "interfaces") {
 		m, _ := i.(map[string]any)
-		fmt.Fprintf(&b, "  %-10s %s %s\n", getStr(m, "direction"), getStr(m, "kind"), clean(getStr(m, "key")))
+		fmt.Fprintf(&b, "  %-10s %s %s\n", clean(getStr(m, "direction")), clean(getStr(m, "kind")), clean(getStr(m, "key")))
 	}
 	fmt.Fprintf(&b, "%d connections\n", len(getSlice(detail, "edges")))
 	return output.WriteString(cmd.OutOrStdout(), b.String())
@@ -355,20 +361,27 @@ func listComponents(client *api.Client, name string, unassigned bool) ([]any, er
 		}
 		items = append(items, getSlice(page, "items")...)
 		next := getStr(page, "next")
-		if next == "" {
+		if next == "" || next == params["after"] {
 			return items, nil
 		}
 		params["after"] = next
 	}
 }
 
-// pickByNameOrID is the id of the one item whose id or exact name is ref.
-func pickByNameOrID(items []any, ref, kind string) (string, error) {
-	hex := strings.ReplaceAll(strings.ToLower(ref), "-", "")
+// hexID is ref as the server's id form when ref is a UUID, else "".
+func hexID(ref string) string {
+	if !uuidRe.MatchString(ref) {
+		return ""
+	}
+	return strings.ReplaceAll(strings.ToLower(ref), "-", "")
+}
+
+// pickByName is the id of the item named exactly ref; names are unique.
+func pickByName(items []any, ref, kind string) (string, error) {
 	for _, item := range items {
 		m, _ := item.(map[string]any)
-		if id := getStr(m, "id"); id != "" && (id == hex || getStr(m, "name") == ref) {
-			return id, nil
+		if getStr(m, "name") == ref {
+			return getStr(m, "id"), nil
 		}
 	}
 	return "", &clierrors.CLIError{
@@ -388,7 +401,7 @@ func appsTable(apps []any) string {
 			"product":    clean(getStr(m, "product")),
 			"module":     clean(getStr(m, "module")),
 			"components": len(getSlice(m, "components")),
-			"origin":     getStr(m, "origin"),
+			"origin":     clean(getStr(m, "origin")),
 			"id":         getStr(m, "id"),
 		})
 	}
@@ -418,11 +431,29 @@ func readCatalogFile(path string) (map[string]any, error) {
 	if err := json.Unmarshal(data, &doc); err != nil || doc == nil {
 		return nil, errors.New("expected a JSON object like the output of 'konvu inventory catalog get -o json'")
 	}
+	// A key left out would delete what it lists: both lists are required.
+	for _, key := range []string{"products", "apps"} {
+		if _, ok := doc[key].([]any); !ok {
+			return nil, fmt.Errorf("the file has no %q list; apply replaces the whole catalog, so start from 'catalog get'", key)
+		}
+	}
+	for key := range doc {
+		switch key {
+		case "products", "modules", "apps", "unassigned":
+		default:
+			return nil, fmt.Errorf("unknown key %q", key)
+		}
+	}
 	return doc, nil
 }
 
 // inventoryCatalogError maps a refused call to its next step.
 func inventoryCatalogError(err error) error {
+	return catalogCallError(err, false)
+}
+
+// catalogCallError maps a refused call; a 422 lists the file's problems on an apply.
+func catalogCallError(err error, applying bool) error {
 	var authErr *api.AuthenticationError
 	if errors.As(err, &authErr) {
 		return clierrors.NewAuthError(err.Error())
@@ -448,6 +479,14 @@ func inventoryCatalogError(err error) error {
 			ExitCode:   clierrors.ExitNotFound,
 		}
 	case 422:
+		if !applying {
+			return &clierrors.CLIError{
+				Code:       "INVALID_ARGUMENTS",
+				Message:    invariantDetail(apiErr),
+				Suggestion: "Check the arguments against the command's --help.",
+				ExitCode:   clierrors.ExitUsageError,
+			}
+		}
 		var payload struct {
 			Detail []any `json:"detail"`
 		}
