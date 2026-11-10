@@ -44,7 +44,7 @@ by later rebuilds, and the components you place in an app stay there.`,
 		Use:   "get",
 		Short: "Print the catalog",
 		Args:  cobra.NoArgs,
-		RunE:  runInventoryCatalogGet,
+		RunE:  withJSONErrors(runInventoryCatalogGet),
 	}
 	get.Flags().StringP("output", "o", "", "Output format: json, table")
 	apply := &cobra.Command{
@@ -67,7 +67,7 @@ Exit codes: 0 success, 1 general error, 2 invalid file, 3 not found, 4 auth fail
 		Example: `  konvu inventory catalog apply --file catalog.json --dry-run
   konvu inventory catalog get -o json | jq '...' | konvu inventory catalog apply --file -`,
 		Args: cobra.NoArgs,
-		RunE: runInventoryCatalogApply,
+		RunE: withJSONErrors(runInventoryCatalogApply),
 	}
 	apply.Flags().String("file", "", "JSON catalog file, or '-' for stdin")
 	apply.Flags().Bool("dry-run", false, "List the changes without writing anything")
@@ -85,7 +85,7 @@ func newInventoryAppsCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List apps",
 		Args:  cobra.NoArgs,
-		RunE:  runInventoryAppsList,
+		RunE:  withJSONErrors(runInventoryAppsList),
 	}
 	list.Flags().StringP("output", "o", "", "Output format: json, table")
 	show := &cobra.Command{
@@ -93,7 +93,7 @@ func newInventoryAppsCmd() *cobra.Command {
 		Short:   "Show an app's components and how they connect",
 		Example: `  konvu inventory apps show "Billing"`,
 		Args:    cobra.ExactArgs(1),
-		RunE:    runInventoryAppsShow,
+		RunE:    withJSONErrors(runInventoryAppsShow),
 	}
 	show.Flags().StringP("output", "o", "", "Output format: json, table")
 	c.AddCommand(list, show)
@@ -110,7 +110,7 @@ func newInventoryComponentsCmd() *cobra.Command {
 		Short:   "List components",
 		Example: `  konvu inventory components list --unassigned`,
 		Args:    cobra.NoArgs,
-		RunE:    runInventoryComponentsList,
+		RunE:    withJSONErrors(runInventoryComponentsList),
 	}
 	list.Flags().Bool("unassigned", false, "Only components in no app")
 	list.Flags().String("name", "", "Only components whose name contains this")
@@ -120,7 +120,7 @@ func newInventoryComponentsCmd() *cobra.Command {
 		Short:   "Show a component's sources, interfaces and connections",
 		Example: `  konvu inventory components show acme/api`,
 		Args:    cobra.ExactArgs(1),
-		RunE:    runInventoryComponentsShow,
+		RunE:    withJSONErrors(runInventoryComponentsShow),
 	}
 	show.Flags().StringP("output", "o", "", "Output format: json, table")
 	c.AddCommand(list, show)
@@ -342,6 +342,22 @@ func runInventoryComponentsShow(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Fprintf(&b, "%d connections\n", len(getSlice(detail, "edges")))
 	return output.WriteString(cmd.OutOrStdout(), b.String())
+}
+
+// withJSONErrors also prints a failure as a JSON error on stdout when the output is JSON,
+// so scripts read its code, message and suggestion like the command's result.
+func withJSONErrors(run func(*cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		err := run(cmd, args)
+		var cliErr *clierrors.CLIError
+		if err == nil || !errors.As(err, &cliErr) {
+			return err
+		}
+		if format, ferr := findingDispositionOutputFormat(cmd); ferr == nil && format == output.JSON {
+			_ = output.WriteString(cmd.OutOrStdout(), clierrors.FormatErrorJSON(cliErr)+"\n")
+		}
+		return err
+	}
 }
 
 // listComponents pages through every component matching name.

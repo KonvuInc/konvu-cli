@@ -229,3 +229,13 @@ func TestComponentsListBadArgumentIsNotAFileProblem(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestErrorsArePrintedAsJSONWithJSONOutput(t *testing.T) {
+	reviewServer(t, map[string][]invariantReply{
+		"GET /inventory/catalog": {{http.StatusForbidden, map[string]any{"detail": "not enabled"}}},
+	})
+	out, err := runInvariants(newInventoryCatalogCmd(), "get", "-o", "json")
+	if err == nil || !strings.Contains(out, `"FORBIDDEN"`) {
+		t.Fatalf("got %v, output %q", err, out)
+	}
+}
