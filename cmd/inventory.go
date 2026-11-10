@@ -458,7 +458,7 @@ func init() {
 	inventoryShowCmd.Flags().StringP("output", "o", "", "Output format: json, table")
 	inventoryShowCmd.Flags().String("fields", "", "Comma-separated top-level fields to include in JSON output")
 
-	inventoryCmd.AddCommand(inventoryShowCmd, newInventoryListCmd(), inventoryMapCmd)
+	inventoryCmd.AddCommand(inventoryShowCmd, newInventoryListCmd(), inventoryMapCmd, newInventoryCatalogCmd(), newInventoryAppsCmd(), newInventoryComponentsCmd())
 
 	inventoryCmd.Flags().StringP("output", "o", "", "Output format for the repository listing: json, table")
 	inventoryCmd.Flags().BoolP("quiet", "q", false, "Print only repository selectors")
