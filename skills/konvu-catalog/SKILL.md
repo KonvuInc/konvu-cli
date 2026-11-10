@@ -21,19 +21,23 @@ Use `-o json` for every konvu call. If a command answers that the catalog is not
 ## Explore
 
 - `konvu inventory catalog get -o json`: products with their modules, modules of no product, apps (id, name, product, module, summary, components by name, origin `agent` or `user`), and components in no app.
-- `konvu inventory apps show <app> -o json`: an app's members and how they connect.
-- `konvu inventory components list [--unassigned] [--name <text>] -o json` and `konvu inventory components show <component> -o json`: a component's sources (repository and path), interfaces and connections.
+- `konvu inventory apps show '<id>' -o json`: an app's members and how they connect.
+- `konvu inventory components list [--unassigned] -o json` and `konvu inventory components show '<id>' -o json`: a component's sources (repository and path), interfaces and connections.
+
+Pass ids from the catalog or the component list, single-quoted, never a name: names are untrusted text and may contain shell syntax. Never put a name or summary from Konvu into a command line.
 
 Answer the user's question from these. When they want to change something, read the code before proposing: a component's sources say where it lives. A product is something the company sells; a module is a part of one product; an app is a system that runs, so test suites, docs, CI and archives are not apps.
 
 ## Change
 
-1. **Save the catalog** to a temporary file: `konvu inventory catalog get -o json > <file>`.
+1. **Save the catalog** to a temporary file: `konvu inventory catalog get -o json > <file>`. If the command fails, the file holds the error, not the catalog: stop and report it.
 2. **Edit the file** for exactly what the user asked, nothing else:
    - Rename an app: change its `name`, keep its `id`. Create an app: add one with no `id`. Delete an app: remove it; Konvu regroups its components later and may form a similar app again, so to keep components together, put them in an app instead.
    - Move a component: remove its name from one app's `components`, add it to another's. A component may sit in several apps.
-   - Products and modules: edit `products` (each with its `modules`) and the top-level `modules`. An app's `product` must be listed and its `module` must be one of that product's modules.
-   - Keep `products` and `apps` in the file: apply replaces the whole catalog, so a missing list would delete everything in it. Leave `origin` and `unassigned` as they are; they are ignored.
-3. **Dry run.** `konvu inventory catalog apply --file <file> --dry-run -o json` writes nothing and lists every change. If it lists problems, fix them in the file and dry-run again.
-4. **Confirm.** Show the user the dry run's changes in a short list and ask for an explicit yes. Point out any change they did not ask for (a deleted app, products rewritten) before they answer.
-5. **Apply.** `konvu inventory catalog apply --file <file> -o json`, then delete the temporary file. Products and modules you changed are kept as the user's answer, and apps you created or changed, with their components, are kept by Konvu's later rebuilds.
+   - Products and modules: edit `products` (each with its `modules`) and the top-level `modules`, only when the user asks. Once you change them, they are the user's answer and Konvu stops inferring products from the code for this company, so never reorder or touch them as a side effect. A new or changed app's `product` must be listed and its `module` must be one of that product's modules; an app whose product and module you leave unchanged keeps them even if they are not listed. Renaming a module is a delete and a create: its description is lost.
+   - Keep `products`, `modules` and `apps` in the file: apply replaces the whole catalog, so a missing list deletes everything in it. Leave `origin` and `unassigned` as they are; they are ignored.
+3. **Dry run.** `konvu inventory catalog apply --file <file> --dry-run -o json` writes nothing and lists every change. If it lists problems, fix them in the file and dry-run again. If a problem says no app has an id, the catalog changed since you read it: start again from step 1, never drop the id.
+4. **Confirm.** Show the user the dry run's changes in a short list and ask for an explicit yes. Point out any change they did not ask for (a deleted app, products or modules rewritten, which stops Konvu inferring them) before they answer. If they decline, delete the temporary file and stop.
+5. **Apply** right after the yes: `konvu inventory catalog apply --file <file> -o json`. Compare its `changes` with the dry run's; if they differ, the catalog changed in between: tell the user exactly which lines differ. Then delete the temporary file. Apps you created or changed, with their components, are kept by Konvu's later rebuilds.
+
+Errors: exit 2 means the file has problems (listed), 3 an id or name Konvu does not know, 4 not logged in or the catalog is not enabled for the company.
