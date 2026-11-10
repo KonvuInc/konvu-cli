@@ -229,7 +229,6 @@ func TestUploadSavesWithTheOnboardingCode(t *testing.T) {
 		"run `konvu login` (step 2), then do the dry run and push again without `--onboarding`",
 		"never an environment variable",
 		"Never write it to a file", "never repeat it to the user",
-		"with an onboarding code, `repository`: the repo the rule is about, as `owner/name` from its git remote",
 		"Never `repository_id` with a code",
 	} {
 		if !strings.Contains(string(upload), want) {
@@ -267,6 +266,35 @@ func TestUploadSavesWithTheOnboardingCode(t *testing.T) {
 	}
 	if !strings.Contains(string(handoff), "sets the rule's `repository` from the git remote of {repo_path}") {
 		t.Error("step 4 does not hand the repo to the upload")
+	}
+}
+
+// A logged-in push links a rule to its repository too, so the skills send repository whether or
+// not the user has an onboarding code, and keep it when they fall back to a login.
+func TestUploadAlwaysSendsTheRepository(t *testing.T) {
+	upload, err := embedded.ReadFile("konvu-upload-invariants/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"always, logged in or with an onboarding code, `repository`: the repo the rule is about, as `owner/name` from its git remote",
+		"left out if it has no remote",
+		"push again without `--onboarding`, keeping `repository`, and report as without a code",
+		"If the CLI warned that a rule goes without a repository, say so",
+	} {
+		if !strings.Contains(string(upload), want) {
+			t.Errorf("konvu-upload-invariants: missing %q", want)
+		}
+	}
+	if strings.Count(string(upload), "keeping `repository`") != 2 {
+		t.Error("konvu-upload-invariants: a fallback to the login drops the repository")
+	}
+	handoff, err := embedded.ReadFile("konvu-invariants/steps/4-upload.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(handoff), "It always sets the rule's `repository` from the git remote of {repo_path}, logged in or not.") {
+		t.Error("step 4 sets the repository only with an onboarding code")
 	}
 }
 

@@ -11,7 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/KonvuInc/konvu-cli/pkg/api"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -721,8 +723,8 @@ func TestInvariantsPushOnboardingSendsTheRepositoryAsIs(t *testing.T) {
 	}
 }
 
-// Guardrails refuses fields it does not know, so a logged-in push drops repository, which only
-// the onboarding route takes, and keeps everything else.
+// An explicit repository_id wins: a logged-in push drops repository, which Guardrails refuses,
+// looks nothing up (invariantsServer fails on any other route) and keeps everything else.
 func TestInvariantsPushWithoutOnboardingDropsTheRepository(t *testing.T) {
 	var posted map[string]any
 	server := invariantsServer(t, &posted, http.StatusCreated)
@@ -821,5 +823,307 @@ func TestInvariantsPushOnboardingShowsTheDomainAndRepository(t *testing.T) {
 	table, err := runInvariants(newInvariantsPushCmd(), "--file", file, "--onboarding", testOnboardingCode, "--dry-run", "-o", "table")
 	if err != nil || !strings.HasPrefix(table, "Saves to the Konvu onboarding for acme.com\n") || !strings.Contains(table, "acme/api") {
 		t.Fatalf("err = %v, table = %q", err, table)
+	}
+}
+
+const (
+	apiRepoID   = "6f1c0a6e-0000-4000-8000-000000000001"
+	webRepoID   = "6f1c0a6e-0000-4000-8000-000000000002"
+	otherRepoID = "6f1c0a6e-0000-4000-8000-000000000003"
+	givenRepoID = "6f1c0a6e-0000-4000-8000-000000000004"
+)
+
+// pushRequests is what a logged-in push sent: how many repository lookups, and each body posted.
+type pushRequests struct {
+	lookups int
+	posted  []map[string]any
+}
+
+// sent is invariant i of the nth body posted.
+func (p *pushRequests) sent(t *testing.T, n, i int) map[string]any {
+	t.Helper()
+	if n >= len(p.posted) {
+		t.Fatalf("%d pushes, want push %d", len(p.posted), n+1)
+	}
+	return p.posted[n]["invariants"].([]any)[i].(map[string]any)
+}
+
+// pushServer answers the repository lookup with lookupStatus and lookup, and each push with the
+// next of statuses (201 once they run out). Any other call fails the test.
+func pushServer(t *testing.T, lookupStatus int, lookup any, statuses ...int) *pushRequests {
+	got := &pushRequests{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == coverageConfigPath:
+			got.lookups++
+			w.WriteHeader(lookupStatus)
+			_ = json.NewEncoder(w).Encode(lookup)
+		case r.Method == http.MethodPost && r.URL.Path == invariantsPath:
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("body: %v", err)
+			}
+			got.posted = append(got.posted, body)
+			status := http.StatusCreated
+			if n := len(got.posted); n <= len(statuses) {
+				status = statuses[n-1]
+			}
+			w.WriteHeader(status)
+			if status != http.StatusCreated {
+				_ = json.NewEncoder(w).Encode(map[string]any{"detail": "no such repository for this company"})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"dry_run": body["dry_run"], "invariants": []any{
+				map[string]any{"rank": 1, "result": "created", "statement": "A."},
+			}})
+		default:
+			t.Errorf("unexpected call %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusTeapot)
+		}
+	}))
+	t.Cleanup(server.Close)
+	invariantsEnv(t, server)
+	return got
+}
+
+// konvuRepositories is the repository lookup's answer, one {id, url} per pair.
+func konvuRepositories(idsAndURLs ...string) map[string]any {
+	repos := []any{}
+	for i := 0; i+1 < len(idsAndURLs); i += 2 {
+		repos = append(repos, map[string]any{"id": idsAndURLs[i], "url": idsAndURLs[i+1]})
+	}
+	return map[string]any{"repositories": repos, "default_severities": nil}
+}
+
+// runPush runs a push and returns its stdout and stderr apart.
+func runPush(args ...string) (string, string, error) {
+	c := newInvariantsPushCmd()
+	stderr := &bytes.Buffer{}
+	c.SetErr(stderr)
+	stdout, err := runInvariants(c, args...)
+	return stdout, stderr.String(), err
+}
+
+// rulesFor is a push file with one invariant per repository field given, as raw JSON.
+func rulesFor(repositories ...string) string {
+	rules := make([]string, len(repositories))
+	for i, repository := range repositories {
+		rules[i] = fmt.Sprintf(`{"statement": "Rule %d.", "why_it_matters": "x", "property": "integrity", "repository": %s}`, i+1, repository)
+	}
+	return "[" + strings.Join(rules, ", ") + "]"
+}
+
+func assertJSON(t *testing.T, stdout string) {
+	t.Helper()
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
+		t.Fatalf("stdout is not JSON: %q", stdout)
+	}
+}
+
+// Logged in, a rule's repository (owner/name) goes as the id of the Konvu repository of that
+// name, matched exactly and whatever its case, looked up once per push, dry run included.
+func TestInvariantsPushLinksTheRepositoryLoggedIn(t *testing.T) {
+	file := writeInvariants(t, rulesFor(`"acme/api"`, `" ACME/team/Web "`, `"Acme/API"`))
+	for _, dryRun := range []bool{false, true} {
+		got := pushServer(t, http.StatusOK, konvuRepositories(
+			otherRepoID, "github:acme/api-legacy",
+			apiRepoID, "github:Acme/API",
+			webRepoID, "https://gitlab.com/acme/team/web.git",
+		))
+		args := []string{"--file", file, "-o", "json"}
+		if dryRun {
+			args = append(args, "--dry-run")
+		}
+		stdout, stderr, err := runPush(args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.lookups != 1 || len(got.posted) != 1 || got.posted[0]["dry_run"] != dryRun {
+			t.Fatalf("dry run %v: lookups = %d, posted = %#v", dryRun, got.lookups, got.posted)
+		}
+		for i, want := range []string{apiRepoID, webRepoID, apiRepoID} {
+			sent := got.sent(t, 0, i)
+			if _, has := sent["repository"]; has || sent["repository_id"] != want {
+				t.Errorf("dry run %v: invariant %d sent %#v, want repository_id %s", dryRun, i+1, sent, want)
+			}
+		}
+		if stderr != "" {
+			t.Errorf("dry run %v: stderr = %q", dryRun, stderr)
+		}
+		assertJSON(t, stdout)
+	}
+}
+
+// A name that matches no repository, or several, or a failed lookup sends the rule without a
+// repository, as before: one warning per name on stderr, and the push still succeeds.
+func TestInvariantsPushWarnsWhenTheRepositoryIsNotFound(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		status int
+		lookup any
+		want   []string
+	}{
+		{"no match, not even a longer name", http.StatusOK, konvuRepositories(apiRepoID, "github:acme/api-legacy", webRepoID, "github:other/acme/api"),
+			[]string{"none of your Konvu repositories is acme/api"}},
+		{"ambiguous", http.StatusOK, konvuRepositories(webRepoID, "gitlab:ACME/api", apiRepoID, "github:acme/api"),
+			[]string{"2 Konvu repositories are acme/api (github:acme/api (id " + apiRepoID + "), gitlab:ACME/api (id " + webRepoID + "))", "set repository_id"}},
+		{"unusable entries", http.StatusOK, konvuRepositories("", "github:acme/api", "r1", "github:acme/api", apiRepoID, "acme/api", webRepoID, "github:"),
+			[]string{"none of your Konvu repositories is acme/api"}},
+		{"lookup fails", http.StatusInternalServerError, map[string]any{"detail": "boom"},
+			[]string{"could not look up Konvu repository acme/api (Konvu answered 500)"}},
+		{"no repository list", http.StatusOK, map[string]any{},
+			[]string{"could not look up Konvu repository acme/api (Konvu sent no repository list)"}},
+	} {
+		got := pushServer(t, c.status, c.lookup)
+		stdout, stderr, err := runPush("--file", writeInvariants(t, rulesFor(`"acme/api"`, `"Acme/API"`)), "-o", "json")
+		if err != nil {
+			t.Fatalf("%s: the push failed: %v", c.name, err)
+		}
+		if got.lookups != 1 || len(got.posted) != 1 {
+			t.Fatalf("%s: lookups = %d, pushes = %d", c.name, got.lookups, len(got.posted))
+		}
+		for i := range 2 {
+			sent := got.sent(t, 0, i)
+			_, hasName := sent["repository"]
+			if _, hasID := sent["repository_id"]; hasName || hasID {
+				t.Errorf("%s: invariant %d sent %#v", c.name, i+1, sent)
+			}
+		}
+		if strings.Count(stderr, "Warning: ") != 1 || !strings.Contains(stderr, "so its invariants go without a repository") {
+			t.Errorf("%s: want one warning, stderr = %q", c.name, stderr)
+		}
+		for _, want := range c.want {
+			if !strings.Contains(stderr, want) {
+				t.Errorf("%s: stderr %q does not say %q", c.name, stderr, want)
+			}
+		}
+		assertJSON(t, stdout)
+	}
+}
+
+// A repository that is not owner/name is never looked up: the rule goes without one, with a
+// warning naming the invariant, and a null repository names none.
+func TestInvariantsPushWarnsOnAMalformedRepository(t *testing.T) {
+	got := pushServer(t, http.StatusOK, konvuRepositories(apiRepoID, "github:acme/api"))
+	stdout, stderr, err := runPush("--file", writeInvariants(t, rulesFor(`"api"`, `"https://github.com/acme/api"`, `""`, `3`, `null`)), "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.lookups != 0 {
+		t.Fatalf("looked up %d times", got.lookups)
+	}
+	for i := range 5 {
+		sent := got.sent(t, 0, i)
+		_, hasName := sent["repository"]
+		if _, hasID := sent["repository_id"]; hasName || hasID {
+			t.Errorf("invariant %d sent %#v", i+1, sent)
+		}
+	}
+	for n := 1; n <= 4; n++ {
+		if !strings.Contains(stderr, fmt.Sprintf("Warning: invariant %d's repository is not owner/name (like acme/api), so it goes without a repository.\n", n)) {
+			t.Errorf("no warning for invariant %d: %q", n, stderr)
+		}
+	}
+	if strings.Count(stderr, "Warning: ") != 4 {
+		t.Errorf("stderr = %q", stderr)
+	}
+	assertJSON(t, stdout)
+}
+
+// An explicit repository_id is sent untouched, even beside a repository naming another one.
+func TestInvariantsPushKeepsAnExplicitRepositoryID(t *testing.T) {
+	got := pushServer(t, http.StatusOK, konvuRepositories(apiRepoID, "github:acme/api", otherRepoID, "github:acme/other"))
+	file := writeInvariants(t, `[
+		{"statement": "A.", "why_it_matters": "x", "property": "integrity", "repository": "acme/other", "repository_id": "`+givenRepoID+`"},
+		{"statement": "B.", "why_it_matters": "x", "property": "integrity", "repository": "acme/api"}]`)
+	if _, stderr, err := runPush("--file", file); err != nil || stderr != "" {
+		t.Fatalf("err = %v, stderr = %q", err, stderr)
+	}
+	first, second := got.sent(t, 0, 0), got.sent(t, 0, 1)
+	if _, has := first["repository"]; has || first["repository_id"] != givenRepoID {
+		t.Errorf("explicit invariant sent %#v", first)
+	}
+	if second["repository_id"] != apiRepoID {
+		t.Errorf("looked-up invariant sent %#v", second)
+	}
+}
+
+// Guardrails answers 404 for a repository it has not mapped yet, before writing anything: the
+// push goes once more without the ids it looked up, keeping the explicit ones, and warns.
+func TestInvariantsPushRetriesWithoutAnUnmappedRepository(t *testing.T) {
+	file := writeInvariants(t, `[
+		{"statement": "A.", "why_it_matters": "x", "property": "integrity", "repository": "acme/api"},
+		{"statement": "B.", "why_it_matters": "x", "property": "integrity", "repository_id": "`+givenRepoID+`"}]`)
+	lookup := konvuRepositories(apiRepoID, "github:acme/api")
+
+	got := pushServer(t, http.StatusOK, lookup, http.StatusNotFound)
+	stdout, stderr, err := runPush("--file", file, "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.posted) != 2 || got.sent(t, 0, 0)["repository_id"] != apiRepoID {
+		t.Fatalf("posted = %#v", got.posted)
+	}
+	if _, has := got.sent(t, 1, 0)["repository_id"]; has || got.sent(t, 1, 1)["repository_id"] != givenRepoID {
+		t.Fatalf("retry sent %#v", got.posted[1])
+	}
+	if stderr != "Warning: Konvu has not mapped repository acme/api yet, so its invariants go without a repository.\n" {
+		t.Errorf("stderr = %q", stderr)
+	}
+	assertJSON(t, stdout)
+
+	// The explicit id is the unknown one: one retry only, then the usual exit 3, and no warning.
+	got = pushServer(t, http.StatusOK, lookup, http.StatusNotFound, http.StatusNotFound)
+	_, stderr, err = runPush("--file", file)
+	if e := cliErrorOf(t, err); e.Code != "REPOSITORY_NOT_FOUND" || e.ExitCode != clierrors.ExitNotFound || len(got.posted) != 2 || stderr != "" {
+		t.Fatalf("err = %#v, pushes = %d, stderr = %q", e, len(got.posted), stderr)
+	}
+
+	// Nothing looked up: no retry.
+	got = pushServer(t, http.StatusOK, lookup, http.StatusNotFound)
+	_, _, err = runPush("--file", writeInvariants(t, `[{"statement": "B.", "why_it_matters": "x", "property": "integrity", "repository_id": "`+givenRepoID+`"}]`))
+	if e := cliErrorOf(t, err); e.Code != "REPOSITORY_NOT_FOUND" || len(got.posted) != 1 || got.lookups != 0 {
+		t.Fatalf("err = %#v, pushes = %d, lookups = %d", e, len(got.posted), got.lookups)
+	}
+}
+
+// A stalled lookup gives up after its timeout, so it never holds the push.
+func TestKonvuRepositoriesLookupIsBounded(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	t.Cleanup(server.Close)
+	defer close(release)
+	invariantsEnv(t, server)
+
+	_, err := konvuRepositoriesByName(api.NewClient("", ""), 20*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "no answer within") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestKonvuRepositoryName(t *testing.T) {
+	for repoURL, want := range map[string][2]string{
+		"github:tolmohq/repo-1":                      {"tolmohq/repo-1", "github:tolmohq/repo-1"},
+		"GitHub:Acme/API.git":                        {"Acme/API", "github:Acme/API"},
+		"gitlab:acme/team/api":                       {"acme/team/api", "gitlab:acme/team/api"},
+		"https://gitlab.example.com/acme/api.git/":   {"acme/api", "gitlab.example.com/acme/api"},
+		"https://user:secret@bitbucket.org/acme/api": {"acme/api", "bitbucket.org/acme/api"},
+		"ssh://git@github.com/acme/api.git":          {"acme/api", "github.com/acme/api"},
+		"https://github.com/acme%2Fapi":              {"", ""},
+		"git@github.com:acme/api.git":                {"", ""},
+		"github:":                                    {"", ""},
+		"github:acme":                                {"", ""},
+		"https://github.com/acme":                    {"", ""},
+		"https://github.com":                         {"", ""},
+		"acme/api":                                   {"", ""},
+		"":                                           {"", ""},
+	} {
+		name, label := konvuRepositoryName(repoURL)
+		if name != want[0] || label != want[1] {
+			t.Errorf("%q: got (%q, %q), want %q", repoURL, name, label, want)
+		}
 	}
 }
