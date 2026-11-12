@@ -777,6 +777,7 @@ Security rules (invariants) and PR checks come as these skills:
 - `/konvu-decide-suggestions` — go through the rules Konvu suggested, checked against your code, then accept or decline the ones you pick
 - `/konvu-audit-rules` — read-only audit of your active rules (all, or the ids you give): where each is enforced, its gaps, agent steering and PR check outcomes
 - `/konvu-review-pr-checks` — read-only review of what Konvu's PR check found, on every analyzed PR or on one PR URL
+- `/konvu-catalog` — explore and fix your products, apps and components, with a dry run before any change
 
 To check the skills directory:
 

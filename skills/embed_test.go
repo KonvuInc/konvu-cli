@@ -311,3 +311,22 @@ func TestDecideSuggestionsWaitsForThePick(t *testing.T) {
 		}
 	}
 }
+
+// The catalog skill rewrites a company's catalog: it must check setup, carry a trust boundary,
+// and dry-run and confirm before every apply.
+func TestCatalogSkillDryRunsAndConfirmsBeforeApplying(t *testing.T) {
+	data, err := embedded.ReadFile("konvu-catalog/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		"konvu version", "konvu whoami", "ask the user before running `konvu login` or `konvu update`",
+		"Trust boundary", "never reveal tokens",
+		"--dry-run", "explicit yes", "Keep `products`, `modules`, `apps` and `revision` in the file", "CATALOG_CHANGED", "never a name",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("konvu-catalog: missing %q", want)
+		}
+	}
+}
