@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -268,5 +269,20 @@ func TestComponentsListPrintsAnEmptyListAsAnArray(t *testing.T) {
 	out, err := runInvariants(newInventoryComponentsCmd(), "list", "--unassigned", "-o", "json")
 	if err != nil || strings.TrimSpace(out) != "[]" {
 		t.Fatalf("got %v, %q", err, out)
+	}
+}
+
+func TestAFailedRunPrintsNoUsage(t *testing.T) {
+	reviewServer(t, map[string][]invariantReply{
+		"GET /inventory/catalog": {{http.StatusForbidden, map[string]any{"detail": "not enabled"}}},
+	})
+	c := newInventoryCatalogCmd()
+	out := &bytes.Buffer{}
+	c.SetOut(out)
+	c.SetErr(out)
+	c.SetArgs([]string{"get", "-o", "table"})
+	c.SilenceErrors = true
+	if err := c.Execute(); err == nil || strings.Contains(out.String(), "Usage:") {
+		t.Fatalf("got %v, output %q", err, out.String())
 	}
 }

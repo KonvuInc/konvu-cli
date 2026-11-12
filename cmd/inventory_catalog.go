@@ -348,10 +348,12 @@ func runInventoryComponentsShow(cmd *cobra.Command, args []string) error {
 	return output.WriteString(cmd.OutOrStdout(), b.String())
 }
 
-// withJSONErrors also prints a failure as a JSON error on stdout when the output is JSON,
+// withJSONErrors keeps the usage text out of a failed run, and also prints a failure as a JSON error on stdout when the output is JSON,
 // so scripts read its code, message and suggestion like the command's result.
 func withJSONErrors(run func(*cobra.Command, []string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
+		// Arguments parsed: a failure from here on is not a usage mistake.
+		cmd.SilenceUsage = true
 		err := run(cmd, args)
 		var cliErr *clierrors.CLIError
 		if err == nil || !errors.As(err, &cliErr) {
