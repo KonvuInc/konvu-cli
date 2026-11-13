@@ -7,7 +7,7 @@ Start your message with one line: you're digging into {repo}, a couple of minute
 
 Save `{dir}/context.json`: `{"company", "trust": one plain sentence on who trusts the company with what, "worst": [the 3 worst outcomes, plain words], "facts": [key facts with sources]}`.
 
-From that, pick 3 **directions**: areas of {repo} where security rules would protect something that matters to this business and to this user. Each is a concrete area of the product (a flow, a feature, a service in a monorepo), not a security category: "how customer tokens reach our brokers", not "access control".
+From that, pick 3 **directions**: areas of {repo} where principles would protect something that matters to this business and to this user. Each is a concrete area of the product (a flow, a feature, a service in a monorepo), not a security category: "how customer tokens reach our brokers", not "access control".
 
 Rank them by importance, first and by far: which one protects the promise people buy or install this product for, the thing that would be the headline if it broke (customer credentials leaking, code pushed where it shouldn't be, private data leaving the machine)? Put that one first. What the user worked on recently, or what fills their memory and notes, tells you what they know, not what matters most: never rank a direction first for that reason alone. A secondary feature, however busy in the code, comes after the product's core promises.
 

@@ -24,14 +24,14 @@ const (
 func newInvariantsGetCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "get <id>",
-		Short: "Show one invariant: its controls, code anchors and agent steering",
-		Long: `Show one invariant, proposed or validated: its statement and why it matters, the controls
+		Short: "Show one principle: its controls, code anchors and agent steering",
+		Long: `Show one principle, proposed or validated: its statement and why it matters, the controls
 that keep it true (each with its code anchors), and how often Konvu steered coding agents
 with it over the last 30 days. -o json prints everything, anchors and recent edits included.
 
-Exit codes: 0 success, 1 general error, 2 invalid id or flag, 3 invariant not found, 4 auth failed or refused`,
-		Example: `  konvu invariants get 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b
-  konvu invariants get 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b -o json`,
+Exit codes: 0 success, 1 general error, 2 invalid id or flag, 3 principle not found, 4 auth failed or refused`,
+		Example: `  konvu principles get 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b
+  konvu principles get 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b -o json`,
 		Args: cobra.ExactArgs(1),
 		RunE: runInvariantsGet,
 	}
@@ -42,27 +42,27 @@ Exit codes: 0 success, 1 general error, 2 invalid id or flag, 3 invariant not fo
 func newInvariantsAcceptCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "accept <id>",
-		Short: "Accept a security rule Konvu suggested, making it active",
-		Long: `Accept a proposed invariant, a security rule Konvu suggested: it becomes validated (active),
+		Short: "Accept a principle Konvu suggested, making it active",
+		Long: `Accept a proposed principle, a principle Konvu suggested: it becomes validated (active),
 attributed to you, and Konvu checks every change against it.
 
 The suggestion is sent unchanged and keeps its rank. To change its wording first, write the
-edited rule to a file and add it at the suggestion's rank with 'konvu invariants push': it
+edited rule to a file and add it at the suggestion's rank with 'konvu principles push': it
 replaces the suggestion. --dry-run checks it on the server and writes nothing.
 
-Only a proposed invariant is accepted. If it stopped being one before the accept reached Konvu
+Only a proposed principle is accepted. If it stopped being one before the accept reached Konvu
 (accepted, declined or replaced meanwhile), accept exits 1 and says what was written, if
-anything. When the request fails on the server's side, accept reads the invariant back:
+anything. When the request fails on the server's side, accept reads the principle back:
 validated means it is active ("mapping_pending": true in JSON: its mapping to controls may wait
 for the next code analysis or rule change, nothing to repeat); still proposed means not
-accepted yet, though the request may still be running, so check with 'konvu invariants get'
+accepted yet, though the request may still be running, so check with 'konvu principles get'
 before repeating it.
 
 Exit codes: 0 accepted, 1 general error (not a suggestion, changed meanwhile, cannot be
-accepted unchanged, or the request failed), 2 invalid id or flag, 3 invariant not found,
+accepted unchanged, or the request failed), 2 invalid id or flag, 3 principle not found,
 4 auth failed or refused`,
-		Example: `  konvu invariants accept 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b --dry-run
-  konvu invariants accept 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b`,
+		Example: `  konvu principles accept 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b --dry-run
+  konvu principles accept 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b`,
 		Args: cobra.ExactArgs(1),
 		RunE: runInvariantsAccept,
 	}
@@ -79,21 +79,21 @@ var invariantSecurityProperties = []string{
 func newInvariantsAmendCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "amend <id>",
-		Short: "Accept a security rule Konvu suggested, with your adjustments",
-		Long: `Accept a proposed invariant with edits: it becomes active, attributed to you, and recorded
+		Short: "Accept a principle Konvu suggested, with your adjustments",
+		Long: `Accept a proposed principle with edits: it becomes active, attributed to you, and recorded
 as amended (Konvu-suggested, user-adjusted). Konvu checks every change against it.
 
 All three text flags are required. --dry-run checks the request on the server and writes nothing.
 
-Only a proposed invariant can be amended. If it stopped being one before the amend reached
+Only a proposed principle can be amended. If it stopped being one before the amend reached
 Konvu (accepted, declined or replaced meanwhile), amend exits 1 and says what was written,
 if anything.
 
 Exit codes: 0 amended, 1 general error (not a suggestion, changed meanwhile, or the request
-failed), 2 invalid id or flag, 3 invariant not found, 4 auth failed or refused`,
-		Example: `  konvu invariants amend 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b \
+failed), 2 invalid id or flag, 3 principle not found, 4 auth failed or refused`,
+		Example: `  konvu principles amend 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b \
     --statement "..." --why-it-matters "..." --property confidentiality --dry-run
-  konvu invariants amend 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b \
+  konvu principles amend 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b \
     --statement "..." --why-it-matters "..." --property confidentiality`,
 		Args: cobra.ExactArgs(1),
 		RunE: runInvariantsAmend,
@@ -124,7 +124,7 @@ func runInvariantsAmend(cmd *cobra.Command, args []string) error {
 			return &clierrors.CLIError{
 				Code:       "MISSING_FLAG",
 				Message:    fmt.Sprintf("--%s is required", pair[0]),
-				Suggestion: "Run 'konvu invariants amend --help' for usage.",
+				Suggestion: "Run 'konvu principles amend --help' for usage.",
 				ExitCode:   clierrors.ExitUsageError,
 			}
 		}
@@ -181,12 +181,12 @@ func confirmAmend(cmd *cobra.Command, client *api.Client, postErr error, id stri
 		reason = invariantDetail(apiErr)
 	}
 	reason = sanitizeGuardrailsBaselineText(reason)
-	recheck := fmt.Sprintf("Wait a minute, then run 'konvu invariants get %s': validated means it is active; if it is still proposed, run this amend again.", id)
+	recheck := fmt.Sprintf("Wait a minute, then run 'konvu principles get %s': validated means it is active; if it is still proposed, run this amend again.", id)
 	inv, err := client.Get(invariantPath(id), nil)
 	if err != nil {
 		return &clierrors.CLIError{
 			Code:       "AMEND_UNCONFIRMED",
-			Message:    fmt.Sprintf("the amend failed (%s) and the invariant could not be read back", reason),
+			Message:    fmt.Sprintf("the amend failed (%s) and the principle could not be read back", reason),
 			Suggestion: recheck,
 			ExitCode:   clierrors.ExitGeneralError,
 		}
@@ -199,7 +199,7 @@ func confirmAmend(cmd *cobra.Command, client *api.Client, postErr error, id stri
 			return &clierrors.CLIError{
 				Code:       "INVARIANT_CHANGED",
 				Message:    fmt.Sprintf("the amend failed (%s) and the suggestion was decided on by another reviewer before it could be confirmed", reason),
-				Suggestion: fmt.Sprintf("Run 'konvu invariants get %s' to see what was saved.", id),
+				Suggestion: fmt.Sprintf("Run 'konvu principles get %s' to see what was saved.", id),
 				ExitCode:   clierrors.ExitGeneralError,
 			}
 		}
@@ -219,7 +219,7 @@ func confirmAmend(cmd *cobra.Command, client *api.Client, postErr error, id stri
 	case invariantProposed:
 		return &clierrors.CLIError{
 			Code:       "AMEND_UNCONFIRMED",
-			Message:    fmt.Sprintf("the amend failed (%s) and the invariant is still proposed, though the request may still be running on the server", reason),
+			Message:    fmt.Sprintf("the amend failed (%s) and the principle is still proposed, though the request may still be running on the server", reason),
 			Suggestion: recheck,
 			Retryable:  true,
 			ExitCode:   clierrors.ExitGeneralError,
@@ -228,7 +228,7 @@ func confirmAmend(cmd *cobra.Command, client *api.Client, postErr error, id stri
 		return &clierrors.CLIError{
 			Code:       "INVARIANT_CHANGED",
 			Message:    fmt.Sprintf("the amend failed (%s) and the suggestion is now %s", reason, statusOrUnknown(status)),
-			Suggestion: "Run 'konvu invariants list' to check whether the rule is active under a new id.",
+			Suggestion: "Run 'konvu principles list' to check whether the principle is active under a new id.",
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	}
@@ -261,7 +261,7 @@ func invariantAmendError(err error, id string, dryRun bool) error {
 		return &clierrors.CLIError{
 			Code:       "INVARIANT_CHANGED",
 			Message:    detail,
-			Suggestion: fmt.Sprintf("The suggestion changed after it was read. Run 'konvu invariants get %s' to see where it stands.", id),
+			Suggestion: fmt.Sprintf("The suggestion changed after it was read. Run 'konvu principles get %s' to see where it stands.", id),
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	case apiErr.StatusCode == 404:
@@ -288,14 +288,14 @@ func invariantAmendError(err error, id string, dryRun bool) error {
 func newInvariantsDeclineCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "decline <id>",
-		Short: "Decline a security rule Konvu suggested",
-		Long: `Decline a proposed invariant, a security rule Konvu suggested: it is dropped, its rank is
+		Short: "Decline a principle Konvu suggested",
+		Long: `Decline a proposed principle, Konvu suggested: it is dropped, its rank is
 freed, and Konvu does not suggest it again. One already declined comes back unchanged (exit 0),
-so a decline is safe to repeat; an active or retired invariant is refused.
+so a decline is safe to repeat; an active or retired principle is refused.
 
 Exit codes: 0 declined (or already declined), 1 general error (active or retired, or the
-request failed), 2 invalid id or flag, 3 invariant not found, 4 auth failed or refused`,
-		Example: `  konvu invariants decline 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b`,
+request failed), 2 invalid id or flag, 3 principle not found, 4 auth failed or refused`,
+		Example: `  konvu principles decline 3f2a1c9e-8b7d-4e6f-9a0b-1c2d3e4f5a6b`,
 		Args:    cobra.ExactArgs(1),
 		RunE:    runInvariantsDecline,
 	}
@@ -310,8 +310,8 @@ func invariantID(arg string) (string, error) {
 	if !uuidRe.MatchString(id) {
 		return "", &clierrors.CLIError{
 			Code:       "INVALID_ARGUMENTS",
-			Message:    fmt.Sprintf("not an invariant id: %q", arg),
-			Suggestion: "Pass an id from 'konvu invariants list': a UUID.",
+			Message:    fmt.Sprintf("not a principle id: %q", arg),
+			Suggestion: "Pass an id from 'konvu principles list': a UUID.",
 			ExitCode:   clierrors.ExitUsageError,
 		}
 	}
@@ -384,7 +384,7 @@ func runInvariantsAccept(cmd *cobra.Command, args []string) error {
 		return &clierrors.CLIError{
 			Code:       "API_ERROR",
 			Message:    fmt.Sprintf("Konvu answered the accept with %d results instead of 1", len(rows)),
-			Suggestion: fmt.Sprintf("Run 'konvu invariants get %s' to see where it stands.", id),
+			Suggestion: fmt.Sprintf("Run 'konvu principles get %s' to see where it stands.", id),
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	}
@@ -415,25 +415,25 @@ func acceptOutcome(row map[string]any, id string, dryRun bool) error {
 		return &clierrors.CLIError{
 			Code:       "API_ERROR",
 			Message:    fmt.Sprintf("Konvu answered the accept with an unexpected result %q", sanitizeGuardrailsBaselineText(result)),
-			Suggestion: fmt.Sprintf("Run 'konvu invariants get %s' to see where it stands.", id),
+			Suggestion: fmt.Sprintf("Run 'konvu principles get %s' to see where it stands.", id),
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	}
 	written := "Nothing was written."
 	if !dryRun && result != "unchanged" {
-		written = "It is active now: review it with 'konvu invariants list'."
+		written = "It is active now: review it with 'konvu principles list'."
 	}
 	other := fmt.Sprintf("rank %d", intField(row, "rank"))
 	if gotID != "" {
 		other = fmt.Sprintf("id %s, %s", sanitizeGuardrailsBaselineText(gotID), other)
 	}
-	message := fmt.Sprintf("Konvu matched this wording to another invariant (%s) instead of %s", other, id)
+	message := fmt.Sprintf("Konvu matched this wording to another principle (%s) instead of %s", other, id)
 	if result == "created" {
 		verb := "was added"
 		if dryRun {
 			verb = "would be added"
 		}
-		message = fmt.Sprintf("suggestion %s was no longer open (declined, or replaced by a rule pushed at its rank or by new suggestions) when the accept reached Konvu, so its wording %s as a new active rule (%s)", id, verb, other)
+		message = fmt.Sprintf("suggestion %s was no longer open (declined, or replaced by a principle pushed at its rank or by new suggestions) when the accept reached Konvu, so its wording %s as a new active rule (%s)", id, verb, other)
 	}
 	return &clierrors.CLIError{
 		Code:       "INVARIANT_CHANGED",
@@ -484,12 +484,12 @@ func confirmAccept(cmd *cobra.Command, client *api.Client, postErr error, id str
 		reason = invariantDetail(apiErr)
 	}
 	reason = sanitizeGuardrailsBaselineText(reason)
-	recheck := fmt.Sprintf("Wait a minute, then run 'konvu invariants get %s': validated means it is active; if it is still proposed, run this accept again, which is safe to repeat.", id)
+	recheck := fmt.Sprintf("Wait a minute, then run 'konvu principles get %s': validated means it is active; if it is still proposed, run this accept again, which is safe to repeat.", id)
 	inv, err := client.Get(invariantPath(id), nil)
 	if err != nil {
 		return &clierrors.CLIError{
 			Code:       "ACCEPT_UNCONFIRMED",
-			Message:    fmt.Sprintf("the accept failed (%s) and the invariant could not be read back", reason),
+			Message:    fmt.Sprintf("the accept failed (%s) and the principle could not be read back", reason),
 			Suggestion: recheck,
 			ExitCode:   clierrors.ExitGeneralError,
 		}
@@ -512,7 +512,7 @@ func confirmAccept(cmd *cobra.Command, client *api.Client, postErr error, id str
 	case invariantProposed:
 		return &clierrors.CLIError{
 			Code:       "ACCEPT_UNCONFIRMED",
-			Message:    fmt.Sprintf("the accept failed (%s) and the invariant is still proposed, though the request may still be running on the server", reason),
+			Message:    fmt.Sprintf("the accept failed (%s) and the principle is still proposed, though the request may still be running on the server", reason),
 			Suggestion: recheck,
 			Retryable:  true,
 			ExitCode:   clierrors.ExitGeneralError,
@@ -521,7 +521,7 @@ func confirmAccept(cmd *cobra.Command, client *api.Client, postErr error, id str
 		return &clierrors.CLIError{
 			Code:       "INVARIANT_CHANGED",
 			Message:    fmt.Sprintf("the accept failed (%s) and the suggestion is now %s", reason, statusOrUnknown(status)),
-			Suggestion: "Run 'konvu invariants list' to check whether the rule is active under a new id.",
+			Suggestion: "Run 'konvu principles list' to check whether the principle is active under a new id.",
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	}
@@ -578,14 +578,14 @@ func runInvariantsDecline(cmd *cobra.Command, args []string) error {
 
 // invariantNotProposed refuses a decision on an invariant that is not, or no longer, a suggestion.
 func invariantNotProposed(verb, id, status string) error {
-	message := fmt.Sprintf("invariant %s is %s; only a proposed one can be %s", id, statusOrUnknown(status), verb)
-	suggestion := "Run 'konvu invariants list --status proposed' to see the open suggestions."
+	message := fmt.Sprintf("principle %s is %s; only a proposed one can be %s", id, statusOrUnknown(status), verb)
+	suggestion := "Run 'konvu principles list --status proposed' to see the open suggestions."
 	switch status {
 	case invariantValidated:
-		message = fmt.Sprintf("invariant %s is already active (validated), by an earlier attempt or someone else; only a proposed one can be %s", id, verb)
+		message = fmt.Sprintf("principle %s is already active (validated), by an earlier attempt or someone else; only a proposed one can be %s", id, verb)
 		suggestion = "Nothing to do. " + suggestion
 	case "retired":
-		suggestion = "It was replaced, by a rule pushed at its rank or by new suggestions: run 'konvu invariants list' and look for the same wording under a new id."
+		suggestion = "It was replaced, by a principle pushed at its rank or by new suggestions: run 'konvu principles list' and look for the same wording under a new id."
 	}
 	return &clierrors.CLIError{
 		Code:       "INVARIANT_NOT_PROPOSED",
@@ -615,8 +615,8 @@ func invariantReadError(err error, id string) error {
 func invariantNotFound(apiErr *api.APIError, id string) error {
 	return &clierrors.CLIError{
 		Code:       "INVARIANT_NOT_FOUND",
-		Message:    fmt.Sprintf("invariant %s not found: %s", id, invariantDetail(apiErr)),
-		Suggestion: "Run 'konvu invariants list' to see your company's invariants and their ids.",
+		Message:    fmt.Sprintf("principle %s not found: %s", id, invariantDetail(apiErr)),
+		Suggestion: "Run 'konvu principles list' to see your company's principles and their ids.",
 		ExitCode:   clierrors.ExitNotFound,
 	}
 }
@@ -627,7 +627,7 @@ func invariantDecisionForbidden(apiErr *api.APIError) error {
 	return &clierrors.CLIError{
 		Code:       "FORBIDDEN",
 		Message:    invariantDetail(apiErr),
-		Suggestion: "Run 'konvu whoami' to check who you are signed in as: a decision on a security rule is attributed to a person.",
+		Suggestion: "Run 'konvu whoami' to check who you are signed in as: a decision on a principle is attributed to a person.",
 		ExitCode:   clierrors.ExitAuthFailed,
 	}
 }
@@ -659,14 +659,14 @@ func invariantAcceptError(err error, id string, dryRun bool) error {
 		return &clierrors.CLIError{
 			Code:       "INVARIANT_CHANGED",
 			Message:    detail,
-			Suggestion: fmt.Sprintf("The suggestion changed after it was read. Run 'konvu invariants get %s' to see where it stands.", id),
+			Suggestion: fmt.Sprintf("The suggestion changed after it was read. Run 'konvu principles get %s' to see where it stands.", id),
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	case apiErr.StatusCode == 422:
 		return &clierrors.CLIError{
 			Code:       "INVARIANT_NOT_ACCEPTED",
 			Message:    detail,
-			Suggestion: "Konvu cannot accept this suggestion unchanged. An edited version, added with 'konvu invariants push' at the suggestion's rank, replaces it.",
+			Suggestion: "Konvu cannot accept this suggestion unchanged. An edited version, added with 'konvu principles push' at the suggestion's rank, replaces it.",
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	case apiErr.StatusCode >= 500 && dryRun:
@@ -708,7 +708,7 @@ func invariantDeclineError(err error, id string) error {
 		return &clierrors.CLIError{
 			Code:       "INVARIANT_NOT_PROPOSED",
 			Message:    detail,
-			Suggestion: "Only a suggestion (proposed) can be declined. Run 'konvu invariants list --status proposed' to see the open ones.",
+			Suggestion: "Only a suggestion (proposed) can be declined. Run 'konvu principles list --status proposed' to see the open ones.",
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	case apiErr.StatusCode >= 500:

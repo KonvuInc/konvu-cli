@@ -43,7 +43,7 @@ var skillDirs = []SkillDir{
 		EmbedName:   "konvu-onboarding",
 		InstallName: "konvu-onboarding",
 		Pitch: []string{
-			"  Konvu onboarding — write your first security rule with your agent and see",
+			"  Konvu onboarding — write your first principle with your agent and see",
 			"  how Konvu enforces it. Run it in Claude Code with: /konvu-onboarding",
 		},
 	},
@@ -51,7 +51,7 @@ var skillDirs = []SkillDir{
 		EmbedName:   "konvu-invariants",
 		InstallName: "konvu-invariants",
 		Pitch: []string{
-			"  Security rules — pick a repo and a theme, draft the rule that matters most,",
+			"  Principles — pick a repo and a theme, draft the rule that matters most,",
 			"  shape it together. Run it with: /konvu-invariants",
 		},
 	},
@@ -59,14 +59,14 @@ var skillDirs = []SkillDir{
 		EmbedName:   "konvu-upload-invariants",
 		InstallName: "konvu-upload-invariants",
 		Pitch: []string{
-			"  Save security rules you wrote to Konvu. Run it with: /konvu-upload-invariants",
+			"  Save principles you wrote to Konvu. Run it with: /konvu-upload-invariants",
 		},
 	},
 	{
 		EmbedName:   "konvu-decide-suggestions",
 		InstallName: "konvu-decide-suggestions",
 		Pitch: []string{
-			"  Decide on the security rules Konvu suggested: checked against your code,",
+			"  Decide on the principles Konvu suggested: checked against your code,",
 			"  then accepted or declined as you pick. Run it with: /konvu-decide-suggestions",
 		},
 	},
@@ -74,7 +74,7 @@ var skillDirs = []SkillDir{
 		EmbedName:   "konvu-audit-rules",
 		InstallName: "konvu-audit-rules",
 		Pitch: []string{
-			"  Audit how your code enforces your active security rules, and where it",
+			"  Audit how your code enforces your active principles, and where it",
 			"  doesn't (read-only). Run it with: /konvu-audit-rules",
 		},
 	},

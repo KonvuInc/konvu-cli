@@ -600,8 +600,8 @@ func TestInvariantsAcceptRefusesAnUploadThatLandedElsewhere(t *testing.T) {
 		{"accepted meanwhile", uploaded("unchanged", "validated"), nil, "INVARIANT_NOT_PROPOSED", "already active", "Nothing to do"},
 		{"same wording elsewhere", elsewhere, nil, "INVARIANT_CHANGED", otherInvariantID, "It is active now"},
 		{"same wording already active elsewhere", activeElsewhere, nil, "INVARIANT_CHANGED", otherInvariantID, "Nothing was written"},
-		{"unexpected result", uploaded("merged", "validated"), nil, "API_ERROR", "unexpected result", "konvu invariants get"},
-		{"no result", noRows, nil, "API_ERROR", "0 results", "konvu invariants get"},
+		{"unexpected result", uploaded("merged", "validated"), nil, "API_ERROR", "unexpected result", "konvu principles get"},
+		{"no result", noRows, nil, "API_ERROR", "0 results", "konvu principles get"},
 	} {
 		reviewServer(t, map[string][]invariantReply{
 			invariantRoute("GET"):    {{200, oneInvariant("proposed")}},
@@ -685,8 +685,8 @@ func amendArgs() []string {
 
 func TestInvariantsAmendPostsTheDecision(t *testing.T) {
 	_, calls := reviewServer(t, map[string][]invariantReply{
-		invariantRoute("GET"):              {{200, oneInvariant("proposed")}},
-		invariantRoute("POST", "/amend"):   {{200, amendedInvariant()}},
+		invariantRoute("GET"):            {{200, oneInvariant("proposed")}},
+		invariantRoute("POST", "/amend"): {{200, amendedInvariant()}},
 	})
 	out, err := runInvariants(newInvariantsAmendCmd(), append(amendArgs(), "-o", "json")...)
 	if err != nil {

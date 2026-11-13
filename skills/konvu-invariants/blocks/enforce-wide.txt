@@ -1,5 +1,5 @@
              ┌───────────────────────────────────────────┐
-             │          YOUR FIRST SECURITY RULE         │
+             │          YOUR FIRST PRINCIPLE         │
              │      write as many as you want later      │
              └───────────────────────────────────────────┘
                                    │
@@ -7,7 +7,7 @@
 ╭┄┄ once your GitHub App is plugged in ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄╮
 ┆                                                                    ┆
 ┆  Konvu audits your whole code and finds the controls that keep     ┆
-┆  your security rules true:                                         ┆
+┆  your principles true:                                         ┆
 ┆                                                                    ┆
 ┆                     ┌───────────────┐ ┌───────┐                    ┆
 ┆                     │ tenant filter │ │ vault │                    ┆

@@ -53,14 +53,14 @@ def load(folder: str) -> dict:
         sys.exit(f"Can't read {path}: {e}. Save it first, as valid JSON.")
     rules = data.get("invariants") if isinstance(data, dict) else None
     if not isinstance(rules, list) or not rules:
-        sys.exit(f"No security rule in {path}: save it first.")
+        sys.exit(f"No principle in {path}: save it first.")
     if not all(isinstance(r, dict) and str(r.get("statement", "")).strip() for r in rules):
-        sys.exit(f"Every security rule in {path} needs a statement.")
+        sys.exit(f"Every principle in {path} needs a statement.")
     return data
 
 
 def progress(step: int) -> str:
-    steps = ["context", "security rules", "enforce"]
+    steps = ["context", "principles", "enforce"]
     line = "      ".join(steps)
     starts, pos = [], 0
     for name in steps:

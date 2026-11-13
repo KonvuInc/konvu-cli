@@ -41,27 +41,27 @@ var onboardingCodePattern = regexp.MustCompile(`^[ABCDEFGHJKMNPQRSTUVWXYZ2345678
 var invariantListStatuses = []string{"all", "proposed", "validated"}
 
 var invariantsCmd = &cobra.Command{
-	Use:     "invariants",
-	Aliases: []string{"invariant"},
-	Short:   "Your company's security invariants (security rules)",
-	Long: `Security invariants are the rules your code must never break, in your own words.
+	Use:     "principles",
+	Aliases: []string{"principle", "invariants", "invariant"},
+	Short:   "Your company's security principles",
+	Long: `Security principles describe what your code must never break, in your own words.
 Konvu maps each one to the controls that keep it true and enforces it on every change.`,
 }
 
 func newInvariantsListCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "list",
-		Short: "List your company's live invariants, by rank",
-		Long: `List your company's live invariants, by rank: the ones Konvu suggested (proposed) and the
+		Short: "List your company's live principles, by rank",
+		Long: `List your company's live principles, by rank: the ones Konvu suggested (proposed) and the
 active ones (validated). --status keeps only one of the two.
 
 Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed or refused`,
-		Example: `  konvu invariants list
-  konvu invariants list --status proposed
-  konvu invariants list -o json`,
+		Example: `  konvu principles list
+  konvu principles list --status proposed
+  konvu principles list -o json`,
 		RunE: runInvariantsList,
 	}
-	c.Flags().String("status", "all", "Which invariants: proposed (suggested by Konvu), validated (active) or all")
+	c.Flags().String("status", "all", "Which principles: proposed (suggested by Konvu), validated (active) or all")
 	c.Flags().StringP("output", "o", "", "Output format: json, table")
 	return c
 }
@@ -69,8 +69,8 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed or re
 func newInvariantsGuideCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "guide",
-		Short: "Print Konvu's guide to writing a good security rule",
-		Long: `Print Konvu's guide to writing a good security rule: what one is, the right level of
+		Short: "Print Konvu's guide to writing a good principle",
+		Long: `Print Konvu's guide to writing a good principle: what one is, the right level of
 detail, and how to rank candidates. Konvu's own suggestions follow the same text.
 
 The guide prints as Markdown, even when piped. -o json prints {"guide", "version"}; the
@@ -78,8 +78,8 @@ version changes whenever the guide does.
 
 Exit codes: 0 success, 1 general error (this Konvu server has no guide yet, or the request
 failed), 2 invalid --output, 4 auth failed or refused`,
-		Example: `  konvu invariants guide
-  konvu invariants guide -o json`,
+		Example: `  konvu principles guide
+  konvu principles guide -o json`,
 		Args: cobra.NoArgs,
 		RunE: runInvariantsGuide,
 	}
@@ -90,11 +90,11 @@ failed), 2 invalid --output, 4 auth failed or refused`,
 func newInvariantsPushCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "push",
-		Short: "Add the invariants you wrote",
-		Long: `Add invariants from --file (or stdin with '-'), as validated and attributed to you.
+		Short: "Add the principles you wrote",
+		Long: `Add principles from --file (or stdin with '-'), as validated and attributed to you.
 
-The file is a JSON array of invariants, or an object with an "invariants" array (1 to 10).
-Each invariant accepts:
+The file is a JSON array of principles, or an object with an "invariants" array (1 to 10).
+Each principle accepts:
   statement        (required) the rule, at most 200 characters
   why_it_matters   (required) at most 500 characters
   property         (required) authentication, authorization, confidentiality,
@@ -103,7 +103,7 @@ Each invariant accepts:
   repository       the repository it was written for, as owner/name like acme/api (its git
                    remote's owner and name). Logged in, the CLI sends the id of your Konvu
                    repository of that name instead; if none or more than one matches, the
-                   lookup fails, or Konvu has not mapped it yet, the invariant goes without
+                   lookup fails, or Konvu has not mapped it yet, the principle goes without
                    a repository, with a warning on stderr
   repository_id    the Konvu repository's id; it wins over repository (not with --onboarding)
   protected_assets [{"kind": "...", "name": "..."}], at most 20
@@ -125,16 +125,16 @@ and moves into your account when you create it. The code is only ever taken from
 this flag: without it, push is the normal logged-in push. If that onboarding already has an
 account, or the code expired, run 'konvu login', then push again without --onboarding.
 
-Exit codes: 0 success, 1 general error, 2 invalid invariants or onboarding code, 3 repository_id
+Exit codes: 0 success, 1 general error, 2 invalid principles or onboarding code, 3 repository_id
 not found (with --onboarding: the code is unknown or expired), 4 auth failed or refused (with
 --onboarding: the onboarding already has an account, or Konvu refused the code)`,
-		Example: `  konvu invariants push --file invariants.json --dry-run
-  konvu invariants push --file invariants.json
-  cat invariants.json | konvu invariants push --file -
-  konvu invariants push --file invariants.json --onboarding K7P2XQ9M`,
+		Example: `  konvu principles push --file invariants.json --dry-run
+  konvu principles push --file invariants.json
+  cat invariants.json | konvu principles push --file -
+  konvu principles push --file invariants.json --onboarding K7P2XQ9M`,
 		RunE: runInvariantsPush,
 	}
-	c.Flags().String("file", "", "JSON file of invariants, or '-' for stdin")
+	c.Flags().String("file", "", "JSON file of principles, or '-' for stdin")
 	c.Flags().Bool("dry-run", false, "Check on the server without writing anything")
 	c.Flags().String("onboarding", "", "8-character onboarding code from Konvu's web onboarding (like K7P2XQ9M): save without a login")
 	c.Flags().StringP("output", "o", "", "Output format: json, table")
@@ -216,7 +216,7 @@ func runInvariantsGuide(cmd *cobra.Command, args []string) error {
 	if strings.TrimSpace(guide) == "" {
 		return &clierrors.CLIError{
 			Code:       "GUIDE_EMPTY",
-			Message:    "Konvu sent no security rule guide",
+			Message:    "Konvu sent no principle guide",
 			Suggestion: "Run the same command again; if it still fails, contact Konvu support.",
 			Retryable:  true,
 			ExitCode:   clierrors.ExitGeneralError,
@@ -251,7 +251,7 @@ func invariantsGuideError(err error) error {
 	if errors.As(err, &apiErr) && (apiErr.StatusCode == 404 || apiErr.StatusCode == 422) {
 		return &clierrors.CLIError{
 			Code:       "GUIDE_NOT_AVAILABLE",
-			Message:    "this Konvu server does not have the security rule guide yet",
+			Message:    "this Konvu server does not have the principle guide yet",
 			Suggestion: "The guide comes with a newer Konvu server: try again once yours is updated, or contact Konvu support.",
 			ExitCode:   clierrors.ExitGeneralError,
 		}
@@ -275,7 +275,7 @@ func runInvariantsPush(cmd *cobra.Command, args []string) error {
 		return &clierrors.CLIError{
 			Code:       "MISSING_FILE",
 			Message:    "--file is required",
-			Suggestion: "Pass a JSON file of invariants, or '-' to read stdin.",
+			Suggestion: "Pass a JSON file of principles, or '-' to read stdin.",
 			ExitCode:   clierrors.ExitUsageError,
 		}
 	}
@@ -284,7 +284,7 @@ func runInvariantsPush(cmd *cobra.Command, args []string) error {
 		return &clierrors.CLIError{
 			Code:       "INVALID_FILE",
 			Message:    err.Error(),
-			Suggestion: "Run 'konvu invariants push --help' for the expected format.",
+			Suggestion: "Run 'konvu principles push --help' for the expected format.",
 			ExitCode:   clierrors.ExitUsageError,
 		}
 	}
@@ -320,7 +320,7 @@ func runInvariantsPush(cmd *cobra.Command, args []string) error {
 			body["invariants"] = invariants
 			if resp, err = client.Post(invariantsPath, body); err == nil {
 				for _, name := range distinctNames(lookedUp) {
-					warnf(cmd.ErrOrStderr(), "Konvu has not mapped repository %s yet, so its invariants go without a repository.", name)
+					warnf(cmd.ErrOrStderr(), "Konvu has not mapped repository %s yet, so its principles go without a repository.", name)
 				}
 			}
 		}
@@ -397,7 +397,7 @@ func readInvariantsFile(path string) ([]any, error) {
 			return items, nil
 		}
 	}
-	return nil, errors.New(`expected a non-empty JSON array of invariants, or {"invariants": [...]}`)
+	return nil, errors.New(`expected a non-empty JSON array of principles, or {"invariants": [...]}`)
 }
 
 // invariantsListError maps a failed read: no session or a refused caller (exit 4), anything
@@ -450,14 +450,14 @@ func invariantsPushError(err error, invariants []any) error {
 		return &clierrors.CLIError{
 			Code:       "FORBIDDEN",
 			Message:    detail,
-			Suggestion: "Run 'konvu whoami' to check who you are signed in as: pushed invariants are attributed to a person.",
+			Suggestion: "Run 'konvu whoami' to check who you are signed in as: pushed principles are attributed to a person.",
 			ExitCode:   clierrors.ExitAuthFailed,
 		}
 	case apiErr.StatusCode == 409:
 		return &clierrors.CLIError{
 			Code:       "INVARIANT_RANK_UNAVAILABLE",
 			Message:    detail,
-			Suggestion: "Run 'konvu invariants list' to see the ranks in use, then push again with a free rank or none.",
+			Suggestion: "Run 'konvu principles list' to see the ranks in use, then push again with a free rank or none.",
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	case apiErr.StatusCode == 404 && anyRepositoryID(invariants):
@@ -471,7 +471,7 @@ func invariantsPushError(err error, invariants []any) error {
 		return &clierrors.CLIError{
 			Code:       "INVALID_INVARIANTS",
 			Message:    detail,
-			Suggestion: "Run 'konvu invariants push --help' for the expected format.",
+			Suggestion: "Run 'konvu principles push --help' for the expected format.",
 			ExitCode:   clierrors.ExitUsageError,
 		}
 	case apiErr.StatusCode >= 500:
@@ -516,18 +516,18 @@ var repositoryNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]
 func checkOnboardingInvariants(invariants []any) error {
 	var problems []string
 	if len(invariants) > maxInvariantsPerPush {
-		problems = append(problems, fmt.Sprintf("%d invariants, at most %d per push", len(invariants), maxInvariantsPerPush))
+		problems = append(problems, fmt.Sprintf("%d principles, at most %d per push", len(invariants), maxInvariantsPerPush))
 	}
 	statements, ranks := map[string]int{}, map[int]int{}
 	for i, item := range invariants {
 		n := i + 1
 		m, ok := item.(map[string]any)
 		if !ok {
-			problems = append(problems, fmt.Sprintf("invariant %d is not an object", n))
+			problems = append(problems, fmt.Sprintf("principle %d is not an object", n))
 			continue
 		}
 		problem := func(format string, args ...any) {
-			problems = append(problems, fmt.Sprintf("invariant %d: ", n)+fmt.Sprintf(format, args...))
+			problems = append(problems, fmt.Sprintf("principle %d: ", n)+fmt.Sprintf(format, args...))
 		}
 		keys := make([]string, 0, len(m))
 		for key := range m {
@@ -545,7 +545,7 @@ func checkOnboardingInvariants(invariants []any) error {
 		if statement, err := invariantText(m["statement"], "statement", maxStatementChars); err != "" {
 			problem("%s", err)
 		} else if first, dup := statements[statementKey(statement)]; dup {
-			problem("same statement as invariant %d", first)
+			problem("same statement as principle %d", first)
 		} else {
 			statements[statementKey(statement)] = n
 		}
@@ -560,7 +560,7 @@ func checkOnboardingInvariants(invariants []any) error {
 			if !ok || rank != math.Trunc(rank) || rank < 1 || rank > maxInvariantRank {
 				problem("rank must be a whole number from 1 to %d", maxInvariantRank)
 			} else if first, dup := ranks[int(rank)]; dup {
-				problem("same rank as invariant %d", first)
+				problem("same rank as principle %d", first)
 			} else {
 				ranks[int(rank)] = n
 			}
@@ -581,14 +581,14 @@ func checkOnboardingInvariants(invariants []any) error {
 	return &clierrors.CLIError{
 		Code:       "INVALID_INVARIANTS",
 		Message:    strings.Join(problems, "; "),
-		Suggestion: "Nothing was sent. Fix the file and push again; 'konvu invariants push --help' lists the fields.",
+		Suggestion: "Nothing was sent. Fix the file and push again; 'konvu principles push --help' lists the fields.",
 		ExitCode:   clierrors.ExitUsageError,
 	}
 }
 
 // protectedAssetProblems checks protected_assets: a list of at most 20 {kind, name}.
 func protectedAssetProblems(value any, n int) []string {
-	prefix := fmt.Sprintf("invariant %d: protected_assets", n)
+	prefix := fmt.Sprintf("principle %d: protected_assets", n)
 	assets, ok := value.([]any)
 	if !ok {
 		return []string{prefix + ` must be a list of {"kind", "name"}`}
@@ -671,7 +671,7 @@ func withRepositoryIDs(stderr io.Writer, client *api.Client, invariants []any) (
 		name, _ := value.(string)
 		name = strings.TrimSpace(name)
 		if len(name) > maxRepositoryChars || !repositoryNamePattern.MatchString(name) {
-			warnf(stderr, "invariant %d's repository is not owner/name (like acme/api), so it goes without a repository.", i+1)
+			warnf(stderr, "principle %d's repository is not owner/name (like acme/api), so it goes without a repository.", i+1)
 			continue
 		}
 		wanted[i] = name
@@ -699,15 +699,15 @@ func withRepositoryIDs(stderr io.Writer, client *api.Client, invariants []any) (
 		warned[key] = true
 		switch {
 		case lookupErr != nil:
-			warnf(stderr, "could not look up Konvu repository %s (%s), so its invariants go without a repository.", name, lookupReason(lookupErr))
+			warnf(stderr, "could not look up Konvu repository %s (%s), so its principles go without a repository.", name, lookupReason(lookupErr))
 		case len(matches) == 0:
-			warnf(stderr, "none of your Konvu repositories is %s, so its invariants go without a repository.", name)
+			warnf(stderr, "none of your Konvu repositories is %s, so its principles go without a repository.", name)
 		default:
 			found := make([]string, len(matches))
 			for j, match := range matches {
 				found[j] = match.label + " (id " + match.id + ")"
 			}
-			warnf(stderr, "%d Konvu repositories are %s (%s), so its invariants go without a repository: set repository_id to the one you mean.", len(matches), name, strings.Join(found, ", "))
+			warnf(stderr, "%d Konvu repositories are %s (%s), so its principles go without a repository: set repository_id to the one you mean.", len(matches), name, strings.Join(found, ", "))
 		}
 	}
 	return sent, lookedUp
@@ -882,7 +882,7 @@ func onboardingSummary(invariants []any, resp map[string]any, dryRun bool) (map[
 		}
 	}
 	if len(results) != len(invariants) {
-		return nil, mismatch(fmt.Sprintf("Konvu answered %d results for %d invariants", len(results), len(invariants)))
+		return nil, mismatch(fmt.Sprintf("Konvu answered %d results for %d principles", len(results), len(invariants)))
 	}
 	rows := make([]any, 0, len(invariants))
 	for i, item := range invariants {
@@ -890,7 +890,7 @@ func onboardingSummary(invariants []any, resp map[string]any, dryRun bool) (map[
 		answer, _ := results[i].(map[string]any)
 		result := getStr(answer, "result")
 		if result == "" {
-			return nil, mismatch(fmt.Sprintf("Konvu sent no result for invariant %d", i+1))
+			return nil, mismatch(fmt.Sprintf("Konvu sent no result for principle %d", i+1))
 		}
 		statement, _ := sent["statement"].(string)
 		row := map[string]any{"rank": sent["rank"], "statement": strings.TrimSpace(statement), "result": result}
@@ -1025,7 +1025,7 @@ func onboardingPushError(err error, code *onboardingCode) error {
 		return &clierrors.CLIError{
 			Code:       "INVALID_INVARIANTS",
 			Message:    detail,
-			Suggestion: "Run 'konvu invariants push --help' for the expected format.",
+			Suggestion: "Run 'konvu principles push --help' for the expected format.",
 			ExitCode:   clierrors.ExitUsageError,
 		}
 	case apiErr.StatusCode == 429:
