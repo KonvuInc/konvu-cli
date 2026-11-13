@@ -1,7 +1,7 @@
-<!-- Copy of KonvuTeam/konvu-guardrails backend/services/invariant_proposal/guide.md (main @ 79b3b0c): change both together. Everything below this line is that file, unchanged. -->
-## What a security rule is
+<!-- Copy of KonvuTeam/konvu-guardrails backend/services/invariant_proposal/guide.md (main @ 79b3b0c): change both together. Terminology adapted for the CLI. -->
+## What a principle is
 
-A security rule is one sentence about the product that must always be true, written in the
+A principle is one sentence about the product that must always be true, written in the
 business's words, that the code can be checked against. Konvu's proposal engine calls it an
 invariant. It must be:
 - **A promise, not a mechanism.** "A customer never sees another customer's invoices", not "every
@@ -18,7 +18,7 @@ invariant. It must be:
 - **Security, not correctness.** When it breaks, someone gets access, data, credentials or control
   they should not have: another customer, an outsider, an agent acting on untrusted input. A wrong
   verdict, a double charge, a stale cache, a size limit or an incompatible version is a bug, not a
-  security rule, even under the `integrity` property. Drop it. The same goes for one whose
+  principle, even under the `integrity` property. Drop it. The same goes for one whose
   breaking only makes the product stricter or stop working (a stale rule that still blocks, a
   revoked credential still applied as a restriction): that fails safe.
 - **Short and plain.** Under 110 characters: one subject, one verb, one condition. Use the words the

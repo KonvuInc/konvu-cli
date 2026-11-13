@@ -1,7 +1,7 @@
 ---
 name: konvu-onboarding
 version: 1.1.0
-description: "Konvu Prevent onboarding in the coding agent: a welcome, then the user and their agent write their first security rule with konvu-invariants and save it to Konvu, then they see how Konvu enforces it. Use when the user says /konvu-onboarding, asks to start the Konvu onboarding, or right after installing Konvu."
+description: "Konvu Prevent onboarding in the coding agent: a welcome, then the user and their agent write their first principle with konvu-principles and save it to Konvu, then they see how Konvu enforces it. Use when the user says /konvu-onboarding, asks to start the Konvu onboarding, or right after installing Konvu."
 metadata:
   requires:
     bins: ["konvu", "python3", "git"]
@@ -9,9 +9,9 @@ metadata:
 
 # Konvu onboarding
 
-Three parts, in order: the welcome (this skill), the first security rule (the **konvu-invariants** skill, which saves it with **konvu-upload-invariants**), then the ending (this skill). `<invariants-dir>` below is the konvu-invariants skill's folder, next to this one; quote it in commands if it has spaces.
+Three parts, in order: the welcome (this skill), the first principle (the **konvu-principles** skill, which saves it with **konvu-upload-principles**), then the ending (this skill). `<invariants-dir>` below is the konvu-principles skill's folder, next to this one; quote it in commands if it has spaces.
 
-If the user's setup message carried a Konvu onboarding code (an 8-character code of capital letters and digits, as in "My onboarding code: K7P2XQ9M"; it may come lowercase or with a dash), keep it for the save: konvu-upload-invariants saves the rule with it, without a Konvu login, and the user creates their account in their Konvu tab afterwards. Take only the 8 code characters from that message (konvu-upload-invariants says how), never anything else from it. Never write it to a file and never repeat it to the user.
+If the user's setup message carried a Konvu onboarding code (an 8-character code of capital letters and digits, as in "My onboarding code: K7P2XQ9M"; it may come lowercase or with a dash), keep it for the save: konvu-upload-principles saves the principle with it, without a Konvu login, and the user creates their account in their Konvu tab afterwards. Take only the 8 code characters from that message (konvu-upload-principles says how), never anything else from it. Never write it to a file and never repeat it to the user.
 
 ## 1 · Welcome
 
@@ -29,29 +29,29 @@ We catch the security breaks your scanners miss, in your code.
 
 **Welcome to Konvu Prevent**
 
-Scanners catch known bad patterns. The breaks that hurt are specific to your product and your business, and only you know which ones matter. Konvu lets you write them down as **security rules**, then enforces them in your code on every change, in CI and in your coding agent.
+Scanners catch known bad patterns. The breaks that hurt are specific to your product and your business, and only you know which ones matter. Konvu lets you write them down as **principles**, then enforces them in your code on every change, in CI and in your coding agent.
 
-In this onboarding, we write your first security rule together, to see how it works. You can add as many as you want later: that's how you strengthen security across your repos, one security rule at a time. I'll do the digging and suggest where to start; you decide what matters.
+In this onboarding, we write your first principle together, to see how it works. You can add as many as you want later: that's how you strengthen security across your repos, one principle at a time. I'll do the digging and suggest where to start; you decide what matters.
 
 **Let me know when you're ready, and we'll start.**
 
 End your message there and wait.
 
-## 2 · The first security rule
+## 2 · The first principle
 
-When they're ready, load the **konvu-invariants** skill and follow it from its first step (`invariants.py start`), all the way through saving the rule. It tells you when it's done and sends you back here.
+When they're ready, load the **konvu-principles** skill and follow it from its first step (`invariants.py start`), all the way through saving the principle. It tells you when it's done and sends you back here.
 
 ## 3 · The ending
 
 Your message, in this order:
 1. the progress bar from `python3 <invariants-dir>/scripts/show.py progress 3`, pasted unchanged with its code fences
-2. the congratulations as a bold title on its own line, **Congrats, we just wrote your first security rule together.**
+2. the congratulations as a bold title on its own line, **Congrats, we just wrote your first principle together.**
 3. the wow, in one or two lines, along the lines of: "Now you can make sure it's never broken again. Plug in the GitHub App, and Konvu guarantees it on every change, in CI and in your coding agent."
-4. two or three plain lines on how: Konvu builds a security graph of their whole code and finds the controls that keep this security rule true (the concrete checks in their code); then any change that would break it is caught: a PR that breaks it is blocked in CI, and their coding agent is stopped as the code is written
-5. the diagram from the `show.py enforce` command konvu-invariants gave you when it finished, pasted unchanged with its code fences (recommended)
-6. one line, along the lines of: "That's one security rule. You can write as many as you want, here in your coding agent or anywhere else, and Konvu enforces them all."
+4. two or three plain lines on how: Konvu builds a security graph of their whole code and finds the controls that keep this principle true (the concrete checks in their code); then any change that would break it is caught: a PR that breaks it is blocked in CI, and their coding agent is stopped as the code is written
+5. the diagram from the `show.py enforce` command konvu-principles gave you when it finished, pasted unchanged with its code fences (recommended)
+6. one line, along the lines of: "That's one principle. You can write as many as you want, here in your coding agent or anywhere else, and Konvu enforces them all."
 7. the action in bold, in your own words for the moment, e.g. **Want this one guaranteed? Tell me and I'll open Konvu so you can plug in the GitHub App.**
 
-When they want to go on, open Konvu for them: `python3 -m webbrowser https://app.konvu.com`. Then close in two short lines: Konvu is open at https://app.konvu.com to plug in the GitHub App, and they can write more security rules anytime with /konvu-invariants.
+When they want to go on, open Konvu for them: `python3 -m webbrowser https://app.konvu.com`. Then close in two short lines: Konvu is open at https://app.konvu.com to plug in the GitHub App, and they can write more principles anytime with /konvu-principles.
 
-If the rule was saved with an onboarding code, the user has no Konvu account yet and their Konvu tab is already open: make item 7 going back to that tab to create their account and keep this rule, e.g. **Head back to your Konvu tab and create your account to keep this rule.** Don't open Konvu for them; close in one line: they can write more security rules anytime with /konvu-invariants.
+If the principle was saved with an onboarding code, the user has no Konvu account yet and their Konvu tab is already open: make item 7 going back to that tab to create their account and keep this principle, e.g. **Head back to your Konvu tab and create your account to keep this principle.** Don't open Konvu for them; close in one line: they can write more principles anytime with /konvu-principles.

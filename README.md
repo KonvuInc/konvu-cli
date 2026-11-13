@@ -652,45 +652,45 @@ Inventory navigation uses the same pattern as findings: Up/Down selects a reposi
 
 For hosted profiles, `show` exits 3 (not found) when the repository has not been mapped in Konvu yet. Its Threat Profile appears after mapping. The `threat_profile_tier` field is a stable slug (`crown_jewel`, `key_asset`, `standard`, `peripheral`); `threat_profile_tier_label` carries the human-readable version.
 
-### `konvu invariants` — Your security rules
+### `konvu principles` — Your principles
 
-Security invariants are the rules your code must never break, written in your words. Konvu maps each one to the controls in your code that keep it true and enforces it on every change. Aliased as `konvu invariant`.
+Principles are the rules your code must never break, written in your words. Konvu maps each one to the controls in your code that keep it true and enforces it on every change. The old `konvu invariants` command remains an alias.
 
 ```bash
-# Your company's live invariants, by rank: Konvu's suggestions (proposed) and the active ones (validated)
-konvu invariants list
-konvu invariants list --status proposed
+# Your company's live principles, by rank: Konvu's suggestions (proposed) and the active ones (validated)
+konvu principles list
+konvu principles list --status proposed
 
-# Konvu's guide to a good security rule, as Markdown: what one is, the right level of detail, how to rank them
-konvu invariants guide
-konvu invariants guide -o json
+# Konvu's guide to a good principle, as Markdown: what one is, the right level of detail, how to rank them
+konvu principles guide
+konvu principles guide -o json
 
-# One invariant: its controls with their code anchors, and how Konvu steered coding agents with it
-konvu invariants get <id>
-konvu invariants get <id> -o json
+# One principle: its controls with their code anchors, and how Konvu steered coding agents with it
+konvu principles get <id>
+konvu principles get <id> -o json
 
 # Add the ones you wrote: check on the server first, then write
-konvu invariants push --file invariants.json --dry-run
-konvu invariants push --file invariants.json
+konvu principles push --file invariants.json --dry-run
+konvu principles push --file invariants.json
 
 # No login yet: save them with the code from Konvu's web onboarding, then create your account in the browser
-konvu invariants push --file invariants.json --onboarding K7P2XQ9M
+konvu principles push --file invariants.json --onboarding K7P2XQ9M
 
 # Decide on a suggestion: accept it (it becomes active, attributed to you) or decline it
-konvu invariants accept <id> --dry-run
-konvu invariants accept <id>
-konvu invariants decline <id>
+konvu principles accept <id> --dry-run
+konvu principles accept <id>
+konvu principles decline <id>
 ```
 
-`<id>` is an invariant's UUID, as `konvu invariants list` prints it (with or without dashes, any case); anything else exits 2 before any request. `list` exits 2 for an unknown `--status`, 4 when you are not signed in or your login has no company, 1 when the request failed. `get` exits 3 when the id is not one of your company's invariants, 4 when you are not signed in or your login has no company, 1 when the request failed.
+`<id>` is a principle's UUID, as `konvu principles list` prints it (with or without dashes, any case); anything else exits 2 before any request. `list` exits 2 for an unknown `--status`, 4 when you are not signed in or your login has no company, 1 when the request failed. `get` exits 3 when the id is not one of your company's principles, 4 when you are not signed in or your login has no company, 1 when the request failed.
 
-`guide` prints the same guide Konvu's own suggestions follow, as Markdown even when piped; `-o json` prints `{"guide", "version"}`, and the version changes whenever the guide does. The `/konvu-invariants` skill bundles a copy of this guide and drafts by it, so it needs no login until the rule is saved. It exits 4 when you are not signed in or your login has no company, 2 for an `-o` other than `markdown` or `json`, 1 when the Konvu server does not have the guide yet or the request failed.
+`guide` prints the same guide Konvu's own suggestions follow, as Markdown even when piped; `-o json` prints `{"guide", "version"}`, and the version changes whenever the guide does. The `/konvu-principles` skill bundles a copy of this guide and drafts by it, so it needs no login until the principle is saved. It exits 4 when you are not signed in or your login has no company, 2 for an `-o` other than `markdown` or `json`, 1 when the Konvu server does not have the guide yet or the request failed.
 
-`accept` sends a `proposed` invariant unchanged, and it keeps its rank; to change its wording first, push the edited rule at the suggestion's rank instead, which replaces it. Only a suggestion is accepted: when it stopped being one before the accept reached Konvu (accepted, declined or replaced meanwhile), `accept` exits 1 and says what was written, if anything. When the server fails, `accept` reads the invariant back: `validated` means it is active (`"mapping_pending": true` in JSON: its mapping to controls may wait for the next code analysis or rule change, nothing to repeat); still `proposed` means not accepted yet, though the request may still be running, so check with `get` before repeating it. `decline` drops a `proposed` invariant for good; one already declined exits 0, so repeating it is safe. Exit codes for both: 1 when the invariant is not a suggestion (`accept`: already active, declined or retired; `decline`: active or retired), changed meanwhile, cannot be accepted unchanged (`accept`: the server refused its text; push an edited version instead), or the request failed; 2 for a malformed id; 3 when it is not one of your company's invariants; 4 when you are not signed in, or not as a person.
+`accept` sends a `proposed` principle unchanged, and it keeps its rank; to change its wording first, push the edited principle at the suggestion's rank instead, which replaces it. Only a suggestion is accepted: when it stopped being one before the accept reached Konvu (accepted, declined or replaced meanwhile), `accept` exits 1 and says what was written, if anything. When the server fails, `accept` reads the principle back: `validated` means it is active (`"mapping_pending": true` in JSON: its mapping to controls may wait for the next code analysis or rule change, nothing to repeat); still `proposed` means not accepted yet, though the request may still be running, so check with `get` before repeating it. `decline` drops a `proposed` principle for good; one already declined exits 0, so repeating it is safe. Exit codes for both: 1 when the principle is not a suggestion (`accept`: already active, declined or retired; `decline`: active or retired), changed meanwhile, cannot be accepted unchanged (`accept`: the server refused its text; push an edited version instead), or the request failed; 2 for a malformed id; 3 when it is not one of your company's principles; 4 when you are not signed in, or not as a person.
 
-`push` reads a JSON array (or `{"invariants": [...]}`) of 1 to 10 invariants, each with `statement`, `why_it_matters` and `property`, and optionally `rank`, `repository`, `repository_id` and `protected_assets`; `konvu invariants push --help` lists the fields. `repository` is the repository the rule was written for, as `owner/name` (like `acme/api`): logged in, the CLI sends the id of your Konvu repository of that name instead, and a name that matches none or more than one, a failed lookup, or a repository Konvu has not mapped yet sends the invariant without a repository, with a warning on stderr. An explicit `repository_id` wins over `repository`. They are stored as validated and attributed to you. A statement already live comes back `unchanged` (or `validated` if it was a proposal), keeping its repository, so a push is safe to repeat. Exit codes: 2 when the invariants are malformed, 3 when `repository_id` is not one of your repositories, 4 when you are not signed in as a person, 1 when a rank is unavailable or the request failed (run the same push again: it is safe to repeat).
+`push` reads a JSON array (or `{"invariants": [...]}`) of 1 to 10 principles, each with `statement`, `why_it_matters` and `property`, and optionally `rank`, `repository`, `repository_id` and `protected_assets`; `konvu principles push --help` lists the fields. `repository` is the repository the principle was written for, as `owner/name` (like `acme/api`): logged in, the CLI sends the id of your Konvu repository of that name instead, and a name that matches none or more than one, a failed lookup, or a repository Konvu has not mapped yet sends the principle without a repository, with a warning on stderr. An explicit `repository_id` wins over `repository`. They are stored as validated and attributed to you. A statement already live comes back `unchanged` (or `validated` if it was a proposal), keeping its repository, so a push is safe to repeat. Exit codes: 2 when the principles are malformed, 3 when `repository_id` is not one of your repositories, 4 when you are not signed in as a person, 1 when a rank is unavailable or the request failed (run the same push again: it is safe to repeat).
 
-`push --onboarding <code>` needs no login: it saves the invariants to the Konvu web onboarding that gave you the code (8 capital letters and digits, like `K7P2XQ9M`; any case, and spaces and dashes are ignored, so `k7p2-xq9m` is the same code), and they move into your account when you create it in the browser. It never reads or sends your login token. Konvu keeps the invariants unread until you sign up, so the CLI checks them first, as Konvu will then (required fields, lengths, `property`, `rank`, at most 20 `protected_assets`, no unknown fields, no duplicate statements or ranks), and sends nothing if one is off. `repository_id` is refused, since there is no account yet; name the repository in `repository` instead, as `owner/name` (like `acme/api`). A dry run names the company the onboarding belongs to ("Saves to the Konvu onboarding for acme.com", `domain` in JSON) and fails if Konvu names none: check it is yours before saving, since the code decides who gets the rules. Redirects are never followed (a 3xx is an error), so the code and the rules reach no other server. The code is only ever taken from the flag (there is no environment variable for it), so without `--onboarding` a push is always the normal logged-in one. Each comes back `saved` (`valid` on a dry run) or `unchanged`. Errors show at most its first 2 characters. Exit codes: 2 when the code or the invariants are malformed, 3 when the code is unknown or expired, 4 when that onboarding already has an account or Konvu refused the code, 1 when rate limited or the request failed. After a 409 or an expired code, run `konvu login`, then push again without `--onboarding`.
+`push --onboarding <code>` needs no login: it saves the principles to the Konvu web onboarding that gave you the code (8 capital letters and digits, like `K7P2XQ9M`; any case, and spaces and dashes are ignored, so `k7p2-xq9m` is the same code), and they move into your account when you create it in the browser. It never reads or sends your login token. Konvu keeps the principles unread until you sign up, so the CLI checks them first, as Konvu will then (required fields, lengths, `property`, `rank`, at most 20 `protected_assets`, no unknown fields, no duplicate statements or ranks), and sends nothing if one is off. `repository_id` is refused, since there is no account yet; name the repository in `repository` instead, as `owner/name` (like `acme/api`). A dry run names the company the onboarding belongs to ("Saves to the Konvu onboarding for acme.com", `domain` in JSON) and fails if Konvu names none: check it is yours before saving, since the code decides who gets the principles. Redirects are never followed (a 3xx is an error), so the code and the principles reach no other server. The code is only ever taken from the flag (there is no environment variable for it), so without `--onboarding` a push is always the normal logged-in one. Each comes back `saved` (`valid` on a dry run) or `unchanged`. Errors show at most its first 2 characters. Exit codes: 2 when the code or the principles are malformed, 3 when the code is unknown or expired, 4 when that onboarding already has an account or Konvu refused the code, 1 when rate limited or the request failed. After a 409 or an expired code, run `konvu login`, then push again without `--onboarding`.
 
 ### `konvu skills path` — Locate bundled skills
 
@@ -769,13 +769,13 @@ konvu skills install
 
 Skills are installed to `~/.claude/skills/` where Claude Code discovers them automatically — no configuration needed.
 
-Security rules (invariants) and PR checks come as these skills:
+Principles and PR checks come as these skills:
 
-- `/konvu-onboarding` — a short welcome, then your first security rule with `konvu-invariants`, then how Konvu enforces it; it asks you to log in only when the rule is saved
-- `/konvu-invariants` — pick a repo and a theme, draft the rule that matters most by Konvu's guide (bundled with the skill), shape it together, then save it; `konvu login` is needed only for that save
-- `/konvu-upload-invariants` — save security rules you wrote with `konvu invariants push`, after a server-side dry run; this is where it asks you to log in, if you aren't yet, unless your setup message carried a code from Konvu's web onboarding: then it saves with that code, no login, and you create your account in the browser
+- `/konvu-onboarding` — a short welcome, then your first principle with `konvu-principles`, then how Konvu enforces it; it asks you to log in only when the principle is saved
+- `/konvu-principles` — pick a repo and a theme, draft the principle that matters most by Konvu's guide (bundled with the skill), shape it together, then save it; `konvu login` is needed only for that save
+- `/konvu-upload-principles` — save principles you wrote with `konvu principles push`, after a server-side dry run; this is where it asks you to log in, if you aren't yet, unless your setup message carried a code from Konvu's web onboarding: then it saves with that code, no login, and you create your account in the browser
 - `/konvu-decide-suggestions` — go through the rules Konvu suggested, checked against your code, then accept or decline the ones you pick
-- `/konvu-audit-rules` — read-only audit of your active rules (all, or the ids you give): where each is enforced, its gaps, agent steering and PR check outcomes
+- `/konvu-audit-principles` — read-only audit of your active rules (all, or the ids you give): where each is enforced, its gaps, agent steering and PR check outcomes
 - `/konvu-review-pr-checks` — read-only review of what Konvu's PR check found, on every analyzed PR or on one PR URL
 - `/konvu-catalog` — explore and fix your products, apps and components, with a dry run before any change
 

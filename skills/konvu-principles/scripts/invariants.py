@@ -7,8 +7,8 @@
   invariants.py done <run> repo <path>   the user picked this repo
   invariants.py done <run> direction <text>
                                          the user picked where to start in it
-  invariants.py done <run> rules         the security rule is saved and the user is happy with it
-  invariants.py done <run> upload        konvu-upload-invariants reported it was added
+  invariants.py done <run> rules         the principle is saved and the user is happy with it
+  invariants.py done <run> upload        konvu-upload-principles reported it was added
 
 Each run (one conversation) keeps its progress and files in ~/.konvu/invariants/runs/<run>/, so two
 conversations never share a step or a rule. The repo ranking in ~/.konvu/invariants/repos.json is shared
@@ -39,7 +39,7 @@ STEPS = ["repo", "direction", "rules", "upload"]
 RUN_ID = re.compile(r"\d{8}-[0-9a-f]{8}")
 
 FINISHED = (
-    "The security rule is written and uploaded. If konvu-onboarding brought you here, go back to it for its "
+    "The principle is written and uploaded. If konvu-onboarding brought you here, go back to it for its "
     "last step now; its diagram command is `{show} enforce {dir_q}`. Otherwise close in one line: it is saved "
     "in Konvu, which maps it to the controls in their code once the GitHub App is plugged in, and they can "
     "write more anytime (saved with an onboarding code: it waits in their Konvu tab until they create their "
@@ -131,8 +131,8 @@ def render(progress: dict[str, str]) -> str:
     finish = {
         "repo": f"the user picks a repo: run {done} repo \"<its path>\"`",
         "direction": f"the user picks where to start: run {done} direction \"<the direction, in a few words>\"`",
-        "rules": f"the user is happy with their security rule (sounds good, yes, looks right, or anything that means it): run {done} rules`",
-        "upload": f"konvu-upload-invariants reports the rule was added: run {done} upload`",
+        "rules": f"the user is happy with their principle (sounds good, yes, looks right, or anything that means it): run {done} rules`",
+        "upload": f"konvu-upload-principles reports the principle was added: run {done} upload`",
     }[step]
     if step == "upload":
         tail = f"This step is finished when {finish}, in the same turn; that prints what comes next."
@@ -178,7 +178,7 @@ def done(run: str, step: str, args: list[str]) -> None:
         if not isinstance(saved, list) or not saved or not all(
             isinstance(r, dict) and str(r.get("statement", "")).strip() for r in saved
         ):
-            blocked(f"no security rule with a statement saved in {rules} yet (or it is not valid JSON).", progress)
+            blocked(f"no principle with a statement saved in {rules} yet (or it is not valid JSON).", progress)
     i = STEPS.index(step)
     progress["step"] = STEPS[i + 1] if i + 1 < len(STEPS) else "finished"
     save(progress)

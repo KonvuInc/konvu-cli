@@ -18,6 +18,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func TestPrinciplesCommandKeepsLegacyAliases(t *testing.T) {
+	if invariantsCmd.Name() != "principles" {
+		t.Fatalf("command name = %q", invariantsCmd.Name())
+	}
+	for _, alias := range []string{"principle", "invariants", "invariant"} {
+		found, _, err := rootCmd.Find([]string{alias, "list"})
+		if err != nil || found.Name() != "list" || found.Parent() != invariantsCmd {
+			t.Errorf("%q does not resolve to principles list: command = %v, error = %v", alias, found, err)
+		}
+	}
+}
+
 func invariantsServer(t *testing.T, posted *map[string]any, status int) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != invariantsPath {
@@ -572,9 +584,9 @@ func TestInvariantsPushOnboardingWithAnAccountSaysToLogIn(t *testing.T) {
 	}
 }
 
-// konvu-upload-invariants tells the errors apart by these messages, so they must stay in sync.
+// konvu-upload-principles tells the errors apart by these messages, so they must stay in sync.
 func TestUploadSkillKnowsTheOnboardingErrors(t *testing.T) {
-	skill, err := os.ReadFile(filepath.Join("..", "skills", "konvu-upload-invariants", "SKILL.md"))
+	skill, err := os.ReadFile(filepath.Join("..", "skills", "konvu-upload-principles", "SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -588,7 +600,7 @@ func TestUploadSkillKnowsTheOnboardingErrors(t *testing.T) {
 			t.Errorf("%d: message %q does not say %q", status, e.Message, phrase)
 		}
 		if !strings.Contains(string(skill), `"`+phrase+`"`) {
-			t.Errorf("konvu-upload-invariants does not handle %q", phrase)
+			t.Errorf("konvu-upload-principles does not handle %q", phrase)
 		}
 	}
 }
@@ -670,11 +682,11 @@ func TestInvariantsPushOnboardingChecksTheInvariantsFirst(t *testing.T) {
 		ten[i] = fmt.Sprintf(`{"statement": "Rule %d.", "why_it_matters": "x", "property": "integrity"}`, i)
 	}
 	for body, want := range map[string]string{
-		`[{"why_it_matters": "x", "property": "integrity"}]`:                                    "invariant 1: statement is required",
-		`[{"statement": "  ", "why_it_matters": "x", "property": "integrity"}]`:                 "invariant 1: statement is empty",
-		`[{"statement": 3, "why_it_matters": "x", "property": "integrity"}]`:                    "invariant 1: statement must be text",
+		`[{"why_it_matters": "x", "property": "integrity"}]`:                                    "principle 1: statement is required",
+		`[{"statement": "  ", "why_it_matters": "x", "property": "integrity"}]`:                 "principle 1: statement is empty",
+		`[{"statement": 3, "why_it_matters": "x", "property": "integrity"}]`:                    "principle 1: statement must be text",
 		`[{"statement": "` + long(201) + `", "why_it_matters": "x", "property": "integrity"}]`:  "statement is longer than 200 characters",
-		`[{"statement": "A.", "property": "integrity"}]`:                                        "invariant 1: why_it_matters is required",
+		`[{"statement": "A.", "property": "integrity"}]`:                                        "principle 1: why_it_matters is required",
 		`[{"statement": "A.", "why_it_matters": "` + long(501) + `", "property": "integrity"}]`: "why_it_matters is longer than 500 characters",
 		`[{"statement": "A.", "why_it_matters": "x\u0000", "property": "integrity"}]`:           "why_it_matters must not contain NUL",
 		`[{"statement": "A.", "why_it_matters": "x"}]`:                                          "property must be one of",
@@ -695,11 +707,11 @@ func TestInvariantsPushOnboardingChecksTheInvariantsFirst(t *testing.T) {
 		rule(`, "repository": "api"`):                                              "repository must be the repository's name as owner/name",
 		rule(`, "repository": "https://github.com/acme/api"`):                      "repository must be the repository's name as owner/name",
 		rule(`, "repository": null`):                                               "repository must be the repository's name as owner/name",
-		rule(`, "evidence": ["a"]`):                                                `invariant 1: unknown field "evidence"`,
-		`[` + strings.Join(ten, ", ") + `]`:                                        "11 invariants, at most 10 per push",
-		`[{"statement": "A  b.", "why_it_matters": "x", "property": "integrity"}, {"statement": "a B.", "why_it_matters": "x", "property": "integrity"}]`:                  "invariant 2: same statement as invariant 1",
-		`[{"statement": "A.", "why_it_matters": "x", "property": "integrity", "rank": 1}, {"statement": "B.", "why_it_matters": "x", "property": "integrity", "rank": 1}]`: "invariant 2: same rank as invariant 1",
-		`["A."]`: "invariant 1 is not an object",
+		rule(`, "evidence": ["a"]`):                                                `principle 1: unknown field "evidence"`,
+		`[` + strings.Join(ten, ", ") + `]`:                                        "11 principles, at most 10 per push",
+		`[{"statement": "A  b.", "why_it_matters": "x", "property": "integrity"}, {"statement": "a B.", "why_it_matters": "x", "property": "integrity"}]`:                  "principle 2: same statement as principle 1",
+		`[{"statement": "A.", "why_it_matters": "x", "property": "integrity", "rank": 1}, {"statement": "B.", "why_it_matters": "x", "property": "integrity", "rank": 1}]`: "principle 2: same rank as principle 1",
+		`["A."]`: "principle 1 is not an object",
 	} {
 		_, err := runInvariants(newInvariantsPushCmd(), "--file", writeInvariants(t, body), "--onboarding", testOnboardingCode)
 		e := cliErrorOf(t, err)
@@ -990,7 +1002,7 @@ func TestInvariantsPushWarnsWhenTheRepositoryIsNotFound(t *testing.T) {
 				t.Errorf("%s: invariant %d sent %#v", c.name, i+1, sent)
 			}
 		}
-		if strings.Count(stderr, "Warning: ") != 1 || !strings.Contains(stderr, "so its invariants go without a repository") {
+		if strings.Count(stderr, "Warning: ") != 1 || !strings.Contains(stderr, "so its principles go without a repository") {
 			t.Errorf("%s: want one warning, stderr = %q", c.name, stderr)
 		}
 		for _, want := range c.want {
@@ -1017,11 +1029,11 @@ func TestInvariantsPushWarnsOnAMalformedRepository(t *testing.T) {
 		sent := got.sent(t, 0, i)
 		_, hasName := sent["repository"]
 		if _, hasID := sent["repository_id"]; hasName || hasID {
-			t.Errorf("invariant %d sent %#v", i+1, sent)
+			t.Errorf("principle %d sent %#v", i+1, sent)
 		}
 	}
 	for n := 1; n <= 4; n++ {
-		if !strings.Contains(stderr, fmt.Sprintf("Warning: invariant %d's repository is not owner/name (like acme/api), so it goes without a repository.\n", n)) {
+		if !strings.Contains(stderr, fmt.Sprintf("Warning: principle %d's repository is not owner/name (like acme/api), so it goes without a repository.\n", n)) {
 			t.Errorf("no warning for invariant %d: %q", n, stderr)
 		}
 	}
@@ -1068,7 +1080,7 @@ func TestInvariantsPushRetriesWithoutAnUnmappedRepository(t *testing.T) {
 	if _, has := got.sent(t, 1, 0)["repository_id"]; has || got.sent(t, 1, 1)["repository_id"] != givenRepoID {
 		t.Fatalf("retry sent %#v", got.posted[1])
 	}
-	if stderr != "Warning: Konvu has not mapped repository acme/api yet, so its invariants go without a repository.\n" {
+	if stderr != "Warning: Konvu has not mapped repository acme/api yet, so its principles go without a repository.\n" {
 		t.Errorf("stderr = %q", stderr)
 	}
 	assertJSON(t, stdout)

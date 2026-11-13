@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-//go:embed konvu-shared recipe-weekly-triage konvu-onboarding konvu-invariants konvu-upload-invariants konvu-decide-suggestions konvu-audit-rules konvu-review-pr-checks konvu-catalog
+//go:embed konvu-shared recipe-weekly-triage konvu-onboarding konvu-principles konvu-upload-principles konvu-decide-suggestions konvu-audit-principles konvu-review-pr-checks konvu-catalog
 var embedded embed.FS
 
 // SkillDir pairs an embed directory name with its install directory name, and carries what the
@@ -43,39 +43,39 @@ var skillDirs = []SkillDir{
 		EmbedName:   "konvu-onboarding",
 		InstallName: "konvu-onboarding",
 		Pitch: []string{
-			"  Konvu onboarding — write your first security rule with your agent and see",
+			"  Konvu onboarding — write your first principle with your agent and see",
 			"  how Konvu enforces it. Run it in Claude Code with: /konvu-onboarding",
 		},
 	},
 	{
-		EmbedName:   "konvu-invariants",
-		InstallName: "konvu-invariants",
+		EmbedName:   "konvu-principles",
+		InstallName: "konvu-principles",
 		Pitch: []string{
-			"  Security rules — pick a repo and a theme, draft the rule that matters most,",
-			"  shape it together. Run it with: /konvu-invariants",
+			"  Principles — pick a repo and a theme, draft the principle that matters most,",
+			"  shape it together. Run it with: /konvu-principles",
 		},
 	},
 	{
-		EmbedName:   "konvu-upload-invariants",
-		InstallName: "konvu-upload-invariants",
+		EmbedName:   "konvu-upload-principles",
+		InstallName: "konvu-upload-principles",
 		Pitch: []string{
-			"  Save security rules you wrote to Konvu. Run it with: /konvu-upload-invariants",
+			"  Save principles you wrote to Konvu. Run it with: /konvu-upload-principles",
 		},
 	},
 	{
 		EmbedName:   "konvu-decide-suggestions",
 		InstallName: "konvu-decide-suggestions",
 		Pitch: []string{
-			"  Decide on the security rules Konvu suggested: checked against your code,",
+			"  Decide on the principles Konvu suggested: checked against your code,",
 			"  then accepted or declined as you pick. Run it with: /konvu-decide-suggestions",
 		},
 	},
 	{
-		EmbedName:   "konvu-audit-rules",
-		InstallName: "konvu-audit-rules",
+		EmbedName:   "konvu-audit-principles",
+		InstallName: "konvu-audit-principles",
 		Pitch: []string{
-			"  Audit how your code enforces your active security rules, and where it",
-			"  doesn't (read-only). Run it with: /konvu-audit-rules",
+			"  Audit how your code enforces your active principles, and where it",
+			"  doesn't (read-only). Run it with: /konvu-audit-principles",
 		},
 	},
 	{
@@ -94,6 +94,12 @@ var skillDirs = []SkillDir{
 			"  run before any change. Run it with: /konvu-catalog",
 		},
 	},
+}
+
+var retiredSkillDirs = []string{
+	"konvu-invariants",
+	"konvu-upload-invariants",
+	"konvu-audit-rules",
 }
 
 // SkillDirs returns the list of skill directories that are embedded.
@@ -201,6 +207,11 @@ func Install(force bool) (int, error) {
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return count, fmt.Errorf("cannot create %s: %w", dir, err)
+		}
+		for _, name := range retiredSkillDirs {
+			if err := os.RemoveAll(filepath.Join(dir, name)); err != nil {
+				return count, fmt.Errorf("removing old %s: %w", name, err)
+			}
 		}
 
 		for _, sd := range skillDirs {
