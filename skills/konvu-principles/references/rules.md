@@ -14,4 +14,4 @@ Save `invariants.json` as `{"invariants": [ ... ]}`, one object per principle, w
 - `property`: the one that fits best: `authentication`, `authorization`, `confidentiality`, `integrity`, `availability` or `non_repudiation`
 - `protected_assets` (optional): `[{"kind": "...", "name": "..."}]`, the things it protects in plain words ("credential" / "Claude login token")
 
-And, for you only (konvu-upload-invariants leaves them out): `based_on`, one sentence on what it comes from, and `evidence`, 2 or 3 short sources.
+And, for you only (konvu-upload-principles leaves them out): `based_on`, one sentence on what it comes from, and `evidence`, 2 or 3 short sources.

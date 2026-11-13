@@ -584,9 +584,9 @@ func TestInvariantsPushOnboardingWithAnAccountSaysToLogIn(t *testing.T) {
 	}
 }
 
-// konvu-upload-invariants tells the errors apart by these messages, so they must stay in sync.
+// konvu-upload-principles tells the errors apart by these messages, so they must stay in sync.
 func TestUploadSkillKnowsTheOnboardingErrors(t *testing.T) {
-	skill, err := os.ReadFile(filepath.Join("..", "skills", "konvu-upload-invariants", "SKILL.md"))
+	skill, err := os.ReadFile(filepath.Join("..", "skills", "konvu-upload-principles", "SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -600,7 +600,7 @@ func TestUploadSkillKnowsTheOnboardingErrors(t *testing.T) {
 			t.Errorf("%d: message %q does not say %q", status, e.Message, phrase)
 		}
 		if !strings.Contains(string(skill), `"`+phrase+`"`) {
-			t.Errorf("konvu-upload-invariants does not handle %q", phrase)
+			t.Errorf("konvu-upload-principles does not handle %q", phrase)
 		}
 	}
 }

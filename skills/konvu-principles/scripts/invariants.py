@@ -8,7 +8,7 @@
   invariants.py done <run> direction <text>
                                          the user picked where to start in it
   invariants.py done <run> rules         the principle is saved and the user is happy with it
-  invariants.py done <run> upload        konvu-upload-invariants reported it was added
+  invariants.py done <run> upload        konvu-upload-principles reported it was added
 
 Each run (one conversation) keeps its progress and files in ~/.konvu/invariants/runs/<run>/, so two
 conversations never share a step or a rule. The repo ranking in ~/.konvu/invariants/repos.json is shared
@@ -132,7 +132,7 @@ def render(progress: dict[str, str]) -> str:
         "repo": f"the user picks a repo: run {done} repo \"<its path>\"`",
         "direction": f"the user picks where to start: run {done} direction \"<the direction, in a few words>\"`",
         "rules": f"the user is happy with their principle (sounds good, yes, looks right, or anything that means it): run {done} rules`",
-        "upload": f"konvu-upload-invariants reports the principle was added: run {done} upload`",
+        "upload": f"konvu-upload-principles reports the principle was added: run {done} upload`",
     }[step]
     if step == "upload":
         tail = f"This step is finished when {finish}, in the same turn; that prints what comes next."

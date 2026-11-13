@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-//go:embed konvu-shared recipe-weekly-triage konvu-onboarding konvu-invariants konvu-upload-invariants konvu-decide-suggestions konvu-audit-rules konvu-review-pr-checks konvu-catalog
+//go:embed konvu-shared recipe-weekly-triage konvu-onboarding konvu-principles konvu-upload-principles konvu-decide-suggestions konvu-audit-principles konvu-review-pr-checks konvu-catalog
 var embedded embed.FS
 
 // SkillDir pairs an embed directory name with its install directory name, and carries what the
@@ -48,18 +48,18 @@ var skillDirs = []SkillDir{
 		},
 	},
 	{
-		EmbedName:   "konvu-invariants",
-		InstallName: "konvu-invariants",
+		EmbedName:   "konvu-principles",
+		InstallName: "konvu-principles",
 		Pitch: []string{
-			"  Principles — pick a repo and a theme, draft the rule that matters most,",
-			"  shape it together. Run it with: /konvu-invariants",
+			"  Principles — pick a repo and a theme, draft the principle that matters most,",
+			"  shape it together. Run it with: /konvu-principles",
 		},
 	},
 	{
-		EmbedName:   "konvu-upload-invariants",
-		InstallName: "konvu-upload-invariants",
+		EmbedName:   "konvu-upload-principles",
+		InstallName: "konvu-upload-principles",
 		Pitch: []string{
-			"  Save principles you wrote to Konvu. Run it with: /konvu-upload-invariants",
+			"  Save principles you wrote to Konvu. Run it with: /konvu-upload-principles",
 		},
 	},
 	{
@@ -71,11 +71,11 @@ var skillDirs = []SkillDir{
 		},
 	},
 	{
-		EmbedName:   "konvu-audit-rules",
-		InstallName: "konvu-audit-rules",
+		EmbedName:   "konvu-audit-principles",
+		InstallName: "konvu-audit-principles",
 		Pitch: []string{
 			"  Audit how your code enforces your active principles, and where it",
-			"  doesn't (read-only). Run it with: /konvu-audit-rules",
+			"  doesn't (read-only). Run it with: /konvu-audit-principles",
 		},
 	},
 	{
@@ -94,6 +94,12 @@ var skillDirs = []SkillDir{
 			"  run before any change. Run it with: /konvu-catalog",
 		},
 	},
+}
+
+var retiredSkillDirs = []string{
+	"konvu-invariants",
+	"konvu-upload-invariants",
+	"konvu-audit-rules",
 }
 
 // SkillDirs returns the list of skill directories that are embedded.
@@ -201,6 +207,11 @@ func Install(force bool) (int, error) {
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return count, fmt.Errorf("cannot create %s: %w", dir, err)
+		}
+		for _, name := range retiredSkillDirs {
+			if err := os.RemoveAll(filepath.Join(dir, name)); err != nil {
+				return count, fmt.Errorf("removing old %s: %w", name, err)
+			}
 		}
 
 		for _, sd := range skillDirs {

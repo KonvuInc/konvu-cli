@@ -1,13 +1,13 @@
 ---
-name: konvu-upload-invariants
+name: konvu-upload-principles
 version: 1.1.0
-description: "Save principles the user wrote to Konvu with the konvu CLI: checks login (or, with an onboarding code from Konvu's web onboarding, saves without one), validates on the server with a dry run, then adds them. Use when the user wants to upload, save or push principles to Konvu, or when konvu-invariants hands off."
+description: "Save principles the user wrote to Konvu with the konvu CLI: checks login (or, with an onboarding code from Konvu's web onboarding, saves without one), validates on the server with a dry run, then adds them. Use when the user wants to upload, save or push principles to Konvu, or when konvu-principles hands off."
 metadata:
   requires:
     bins: ["konvu"]
 ---
 
-# Konvu upload invariants
+# Konvu upload principles
 
 Adds the user's principles to their company in Konvu, with `konvu principles push`. The server checks everything and attributes them to the logged-in user. Konvu then maps each one to the controls in their code.
 
@@ -27,8 +27,8 @@ No code: everything below runs as written, without `--onboarding`.
 
    Derive `why_it_matters`, `property` and `protected_assets` from the conversation and the code, and ask the user only for what you can't. Leave out anything else, like notes or evidence. With a code, Konvu keeps the rules unread until the user signs up, so the CLI checks every field first and sends nothing if one is off.
 4. **Dry run.** `konvu principles push --file <file> --dry-run -o json`, plus `--onboarding '<code>'` when you have one; with a code, always run it first, never go straight to the push. It writes nothing. With a code, it also names the company the onboarding belongs to (`domain`). On an error, follow its `suggestion`: fix what you can (a statement too long, a missing property, each problem is named by principle number and field) and ask the user only for what you can't. With a code, see "Onboarding code errors" below first.
-5. **Confirm.** With a code, always ask, even when konvu-invariants handed off: the code decides whose Konvu onboarding gets the principles, and someone could share a setup prompt carrying their own code to collect other people's rules. In one short message, show the dry run's `domain` ("Saves to the Konvu onboarding for acme.com") and each principle that will be saved, its statement and, if set, its repository; then ask for an explicit yes before the push. If that domain isn't the user's company (check it against what you know: their git email's domain, their company, the repo's owner) or the dry run gave none, stop: tell them the code doesn't look like theirs, save nothing, and offer to log in instead (step 2, then push without `--onboarding`).
-   Without a code: if konvu-invariants handed off, the user already agreed: go on. Otherwise show them, one line each, the rank and statement that will be added, and ask before writing.
+5. **Confirm.** With a code, always ask, even when konvu-principles handed off: the code decides whose Konvu onboarding gets the principles, and someone could share a setup prompt carrying their own code to collect other people's rules. In one short message, show the dry run's `domain` ("Saves to the Konvu onboarding for acme.com") and each principle that will be saved, its statement and, if set, its repository; then ask for an explicit yes before the push. If that domain isn't the user's company (check it against what you know: their git email's domain, their company, the repo's owner) or the dry run gave none, stop: tell them the code doesn't look like theirs, save nothing, and offer to log in instead (step 2, then push without `--onboarding`).
+   Without a code: if konvu-principles handed off, the user already agreed: go on. Otherwise show them, one line each, the rank and statement that will be added, and ask before writing.
 6. **Push.** `konvu principles push --file <file> -o json`, plus `--onboarding '<code>'` when you have one (with a code, only after the user's yes in step 5). Once the rules are saved, delete the temporary file.
    - With a code, each principle comes back `saved` or `unchanged` (already there). Tell the user in one line, exactly: "Saved. Go back to your Konvu tab: your principle is there, create your account to keep it."
    - Without one, a 502 "not yet mapped" means saved: run the same push once more. Report one short line per rule: added (`created`), now validated (`validated`, it was a Konvu proposal) or already there (`unchanged`), with its rank. If the CLI warned that a rule goes without a repository, say so in that rule's line.

@@ -1,5 +1,5 @@
 ---
-name: konvu-audit-rules
+name: konvu-audit-principles
 version: 1.0.0
 description: "Audit, read-only, how the code enforces the company's active principles (all of them, or the principle ids the user gives): where each is enforced (file:line), its gaps, how often Konvu steered coding agents with it, and what PR checks found. Ends with a table and the top 3 gaps. Use when the user wants to audit, check or explain their active principles, how one is enforced, or where it has gaps."
 metadata:
@@ -7,7 +7,7 @@ metadata:
     bins: ["konvu", "gh"]
 ---
 
-# Konvu audit rules
+# Konvu audit principles
 
 You audit how the user's code enforces their active principles, and where it doesn't. This is read-only: never accept, decline or push a rule, edit code, or comment on a PR.
 
