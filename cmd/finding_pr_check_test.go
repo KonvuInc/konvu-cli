@@ -211,6 +211,14 @@ func TestPRCheckDecision(t *testing.T) {
 	if _, err := decide(prCheckVerbDismiss, url, "run-1:2", "--reason", "  "); err == nil {
 		t.Fatal("blank reason must fail")
 	}
+
+	// The limit counts characters: 1000 multi-byte ones pass, 1001 do not.
+	if _, err := decide(prCheckVerbDismiss, url, "run-1:2", "--reason", strings.Repeat("é", 1000), "--dry-run"); err != nil {
+		t.Fatalf("1000 characters must pass: %v", err)
+	}
+	if _, err := decide(prCheckVerbDismiss, url, "run-1:2", "--reason", strings.Repeat("é", 1001), "--dry-run"); err == nil {
+		t.Fatal("1001 characters must fail")
+	}
 	if len(posted) != 1 {
 		t.Fatalf("posted %d decisions, want 1", len(posted))
 	}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
@@ -67,7 +68,8 @@ func runPRCheckDecision(cmd *cobra.Command, verb prCheckVerb, prURL, findingID s
 	// Validate locally first: the server answers a bad reason with a bare 422.
 	reason, _ := cmd.Flags().GetString("reason")
 	reason = strings.TrimSpace(reason)
-	if reason == "" || len(reason) > prCheckReasonMaxLength {
+	// Characters, not bytes, as the server counts them: "é" is one.
+	if reason == "" || utf8.RuneCountInString(reason) > prCheckReasonMaxLength {
 		return prCheckUsageError(
 			fmt.Sprintf("--reason must be 1 to %d characters", prCheckReasonMaxLength),
 			`Example: --reason "Admin-only endpoint"`,
@@ -187,7 +189,7 @@ func prCheckDecisionError(err error, prURL string) error {
 		return &clierrors.CLIError{
 			Code:       "PR_CHECK_DECISION_FORBIDDEN",
 			Message:    err.Error(),
-			Suggestion: "Log in as yourself with 'konvu login' (OAuth), not an API key.",
+			Suggestion: "Unset KONVU_ACCESS_TOKEN if set, then log in as yourself with 'konvu login' (OAuth), not an API key.",
 			ExitCode:   clierrors.ExitAuthFailed,
 		}
 	}
