@@ -221,6 +221,9 @@ func runPRCheckList(cmd *cobra.Command, args []string) error {
 	params["state"] = states
 	params["limit"] = limit
 	params["offset"] = offset
+	if brokeRule, _ := cmd.Flags().GetBool("broke-rule"); brokeRule {
+		params["rules"] = "broken"
+	}
 
 	client := api.NewClient("", "")
 	defer client.Close()
@@ -368,6 +371,7 @@ func addPRCheckListFlags(c *cobra.Command) {
 	c.Flags().IntP("limit", "n", 50, fmt.Sprintf("Maximum PRs to return (max %d)", prCheckMaxLimit))
 	c.Flags().Int("offset", 0, "Skip N results")
 	c.Flags().String("sort", prCheckSortRecent, "Order: "+strings.Join(prCheckSorts, ", ")+" (score: highest finding score first)")
+	c.Flags().Bool("broke-rule", false, "Only PRs whose latest review broke one of your security rules")
 	c.Flags().BoolP("quiet", "q", false, "Print bare PR URLs, one per line")
 }
 

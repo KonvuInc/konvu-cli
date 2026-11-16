@@ -40,7 +40,7 @@ func prCheckServer(t *testing.T) *httptest.Server {
 		switch r.URL.Path {
 		case prCheckReviewedPath:
 			q := r.URL.Query()
-			if q.Get("limit") == "30" && (strings.Join(q["outcome"], ",") != "pass" || q.Get("state") != "merged" || q.Get("offset") != "60" || q.Get("sort") != "score") {
+			if q.Get("limit") == "30" && (strings.Join(q["outcome"], ",") != "pass" || q.Get("state") != "merged" || q.Get("offset") != "60" || q.Get("sort") != "score" || q.Get("rules") != "broken") {
 				t.Fatalf("list query = %v", q)
 			}
 			if q.Has("number") && (q.Get("repository") != "acme/app" || q.Get("number") != "42") {
@@ -98,7 +98,7 @@ func TestPRCheckListAndGet(t *testing.T) {
 
 	listCmd := &cobra.Command{Use: "list", RunE: runPRCheckList}
 	addPRCheckListFlags(listCmd)
-	list := run(listCmd, "--outcome", "pass", "--state", "merged", "--limit", "30", "--offset", "60", "--sort", "score", "-q")
+	list := run(listCmd, "--outcome", "pass", "--state", "merged", "--limit", "30", "--offset", "60", "--sort", "score", "--broke-rule", "-q")
 	if strings.TrimSpace(list) != "https://github.com/acme/app/pull/42" {
 		t.Fatalf("list = %q", list)
 	}
