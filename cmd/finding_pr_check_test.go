@@ -5,11 +5,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 )
+
+var prCheckRules = []any{map[string]any{
+	"id": "inv-1", "revision": 2.0, "statement": "Only owners read their records",
+	"why_it_matters": "Records hold customer data",
+}}
 
 func prCheckServer(t *testing.T) *httptest.Server {
 	reviewed := map[string]any{
@@ -61,7 +67,7 @@ func prCheckServer(t *testing.T) *httptest.Server {
 						map[string]any{
 							"finding_id": "run-1:1", "title": "Member reads another workspace",
 							"attack_path": "member → GET /w/other", "rule_id": "RULE-1",
-							"security_rules": []any{map[string]any{"id": "inv-1", "statement": "Only owners read their records"}},
+							"security_rules": prCheckRules,
 						},
 						map[string]any{"finding_id": "run-1:2", "severity": "high", "score": 0.72},
 					},
@@ -110,8 +116,8 @@ func TestPRCheckListAndGet(t *testing.T) {
 	if top["score"] != 0.72 || top["severity"] != "high" || flaw["score"] != nil {
 		t.Fatalf("findings = %#v", flaws)
 	}
-	rules, _ := flaw["security_rules"].([]any)
-	if flaw["attack_path"] != "member → GET /w/other" || flaw["rule_id"] != nil || len(rules) != 1 {
+	if flaw["attack_path"] != "member → GET /w/other" || flaw["rule_id"] != nil ||
+		!reflect.DeepEqual(flaw["security_rules"], prCheckRules) {
 		t.Fatalf("flaw = %#v", flaw)
 	}
 	if runs := review["runs"].([]any); len(runs) != 1 {
