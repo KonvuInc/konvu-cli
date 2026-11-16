@@ -53,7 +53,7 @@ konvu principles accept <id> [--dry-run]     # Accept a suggested rule, making i
 konvu principles decline <id>                # Decline a suggested rule
 konvu finding pr-check counts                # What Konvu's PR check analyzed
 konvu finding pr-check list [--outcome violation|pass]   # Analyzed PRs and their flaws
-konvu finding pr-check get <pr-url>          # One PR's flaws: attack path, evidence
+konvu finding pr-check get <pr-url>          # One PR's flaws: attack path, evidence, rules broken
 ```
 
 `accept` and `decline` act only on a suggestion (`proposed`): accept exits 1 for anything else, decline for an active or retired one (an already declined one exits 0). A malformed id exits 2, an unknown one 3.

@@ -61,6 +61,7 @@ func prCheckServer(t *testing.T) *httptest.Server {
 						map[string]any{
 							"finding_id": "run-1:1", "title": "Member reads another workspace",
 							"attack_path": "member → GET /w/other", "rule_id": "RULE-1",
+							"security_rules": []any{map[string]any{"id": "inv-1", "statement": "Only owners read their records"}},
 						},
 						map[string]any{"finding_id": "run-1:2", "severity": "high", "score": 0.72},
 					},
@@ -109,7 +110,8 @@ func TestPRCheckListAndGet(t *testing.T) {
 	if top["score"] != 0.72 || top["severity"] != "high" || flaw["score"] != nil {
 		t.Fatalf("findings = %#v", flaws)
 	}
-	if flaw["attack_path"] != "member → GET /w/other" || flaw["rule_id"] != nil {
+	rules, _ := flaw["security_rules"].([]any)
+	if flaw["attack_path"] != "member → GET /w/other" || flaw["rule_id"] != nil || len(rules) != 1 {
 		t.Fatalf("flaw = %#v", flaw)
 	}
 	if runs := review["runs"].([]any); len(runs) != 1 {

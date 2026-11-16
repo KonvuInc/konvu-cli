@@ -36,10 +36,12 @@ var (
 // github.com/<owner>/<repo>/pull/<number>
 var prURLRe = regexp.MustCompile(`^https://github\.com/([^/]+/[^/]+)/pull/(\d+)/?$`)
 
-// Finding fields that describe the flaw; rule and attribution internals are left out.
+// Finding fields that describe the flaw and the security rules it breaks;
+// detector rule and attribution internals are left out.
 var prCheckFindingKeys = []string{
 	"finding_id", "title", "summary", "change", "change_reason",
 	"attack_path", "protections_checked", "fix", "evidence", "severity", "score",
+	"security_rules",
 }
 
 var prCheckCmd = &cobra.Command{
@@ -75,7 +77,7 @@ var prCheckListCmd = &cobra.Command{
 
 var prCheckGetCmd = &cobra.Command{
 	Use:     "get <pr-url>",
-	Short:   "The security flaws found on one PR, highest score first, with attack path and evidence",
+	Short:   "The security flaws found on one PR, highest score first, with attack path, evidence and security rules broken",
 	Example: `  konvu finding pr-check get https://github.com/acme/app/pull/42`,
 	Args:    cobra.ExactArgs(1),
 	RunE:    runPRCheckGet,
