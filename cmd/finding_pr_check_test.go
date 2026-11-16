@@ -17,7 +17,8 @@ var prCheckRules = []any{map[string]any{
 	"why_it_matters": "Records hold customer data",
 }}
 
-func prCheckServer(t *testing.T) *httptest.Server {
+// prCheckServer fakes the PR check reads; decide, when set, answers verdict POSTs.
+func prCheckServer(t *testing.T, decide http.HandlerFunc) *httptest.Server {
 	reviewed := map[string]any{
 		"repository_id": "repo-1",
 		"repository":    "acme/app",
@@ -33,6 +34,11 @@ func prCheckServer(t *testing.T) *httptest.Server {
 		"findings":      []any{"Member reads another workspace"},
 	}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && decide != nil {
+			decide(w, r)
+			return
+		}
+
 		// Every PR check read asks for security findings only.
 		if r.URL.Query().Get("findings") != prCheckFindingScope {
 			t.Fatalf("findings scope = %q on %s", r.URL.Query().Get("findings"), r.URL.Path)
@@ -71,6 +77,10 @@ func prCheckServer(t *testing.T) *httptest.Server {
 						},
 						map[string]any{"finding_id": "run-1:2", "severity": "high", "score": 0.72},
 					},
+					"decisions": []any{map[string]any{
+						"finding_id": "run-1:1", "action": "dismissed", "reason": "Admin only",
+						"actor": "Ada", "created_at": "2026-11-16T10:00:00Z",
+					}},
 				},
 			})
 		default:
@@ -80,7 +90,7 @@ func prCheckServer(t *testing.T) *httptest.Server {
 }
 
 func TestPRCheckListAndGet(t *testing.T) {
-	server := prCheckServer(t)
+	server := prCheckServer(t, nil)
 	defer server.Close()
 	t.Setenv("KONVU_API_URL", server.URL)
 	t.Setenv("KONVU_ACCESS_TOKEN", "test-token")
@@ -120,6 +130,10 @@ func TestPRCheckListAndGet(t *testing.T) {
 		!reflect.DeepEqual(flaw["security_rules"], prCheckRules) {
 		t.Fatalf("flaw = %#v", flaw)
 	}
+	// Each flaw carries its verdict, if any.
+	if verdict, _ := flaw["decision"].(map[string]any); verdict["action"] != "dismissed" || verdict["actor"] != "Ada" || top["decision"] != nil {
+		t.Fatalf("decisions = %#v / %#v", flaw["decision"], top["decision"])
+	}
 	if runs := review["runs"].([]any); len(runs) != 1 {
 		t.Fatalf("failed runs must be skipped: %#v", runs)
 	}
@@ -138,5 +152,72 @@ func TestPRCheckListAndGet(t *testing.T) {
 		if counts[0][key] != value {
 			t.Fatalf("counts[%s] = %v, want %v", key, counts[0][key], value)
 		}
+	}
+}
+
+func TestPRCheckDecision(t *testing.T) {
+	// Decisions are recorded here; reads come from the shared fake.
+	var posted []map[string]any
+	status := http.StatusCreated
+	server := prCheckServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/services/guardrails/v1/ci/pull-requests/repo-1/42/findings/run-1:2/decisions" {
+			t.Fatalf("decision path = %q", r.URL.Path)
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		posted = append(posted, body)
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{"actor": "Ada", "created_at": "2026-11-16T11:00:00Z"})
+	})
+	defer server.Close()
+	t.Setenv("KONVU_API_URL", server.URL)
+	t.Setenv("KONVU_ACCESS_TOKEN", "test-token")
+	t.Setenv("KONVU_ZITADEL_CLIENT_ID", "test-client")
+
+	decide := func(verb prCheckVerb, args ...string) (map[string]any, error) {
+		c := newPRCheckDecisionCommand(verb)
+		out := &bytes.Buffer{}
+		c.SetOut(out)
+		c.SetErr(&bytes.Buffer{})
+		c.SetArgs(args)
+		if err := c.Execute(); err != nil {
+			return nil, err
+		}
+		var rows []map[string]any
+		if err := json.Unmarshal(out.Bytes(), &rows); err != nil {
+			t.Fatalf("output %q: %v", out.String(), err)
+		}
+		return rows[0], nil
+	}
+	url := "https://github.com/acme/app/pull/42"
+
+	// Dry run checks the finding but sends nothing.
+	row, err := decide(prCheckVerbDismiss, url, "run-1:2", "--reason", " Admin only ", "--dry-run")
+	if err != nil || row["status"] != "preview" || row["reason"] != "Admin only" || len(posted) != 0 {
+		t.Fatalf("dry run = %#v, %v, posted %d", row, err, len(posted))
+	}
+
+	// A real verdict is pinned to the judged run.
+	row, err = decide(prCheckVerbAcceptRisk, url, "run-1:2", "--reason", "Tracked in SEC-1")
+	want := map[string]any{"action": "risk_accepted", "reason": "Tracked in SEC-1", "run_id": "run-1"}
+	if err != nil || !reflect.DeepEqual(posted[0], want) || row["status"] != "recorded" || row["actor"] != "Ada" {
+		t.Fatalf("decide = %#v, %v, posted %#v", row, err, posted)
+	}
+
+	// Unknown finding and blank reason fail before any request.
+	if _, err := decide(prCheckVerbDismiss, url, "run-9:1", "--reason", "x"); err == nil || !strings.Contains(err.Error(), "not in the latest review") {
+		t.Fatalf("unknown finding err = %v", err)
+	}
+	if _, err := decide(prCheckVerbDismiss, url, "run-1:2", "--reason", "  "); err == nil {
+		t.Fatal("blank reason must fail")
+	}
+	if len(posted) != 1 {
+		t.Fatalf("posted %d decisions, want 1", len(posted))
+	}
+
+	// A new push since the read: the server refuses, the CLI says to re-read.
+	status = http.StatusConflict
+	if _, err := decide(prCheckVerbDismiss, url, "run-1:2", "--reason", "x"); err == nil || !strings.Contains(err.Error(), "changed") {
+		t.Fatalf("conflict err = %v", err)
 	}
 }

@@ -46,7 +46,7 @@ var prCheckFindingKeys = []string{
 
 var prCheckCmd = &cobra.Command{
 	Use:   "pr-check",
-	Short: "Security flaws Konvu found on pull requests (read-only)",
+	Short: "Security flaws Konvu found on pull requests, and your verdicts on them",
 	Long: `Review what Konvu's PR check found, in monitor or warn mode.
 
 Each PR is judged on its latest completed run; failed runs are skipped.
@@ -54,7 +54,10 @@ Pair with 'gh pr diff <url>' to judge each finding against the code.
 
 Findings carry a severity and a score: the confidence, from 0 to 1, that the
 finding is a real security flaw. Use the score to review the worst first.
-Both are null when Konvu could not score a finding.`,
+Both are null when Konvu could not score a finding.
+
+Record a verdict on a finding with 'dismiss' (not a real flaw) or 'accept-risk'
+(real, but accepted), as with the /konvu commands in a PR comment.`,
 }
 
 var prCheckCountsCmd = &cobra.Command{
@@ -258,40 +261,50 @@ func runPRCheckGet(cmd *cobra.Command, args []string) error {
 	if err := findings.RequireJSON(cmd, "pr-check get"); err != nil {
 		return err
 	}
-	m := prURLRe.FindStringSubmatch(strings.TrimSpace(args[0]))
+	client := api.NewClient("", "")
+	defer client.Close()
+
+	review, _, err := prCheckLoad(client, args[0])
+	if err != nil {
+		return err
+	}
+	return findings.Render(cmd, []findings.Row{review}, nil)
+}
+
+// prCheckLoad resolves a PR URL to its review (judged run, flaws, history) and repository id.
+func prCheckLoad(client *api.Client, prURL string) (findings.Row, string, error) {
+	m := prURLRe.FindStringSubmatch(strings.TrimSpace(prURL))
 	if m == nil {
 		// shortcut: GitHub PR URLs only; add GitLab merge-request URLs when a GitLab tenant enables PR checks.
-		return prCheckUsageError(
-			fmt.Sprintf("not a GitHub pull request URL: %q", args[0]),
+		return nil, "", prCheckUsageError(
+			fmt.Sprintf("not a GitHub pull request URL: %q", prURL),
 			"Example: konvu finding pr-check get https://github.com/acme/app/pull/42",
 		)
 	}
 	number, _ := strconv.Atoi(m[2])
 
-	client := api.NewClient("", "")
-	defer client.Close()
-
 	// The reviewed list resolves the repository id and the run the PR is judged on.
 	resp, err := client.Get(prCheckReviewedPath, map[string]any{"repository": m[1], "number": number, "limit": 1, "findings": prCheckFindingScope})
 	if err != nil {
-		return prCheckRequestError(err)
+		return nil, "", prCheckRequestError(err)
 	}
 	items := getSlice(resp, "items")
 	if len(items) == 0 {
-		return &clierrors.CLIError{
+		return nil, "", &clierrors.CLIError{
 			Code:       "PR_CHECK_NOT_FOUND",
-			Message:    fmt.Sprintf("no completed PR check for %s", args[0]),
+			Message:    fmt.Sprintf("no completed PR check for %s", prURL),
 			Suggestion: "List analyzed PRs with 'konvu finding pr-check list'.",
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	}
 	pr, _ := items[0].(map[string]any)
+	repositoryID := getStr(pr, "repository_id")
 
-	runs, err := client.GetList(fmt.Sprintf(prCheckRunsPath, getStr(pr, "repository_id"), number), map[string]any{"findings": prCheckFindingScope})
+	runs, err := client.GetList(fmt.Sprintf(prCheckRunsPath, repositoryID, number), map[string]any{"findings": prCheckFindingScope})
 	if err != nil {
-		return prCheckRequestError(err)
+		return nil, "", prCheckRequestError(err)
 	}
-	return findings.Render(cmd, []findings.Row{prCheckReview(pr, runs)}, nil)
+	return prCheckReview(pr, runs), repositoryID, nil
 }
 
 // prCheckReview shapes one PR's review: its judged run's flaws plus every
@@ -317,6 +330,7 @@ func prCheckReview(pr map[string]any, runs []any) findings.Row {
 			continue
 		}
 		baseSHA = getStr(run, "target_base_sha")
+		decisions := prCheckDecisionsByFinding(run)
 		for _, f := range getSlice(run, "findings") {
 			finding, ok := f.(map[string]any)
 			if !ok {
@@ -326,6 +340,7 @@ func prCheckReview(pr map[string]any, runs []any) findings.Row {
 			for _, key := range prCheckFindingKeys {
 				flaw[key] = finding[key]
 			}
+			flaw["decision"] = decisions[getStr(finding, "finding_id")]
 			flaws = append(flaws, flaw)
 		}
 	}
@@ -384,6 +399,9 @@ func init() {
 	addPRCheckListFlags(prCheckListCmd)
 	addPRCheckGetFlags(prCheckGetCmd)
 
-	prCheckCmd.AddCommand(prCheckCountsCmd, prCheckListCmd, prCheckGetCmd)
+	prCheckCmd.AddCommand(
+		prCheckCountsCmd, prCheckListCmd, prCheckGetCmd,
+		newPRCheckDecisionCommand(prCheckVerbDismiss), newPRCheckDecisionCommand(prCheckVerbAcceptRisk),
+	)
 	findingCmd.AddCommand(prCheckCmd)
 }
