@@ -98,7 +98,7 @@ func TestPRCheckListAndGet(t *testing.T) {
 
 	listCmd := &cobra.Command{Use: "list", RunE: runPRCheckList}
 	addPRCheckListFlags(listCmd)
-	list := run(listCmd, "--outcome", "pass", "--state", "merged", "--limit", "30", "--offset", "60", "--sort", "score", "--broke-rule", "-q")
+	list := run(listCmd, "--outcome", "pass", "--state", "merged", "--limit", "30", "--offset", "60", "--sort", "score", "--broke-principle", "-q")
 	if strings.TrimSpace(list) != "https://github.com/acme/app/pull/42" {
 		t.Fatalf("list = %q", list)
 	}

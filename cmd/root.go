@@ -122,7 +122,7 @@ const helpAllFooter = `EXAMPLES
   konvu principles list --status proposed -o json
   konvu principles guide
   konvu principles get <id> -o json
-  konvu principles push --file invariants.json --dry-run
+  konvu principles push --file principles.json --dry-run
   konvu principles accept <id> --dry-run
   konvu principles decline <id>
 
