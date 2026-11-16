@@ -36,10 +36,12 @@ var (
 // github.com/<owner>/<repo>/pull/<number>
 var prURLRe = regexp.MustCompile(`^https://github\.com/([^/]+/[^/]+)/pull/(\d+)/?$`)
 
-// Finding fields that describe the flaw; rule and attribution internals are left out.
+// Finding fields that describe the flaw and the security rules it breaks;
+// detector rule and attribution internals are left out.
 var prCheckFindingKeys = []string{
 	"finding_id", "title", "summary", "change", "change_reason",
 	"attack_path", "protections_checked", "fix", "evidence", "severity", "score",
+	"security_rules",
 }
 
 var prCheckCmd = &cobra.Command{
@@ -75,7 +77,7 @@ var prCheckListCmd = &cobra.Command{
 
 var prCheckGetCmd = &cobra.Command{
 	Use:     "get <pr-url>",
-	Short:   "The security flaws found on one PR, highest score first, with attack path and evidence",
+	Short:   "The security flaws found on one PR, highest score first, with attack path, evidence and security rules broken",
 	Example: `  konvu finding pr-check get https://github.com/acme/app/pull/42`,
 	Args:    cobra.ExactArgs(1),
 	RunE:    runPRCheckGet,
@@ -219,6 +221,9 @@ func runPRCheckList(cmd *cobra.Command, args []string) error {
 	params["state"] = states
 	params["limit"] = limit
 	params["offset"] = offset
+	if brokeRule, _ := cmd.Flags().GetBool("broke-rule"); brokeRule {
+		params["rules"] = "broken"
+	}
 
 	client := api.NewClient("", "")
 	defer client.Close()
@@ -366,6 +371,7 @@ func addPRCheckListFlags(c *cobra.Command) {
 	c.Flags().IntP("limit", "n", 50, fmt.Sprintf("Maximum PRs to return (max %d)", prCheckMaxLimit))
 	c.Flags().Int("offset", 0, "Skip N results")
 	c.Flags().String("sort", prCheckSortRecent, "Order: "+strings.Join(prCheckSorts, ", ")+" (score: highest finding score first)")
+	c.Flags().Bool("broke-rule", false, "Only PRs whose latest review broke one of your security rules")
 	c.Flags().BoolP("quiet", "q", false, "Print bare PR URLs, one per line")
 }
 

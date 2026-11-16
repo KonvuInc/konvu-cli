@@ -5,11 +5,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 )
+
+var prCheckRules = []any{map[string]any{
+	"id": "inv-1", "revision": 2.0, "statement": "Only owners read their records",
+	"why_it_matters": "Records hold customer data",
+}}
 
 func prCheckServer(t *testing.T) *httptest.Server {
 	reviewed := map[string]any{
@@ -34,7 +40,7 @@ func prCheckServer(t *testing.T) *httptest.Server {
 		switch r.URL.Path {
 		case prCheckReviewedPath:
 			q := r.URL.Query()
-			if q.Get("limit") == "30" && (strings.Join(q["outcome"], ",") != "pass" || q.Get("state") != "merged" || q.Get("offset") != "60" || q.Get("sort") != "score") {
+			if q.Get("limit") == "30" && (strings.Join(q["outcome"], ",") != "pass" || q.Get("state") != "merged" || q.Get("offset") != "60" || q.Get("sort") != "score" || q.Get("rules") != "broken") {
 				t.Fatalf("list query = %v", q)
 			}
 			if q.Has("number") && (q.Get("repository") != "acme/app" || q.Get("number") != "42") {
@@ -61,6 +67,7 @@ func prCheckServer(t *testing.T) *httptest.Server {
 						map[string]any{
 							"finding_id": "run-1:1", "title": "Member reads another workspace",
 							"attack_path": "member → GET /w/other", "rule_id": "RULE-1",
+							"security_rules": prCheckRules,
 						},
 						map[string]any{"finding_id": "run-1:2", "severity": "high", "score": 0.72},
 					},
@@ -91,7 +98,7 @@ func TestPRCheckListAndGet(t *testing.T) {
 
 	listCmd := &cobra.Command{Use: "list", RunE: runPRCheckList}
 	addPRCheckListFlags(listCmd)
-	list := run(listCmd, "--outcome", "pass", "--state", "merged", "--limit", "30", "--offset", "60", "--sort", "score", "-q")
+	list := run(listCmd, "--outcome", "pass", "--state", "merged", "--limit", "30", "--offset", "60", "--sort", "score", "--broke-rule", "-q")
 	if strings.TrimSpace(list) != "https://github.com/acme/app/pull/42" {
 		t.Fatalf("list = %q", list)
 	}
@@ -109,7 +116,8 @@ func TestPRCheckListAndGet(t *testing.T) {
 	if top["score"] != 0.72 || top["severity"] != "high" || flaw["score"] != nil {
 		t.Fatalf("findings = %#v", flaws)
 	}
-	if flaw["attack_path"] != "member → GET /w/other" || flaw["rule_id"] != nil {
+	if flaw["attack_path"] != "member → GET /w/other" || flaw["rule_id"] != nil ||
+		!reflect.DeepEqual(flaw["security_rules"], prCheckRules) {
 		t.Fatalf("flaw = %#v", flaw)
 	}
 	if runs := review["runs"].([]any); len(runs) != 1 {
