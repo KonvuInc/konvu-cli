@@ -82,7 +82,7 @@ def rules(folder: str) -> str:
     rules = data["invariants"]
     if len(rules) == 1:
         return fenced(boxed(str(rules[0]["statement"]), [], width()))
-    return fenced("\n".join(boxed(f"RULE {i} · {r['statement']}", [], width()) for i, r in enumerate(rules, 1)))
+    return fenced("\n".join(boxed(f"PRINCIPLE {i} · {r['statement']}", [], width()) for i, r in enumerate(rules, 1)))
 
 
 def enforce(folder: str) -> str:

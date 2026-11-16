@@ -47,14 +47,14 @@ func newInvariantsAcceptCmd() *cobra.Command {
 attributed to you, and Konvu checks every change against it.
 
 The suggestion is sent unchanged and keeps its rank. To change its wording first, write the
-edited rule to a file and add it at the suggestion's rank with 'konvu principles push': it
+edited principle to a file and add it at the suggestion's rank with 'konvu principles push': it
 replaces the suggestion. --dry-run checks it on the server and writes nothing.
 
 Only a proposed principle is accepted. If it stopped being one before the accept reached Konvu
 (accepted, declined or replaced meanwhile), accept exits 1 and says what was written, if
 anything. When the request fails on the server's side, accept reads the principle back:
 validated means it is active ("mapping_pending": true in JSON: its mapping to controls may wait
-for the next code analysis or rule change, nothing to repeat); still proposed means not
+for the next code analysis or principle change, nothing to repeat); still proposed means not
 accepted yet, though the request may still be running, so check with 'konvu principles get'
 before repeating it.
 
@@ -98,8 +98,8 @@ failed), 2 invalid id or flag, 3 principle not found, 4 auth failed or refused`,
 		Args: cobra.ExactArgs(1),
 		RunE: runInvariantsAmend,
 	}
-	c.Flags().String("statement", "", "The amended rule text (required, at most 200 characters)")
-	c.Flags().String("why-it-matters", "", "Why this rule matters (required, at most 500 characters)")
+	c.Flags().String("statement", "", "The amended principle text (required, at most 200 characters)")
+	c.Flags().String("why-it-matters", "", "Why this principle matters (required, at most 500 characters)")
 	c.Flags().String("property", "", "Security property: authentication, authorization, confidentiality, integrity, availability or non_repudiation (required)")
 	c.Flags().Bool("dry-run", false, "Check on the server without writing anything")
 	c.Flags().StringP("output", "o", "", "Output format: json, table")
@@ -203,7 +203,7 @@ func confirmAmend(cmd *cobra.Command, client *api.Client, postErr error, id stri
 				ExitCode:   clierrors.ExitGeneralError,
 			}
 		}
-		output.PrintStderr("It is active now, but the server failed after the amend, so its mapping to controls may wait for the next code analysis or rule change.")
+		output.PrintStderr("It is active now, but the server failed after the amend, so its mapping to controls may wait for the next code analysis or principle change.")
 		if format == output.JSON {
 			fmt.Fprintln(cmd.OutOrStdout(), output.FormatJSON(inv))
 			return nil
@@ -433,7 +433,7 @@ func acceptOutcome(row map[string]any, id string, dryRun bool) error {
 		if dryRun {
 			verb = "would be added"
 		}
-		message = fmt.Sprintf("suggestion %s was no longer open (declined, or replaced by a principle pushed at its rank or by new suggestions) when the accept reached Konvu, so its wording %s as a new active rule (%s)", id, verb, other)
+		message = fmt.Sprintf("suggestion %s was no longer open (declined, or replaced by a principle pushed at its rank or by new suggestions) when the accept reached Konvu, so its wording %s as a new active principle (%s)", id, verb, other)
 	}
 	return &clierrors.CLIError{
 		Code:       "INVARIANT_CHANGED",
@@ -497,7 +497,7 @@ func confirmAccept(cmd *cobra.Command, client *api.Client, postErr error, id str
 	switch status := getStr(inv, "status"); status {
 	case invariantValidated:
 		// Not the server's detail: it asks for a retry that the "proposed only" check refuses.
-		output.PrintStderr("It is active now, but the server failed after the accept, so its mapping to controls may wait for the next code analysis or rule change. No need to accept it again.")
+		output.PrintStderr("It is active now, but the server failed after the accept, so its mapping to controls may wait for the next code analysis or principle change. No need to accept it again.")
 		return printAccepted(cmd, format, map[string]any{
 			"dry_run": false,
 			"invariants": []any{map[string]any{

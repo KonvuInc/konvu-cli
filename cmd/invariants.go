@@ -95,7 +95,7 @@ func newInvariantsPushCmd() *cobra.Command {
 
 The file is a JSON array of principles, or an object with an "invariants" array (1 to 10).
 Each principle accepts:
-  statement        (required) the rule, at most 200 characters
+  statement        (required) the principle, at most 200 characters
   why_it_matters   (required) at most 500 characters
   property         (required) authentication, authorization, confidentiality,
                    integrity, availability or non_repudiation
@@ -119,19 +119,19 @@ your account in the browser, so the CLI checks every field above first (no unkno
 duplicate statements or ranks) and sends nothing if one is off; repository_id is refused, as
 there is no account yet: use repository. A dry run names the company the onboarding belongs to
 ("Saves to the Konvu onboarding for acme.com"; "domain" in JSON): check it is yours before
-saving, since the code decides who gets the rules. Redirects are never followed, so the code
-and the rules reach no other server. Each comes back saved (valid on a dry run) or unchanged,
-and moves into your account when you create it. The code is only ever taken from
+saving, since the code decides who gets the principles. Redirects are never followed, so the
+code and the principles reach no other server. Each comes back saved (valid on a dry run) or
+unchanged, and moves into your account when you create it. The code is only ever taken from
 this flag: without it, push is the normal logged-in push. If that onboarding already has an
 account, or the code expired, run 'konvu login', then push again without --onboarding.
 
 Exit codes: 0 success, 1 general error, 2 invalid principles or onboarding code, 3 repository_id
 not found (with --onboarding: the code is unknown or expired), 4 auth failed or refused (with
 --onboarding: the onboarding already has an account, or Konvu refused the code)`,
-		Example: `  konvu principles push --file invariants.json --dry-run
-  konvu principles push --file invariants.json
-  cat invariants.json | konvu principles push --file -
-  konvu principles push --file invariants.json --onboarding K7P2XQ9M`,
+		Example: `  konvu principles push --file principles.json --dry-run
+  konvu principles push --file principles.json
+  cat principles.json | konvu principles push --file -
+  konvu principles push --file principles.json --onboarding K7P2XQ9M`,
 		RunE: runInvariantsPush,
 	}
 	c.Flags().String("file", "", "JSON file of principles, or '-' for stdin")
@@ -990,7 +990,7 @@ func onboardingPushError(err error, code *onboardingCode) error {
 		}
 		return &clierrors.CLIError{
 			Code:       "REDIRECT_REFUSED",
-			Message:    fmt.Sprintf("Konvu's API answered %d, a redirect%s; push --onboarding never follows one, so the code and the rules went nowhere else", redirect.StatusCode, to),
+			Message:    fmt.Sprintf("Konvu's API answered %d, a redirect%s; push --onboarding never follows one, so the code and the principles went nowhere else", redirect.StatusCode, to),
 			Suggestion: "Check that KONVU_API_URL, if set, is Konvu's API itself (the default is " + config.DefaultAPIBaseURL + "), then run the same command again.",
 			ExitCode:   clierrors.ExitGeneralError,
 		}

@@ -27,7 +27,7 @@
 ┆                 ▼                                ▼                 ┆
 ┆  ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┆
 ┆  │            IN CI            │  │     IN YOUR CODING AGENT    │  ┆
-┆  │ blocks a PR breaking a rule │  │ steps in as code is written │  ┆
+┆  │     blocks a breaking PR    │  │ steps in as code is written │  ┆
 ┆  └─────────────────────────────┘  └─────────────────────────────┘  ┆
 ┆                                                                    ┆
 ╰┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄╯
