@@ -336,6 +336,7 @@ func TestClearSkillAsksBeforeAcceptingRiskAndNeverForcePushes(t *testing.T) {
 	for _, want := range []string{
 		"Konvu Clear", "`decision` is null", "only on their explicit yes", "pr-check accept-risk",
 		"pr-check dismiss", "Never force-push", "Stop after 3 rounds",
+		"an older check never makes the PR Konvu Clear", "skip the commit",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("konvu-clear: missing %q", want)

@@ -21,15 +21,15 @@ Use `-o json` for every konvu call.
 
 ## Steps
 
-1. **Read the check.** `konvu finding pr-check get <pr-url> -o json`. Open findings are the ones whose `decision` is null. If `pr.head_sha` is not the PR's current head (`gh pr view <pr-url> --json headRefOid`), Konvu is still checking the latest push: wait a minute and read again, for up to 15 minutes. No open findings: the PR is Konvu Clear, say so and stop.
+1. **Read the check.** `konvu finding pr-check get <pr-url> -o json`. Open findings are the ones whose `decision` is null. If `pr.head_sha` is not the PR's current head (`gh pr view <pr-url> --json headRefOid`), Konvu is still checking the latest push: wait a minute and read again, for up to 15 minutes. If the heads still differ, stop and report that the current commit is unchecked: an older check never makes the PR Konvu Clear. When the heads match and no finding is open, the PR is Konvu Clear: say so and stop.
 2. **Verify each open finding**, highest `score` first. Read the `evidence` at `pr.head_sha`, follow the `attack_path`, and look for a guard Konvu missed in `protections_checked`. Call it real, false positive or unsure, citing file:line.
 3. **Act on it.**
    - Real: fix it in the code with the smallest change that closes the attack path. Use `fix` as a hint, not an order. Where the repo has tests for that code, add one that fails without the fix.
    - False positive: `konvu finding pr-check dismiss <pr-url> <finding_id> --reason "<why, with file:line>" -o json`.
    - Real but acceptable, or unsure: never decide alone. Ask the user, and only on their explicit yes run `konvu finding pr-check accept-risk <pr-url> <finding_id> --reason "<their reason>" -o json`.
-4. **Commit once.** Run the repo's tests and linters, then put every fix in one commit and push it to the PR branch. Never force-push and never skip hooks.
-5. **Re-check.** Wait for Konvu's check on the commit you pushed (the head check in step 1), then repeat from step 1. Stop after 3 rounds and report what is left.
+4. **Commit once.** If you changed code, run the repo's tests and linters, then put every fix in one commit and push it to the PR branch. Never force-push and never skip hooks. If you only recorded verdicts, skip the commit: they show in `pr-check get` at once.
+5. **Re-check.** Repeat from step 1: after a push it waits for Konvu's check on that commit, after verdicts alone it reads the same check again. Stop after 3 rounds and report what is left.
 
 ## Report
 
-One line per finding: its title, your verdict, and what you did (fixed in `<sha>`, dismissed, accepted by the user, or left for the user and why). End with `<pr-url>: Konvu Clear`, or `<pr-url>: At risk, N open` and what blocks it.
+One line per finding: its title, your verdict, and what you did (fixed in `<sha>`, dismissed, accepted by the user, or left for the user and why). End with `<pr-url>: Konvu Clear`, `<pr-url>: At risk, N open` and what blocks it, or `<pr-url>: unchecked` when Konvu has not checked the current commit.
