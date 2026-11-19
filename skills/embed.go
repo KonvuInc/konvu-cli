@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-//go:embed konvu-shared recipe-weekly-triage konvu-onboarding konvu-principles konvu-upload-principles konvu-decide-suggestions konvu-audit-principles konvu-review-pr-checks konvu-catalog
+//go:embed konvu-shared recipe-weekly-triage konvu-onboarding konvu-principles konvu-upload-principles konvu-decide-suggestions konvu-audit-principles konvu-review-pr-checks konvu-clear konvu-catalog
 var embedded embed.FS
 
 // SkillDir pairs an embed directory name with its install directory name, and carries what the
@@ -84,6 +84,14 @@ var skillDirs = []SkillDir{
 		Pitch: []string{
 			"  Review what Konvu's PR check found on your pull requests, or on one PR",
 			"  (read-only). Run it with: /konvu-review-pr-checks",
+		},
+	},
+	{
+		EmbedName:   "konvu-clear",
+		InstallName: "konvu-clear",
+		Pitch: []string{
+			"  Make a PR Konvu Clear: fix what Konvu found that is real, dismiss what",
+			"  is not, and re-check. Run it with: /konvu-clear <pr-url>",
 		},
 	},
 	{
