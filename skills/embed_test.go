@@ -149,7 +149,7 @@ func TestEveryEmbeddedSkillIsRegisteredAndInstalls(t *testing.T) {
 // login first, send setup to the install steps that stop before the onboarding, and carry the
 // trust boundary, whatever else it says.
 func TestDashboardSkillsCheckSetupAndCarryTheTrustBoundary(t *testing.T) {
-	for _, name := range []string{"konvu-decide-suggestions", "konvu-audit-principles", "konvu-review-pr-checks"} {
+	for _, name := range []string{"konvu-decide-suggestions", "konvu-audit-principles", "konvu-review-pr-checks", "konvu-clear"} {
 		data, err := embedded.ReadFile(name + "/SKILL.md")
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
@@ -326,6 +326,23 @@ func TestDecideSuggestionsWaitsForThePick(t *testing.T) {
 
 // The catalog skill rewrites a company's catalog: it must check setup, carry a trust boundary,
 // and dry-run and confirm before every apply.
+// konvu-clear changes code and records verdicts, so a risk is only ever accepted on the user's word.
+func TestClearSkillAsksBeforeAcceptingRiskAndNeverForcePushes(t *testing.T) {
+	data, err := embedded.ReadFile("konvu-clear/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		"Konvu Clear", "`decision` is null", "only on their explicit yes", "pr-check accept-risk",
+		"pr-check dismiss", "Never force-push", "Stop after 3 rounds",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("konvu-clear: missing %q", want)
+		}
+	}
+}
+
 func TestCatalogSkillDryRunsAndConfirmsBeforeApplying(t *testing.T) {
 	data, err := embedded.ReadFile("konvu-catalog/SKILL.md")
 	if err != nil {
