@@ -46,7 +46,11 @@ func TestCatalogGetPrintsATable(t *testing.T) {
 	catalog["apps"] = append(catalog["apps"].([]any), map[string]any{
 		"id": "0190aaaabbbbccccddddeeeeffff0002", "name": "Site", "product": nil,
 		"components": []any{"acme/api", "acme/web"}, "origin": "user", "confirmed": true,
+	}, map[string]any{
+		"id": "0190aaaabbbbccccddddeeeeffff0003", "name": "Docs", "product": nil, "module": "Guides",
+		"components": []any{}, "origin": "agent",
 	})
+	catalog["modules"] = []any{"Guides"}
 	catalog["excluded"] = []any{"acme/demo"}
 	reviewServer(t, map[string][]invariantReply{
 		"GET /inventory/catalog": {{http.StatusOK, catalog}},
@@ -58,7 +62,7 @@ func TestCatalogGetPrintsATable(t *testing.T) {
 	for _, want := range []string{
 		"Products (suggested by Konvu)",
 		"Acme\n  module Billing\n    Billing  suggested  1 component\n      acme/api  (in 2 apps)\n",
-		"No product\n  Site  confirmed  2 components\n",
+		"No product\n  module Guides\n    Docs  suggested  0 components\n  Site  confirmed  2 components\n",
 		"Excluded from apps: acme/demo",
 		"1 component in no app",
 	} {

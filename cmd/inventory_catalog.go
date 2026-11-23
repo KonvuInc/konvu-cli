@@ -209,18 +209,24 @@ func catalogTree(catalog map[string]any) string {
 			}
 		}
 	}
-	// A product's declared modules first, then any other module its apps name.
-	printProduct := func(title, product string, declared []string) {
+	// A product's declared modules first, then any other module its apps name;
+	// one outside allowed is flagged.
+	printProduct := func(title, product string, declared, allowed []string) {
 		fmt.Fprintf(&b, "%s\n", title)
 		for _, module := range declared {
 			fmt.Fprintf(&b, "  module %s\n", clean(module))
 			printApps("    ", product, module)
 		}
 		for _, module := range modulesOf(apps, product) {
-			if module != "" && !containsString(declared, module) {
-				fmt.Fprintf(&b, "  module %s (not a module of this product)\n", clean(module))
-				printApps("    ", product, module)
+			if module == "" || containsString(declared, module) {
+				continue
 			}
+			if containsString(allowed, module) {
+				fmt.Fprintf(&b, "  module %s\n", clean(module))
+			} else {
+				fmt.Fprintf(&b, "  module %s (not a module of this product)\n", clean(module))
+			}
+			printApps("    ", product, module)
 		}
 		printApps("  ", product, "")
 		b.WriteString("\n")
@@ -230,7 +236,8 @@ func catalogTree(catalog map[string]any) string {
 		m, _ := p.(map[string]any)
 		name := getStr(m, "name")
 		listed[name] = true
-		printProduct(clean(name), name, stringsOf(getSlice(m, "modules")))
+		modules := stringsOf(getSlice(m, "modules"))
+		printProduct(clean(name), name, modules, modules)
 	}
 	// Apps of no product, or of a product the list no longer names.
 	var orphans []string
@@ -241,11 +248,11 @@ func catalogTree(catalog map[string]any) string {
 		}
 	}
 	for _, p := range orphans {
-		title := "No product"
+		title, allowed := "No product", stringsOf(getSlice(catalog, "modules"))
 		if p != "" {
-			title = fmt.Sprintf("%s (not a listed product)", clean(p))
+			title, allowed = fmt.Sprintf("%s (not a listed product)", clean(p)), nil
 		}
-		printProduct(title, p, nil)
+		printProduct(title, p, nil, allowed)
 	}
 	if modules := stringsOf(getSlice(catalog, "modules")); len(modules) > 0 {
 		fmt.Fprintf(&b, "Modules of no product: %s\n", clean(strings.Join(modules, ", ")))
