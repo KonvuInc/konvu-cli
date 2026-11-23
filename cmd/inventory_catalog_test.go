@@ -42,14 +42,46 @@ func TestCatalogGetPrintsATable(t *testing.T) {
 	reviewServer(t, map[string][]invariantReply{
 		"GET /inventory/catalog": {{http.StatusOK, catalogFixture()}},
 	})
+	catalog := catalogFixture()
+	catalog["apps"] = append(catalog["apps"].([]any), map[string]any{
+		"id": "0190aaaabbbbccccddddeeeeffff0002", "name": "Site", "product": nil,
+		"components": []any{"acme/api", "acme/web"}, "origin": "user", "confirmed": true,
+	})
+	catalog["excluded"] = []any{"acme/demo"}
+	reviewServer(t, map[string][]invariantReply{
+		"GET /inventory/catalog": {{http.StatusOK, catalog}},
+	})
 	out, err := runInvariants(newInventoryCatalogCmd(), "get", "-o", "table")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Acme\n  Billing\n", testAppID, "1 components in no app"} {
+	for _, want := range []string{
+		"Products (suggested by Konvu)",
+		"Acme\n  module Billing\n    Billing  suggested  1 component\n      acme/api  (in 2 apps)\n",
+		"No product\n  Site  confirmed  2 components\n",
+		"Excluded from apps: acme/demo",
+		"1 component in no app",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in %q", want, out)
 		}
+	}
+}
+
+func TestAppsListFiltersByProductAndStatus(t *testing.T) {
+	reviewServer(t, map[string][]invariantReply{
+		"GET /inventory/catalog": {
+			{http.StatusOK, catalogFixture()},
+			{http.StatusOK, catalogFixture()},
+		},
+	})
+	out, err := runInvariants(newInventoryAppsCmd(), "list", "--product", "acme", "--status", "suggested", "-o", "json")
+	if err != nil || !strings.Contains(out, `"Billing"`) {
+		t.Fatalf("got %q, %v", out, err)
+	}
+	out, err = runInvariants(newInventoryAppsCmd(), "list", "--status", "confirmed", "-o", "json")
+	if err != nil || strings.TrimSpace(out) != "[]" {
+		t.Fatalf("got %q, %v", out, err)
 	}
 }
 
@@ -62,7 +94,8 @@ func TestCatalogApplySendsTheFileAndDryRun(t *testing.T) {
 	}))
 	defer server.Close()
 	invariantsEnv(t, server)
-	file := writeInvariants(t, `{"revision": "r1", "products": [{"name": "Acme"}], "modules": [], "apps": []}`)
+	file := writeInvariants(t, `{"revision": "r1", "products": [{"name": "Acme"}], "modules": [], "apps": [],
+		"excluded": ["acme/demo"], "products_confirmed": true}`)
 	out, err := runInvariants(newInventoryCatalogCmd(), "apply", "--file", file, "--dry-run", "-o", "table")
 	if err != nil {
 		t.Fatal(err)
@@ -117,16 +150,25 @@ func TestAppsShowFindsTheAppByName(t *testing.T) {
 		"GET /inventory/catalog": {{http.StatusOK, catalogFixture()}},
 		"GET /inventory/apps/" + testAppID: {{http.StatusOK, map[string]any{
 			"app":     map[string]any{"name": "Billing", "product": "Acme", "origin": "agent"},
-			"members": []any{map[string]any{"name": "acme/api", "kind": "api"}},
-			"edges":   []any{},
+			"members": []any{map[string]any{"id": "c1", "name": "acme/api", "kind": "api"}},
+			"nodes":   []any{map[string]any{"id": "c2", "name": "acme/db"}},
+			"edges": []any{map[string]any{
+				"source_component_id": "c1", "target_component_id": "c2", "kind": "calls", "protocol": "tcp",
+			}},
 		}}},
 	})
-	out, err := runInvariants(newInventoryAppsCmd(), "show", "Billing", "-o", "table")
+	// Any case finds the app; connections read by name.
+	out, err := runInvariants(newInventoryAppsCmd(), "show", "billing", "-o", "table")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "acme/api") || len(calls()) != 2 {
-		t.Errorf("unexpected output %q", out)
+	for _, want := range []string{"status   suggested", "1 connection", "acme/api", "acme/db", "tcp"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in %q", want, out)
+		}
+	}
+	if len(calls()) != 2 {
+		t.Errorf("calls %v", calls())
 	}
 }
 
@@ -134,10 +176,13 @@ func TestAppsShowUnknownAppIsNotFound(t *testing.T) {
 	reviewServer(t, map[string][]invariantReply{
 		"GET /inventory/catalog": {{http.StatusOK, catalogFixture()}},
 	})
-	_, err := runInvariants(newInventoryAppsCmd(), "show", "Nope")
+	_, err := runInvariants(newInventoryAppsCmd(), "show", "Bill")
 	var cliErr *clierrors.CLIError
 	if !errors.As(err, &cliErr) || cliErr.ExitCode != clierrors.ExitNotFound {
 		t.Fatalf("got %v", err)
+	}
+	if cliErr.Suggestion != "Did you mean: Billing?" {
+		t.Errorf("suggestion %q", cliErr.Suggestion)
 	}
 }
 
