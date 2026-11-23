@@ -225,15 +225,15 @@ func runInvariantsGuide(cmd *cobra.Command, args []string) error {
 	if format == "json" {
 		return output.WriteString(cmd.OutOrStdout(), output.FormatJSON(resp)+"\n")
 	}
-	return output.WriteString(cmd.OutOrStdout(), guideText(guide))
+	return output.WriteString(cmd.OutOrStdout(), terminalText(guide))
 }
 
-// guideText is the guide as the terminal gets it: control characters other than newlines and
+// terminalText is server text as the terminal gets it: control characters other than newlines and
 // tabs are dropped so the server's text cannot drive the terminal, and it ends with a newline.
-func guideText(guide string) string {
+func terminalText(value string) string {
 	var text strings.Builder
-	text.Grow(len(guide) + 1)
-	for _, character := range strings.ReplaceAll(guide, "\r\n", "\n") {
+	text.Grow(len(value) + 1)
+	for _, character := range strings.ReplaceAll(value, "\r\n", "\n") {
 		if character == '\n' || character == '\t' || !unicode.IsControl(character) {
 			text.WriteRune(character)
 		}

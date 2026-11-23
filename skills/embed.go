@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-//go:embed konvu-shared recipe-weekly-triage konvu-onboarding konvu-principles konvu-upload-principles konvu-decide-suggestions konvu-audit-principles konvu-review-pr-checks konvu-clear konvu-catalog
+//go:embed konvu-shared recipe-weekly-triage konvu-onboarding konvu-principles konvu-upload-principles konvu-decide-suggestions konvu-audit-principles konvu-review-pr-checks konvu-clear konvu-catalog konvu-security-book
 var embedded embed.FS
 
 // SkillDir pairs an embed directory name with its install directory name, and carries what the
@@ -100,6 +100,14 @@ var skillDirs = []SkillDir{
 		Pitch: []string{
 			"  Explore and fix your products, apps and components in Konvu, with a dry",
 			"  run before any change. Run it with: /konvu-catalog",
+		},
+	},
+	{
+		EmbedName:   "konvu-security-book",
+		InstallName: "konvu-security-book",
+		Pitch: []string{
+			"  Read your Security Book: what Konvu knows about your company, its",
+			"  infrastructure and threat model, and your team's pages. Run it with: /konvu-security-book",
 		},
 	},
 }

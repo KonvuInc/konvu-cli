@@ -230,3 +230,42 @@ func TestUnauthorizedCarriesTheServerReason(t *testing.T) {
 		t.Errorf("the login hint should still be there: %v", err)
 	}
 }
+
+func TestClient_GetText(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/knowledge/pages/company.md" || r.URL.Query().Get("format") != "md" {
+			t.Errorf("request = %s", r.URL.String())
+		}
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		_, _ = w.Write([]byte("# Company\n\nText.\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token")
+	defer client.Close()
+
+	text, err := client.GetText("/knowledge/pages/company.md", map[string]any{"format": "md"}, 1024)
+	if err != nil || text != "# Company\n\nText.\n" {
+		t.Fatalf("GetText() = %q, %v", text, err)
+	}
+	if _, err := client.GetText("/knowledge/pages/company.md", map[string]any{"format": "md"}, 4); err == nil {
+		t.Fatal("GetText() accepted a body over its limit")
+	}
+}
+
+func TestClient_GetText_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"detail":"Page not found"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token")
+	defer client.Close()
+
+	_, err := client.GetText("/knowledge/pages/company.md", nil, 1024)
+	apiErr, ok := err.(*APIError)
+	if !ok || apiErr.StatusCode != http.StatusNotFound {
+		t.Fatalf("GetText() error = %#v, want a 404 APIError", err)
+	}
+}
