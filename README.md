@@ -788,7 +788,7 @@ konvu skills install
 
 Skills are installed to `~/.claude/skills/` where Claude Code discovers them automatically — no configuration needed.
 
-Principles and PR checks come as these skills:
+Principles, PR checks and the Security Book come as these skills:
 
 - `/konvu-onboarding` — a short welcome, then your first principle with `konvu-principles`, then how Konvu enforces it; it asks you to log in only when the principle is saved
 - `/konvu-principles` — pick a repo and a theme, draft the principle that matters most by Konvu's guide (bundled with the skill), shape it together, then save it; `konvu login` is needed only for that save
@@ -798,6 +798,7 @@ Principles and PR checks come as these skills:
 - `/konvu-review-pr-checks` — read-only review of what Konvu's PR check found, on every analyzed PR or on one PR URL
 - `/konvu-clear <pr-url>` — make a PR Konvu Clear (no open findings): verifies each finding against the code, fixes the real ones in one commit, dismisses false positives with a reason, asks you before accepting a risk, then waits for the re-check
 - `/konvu-catalog` — explore and fix your products, apps and components, with a dry run before any change
+- `/konvu-security-book` — read your Security Book: how it is laid out, which pages exist and which Konvu has not written yet, and any page with its sources
 
 To check the skills directory:
 

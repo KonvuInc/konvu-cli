@@ -187,6 +187,7 @@ func TestKnowledgeErrors(t *testing.T) {
 	}{
 		{"missing page", runKnowledgeCat, []string{"company.md"}, 404, "PAGE_NOT_FOUND", clierrors.ExitNotFound},
 		{"older server", runKnowledgeLs, nil, 404, "KNOWLEDGE_PAGES_UNAVAILABLE", clierrors.ExitNotFound},
+		{"page on an older server", runKnowledgeCat, []string{"company.md"}, 404, "KNOWLEDGE_PAGES_UNAVAILABLE", clierrors.ExitNotFound},
 		{"bad path", runKnowledgeCat, []string{"company.md"}, 422, "INVALID_ARGUMENTS", clierrors.ExitUsageError},
 		{"forbidden", runKnowledgeLs, nil, 403, "FORBIDDEN", clierrors.ExitAuthFailed},
 		{"logged out", runKnowledgeCat, []string{"company.md"}, 401, "AUTH_FAILED", clierrors.ExitAuthFailed},
@@ -195,6 +196,10 @@ func TestKnowledgeErrors(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			knowledgePagesServer(t, func(w http.ResponseWriter, r *http.Request) {
+				if test.name == "missing page" && r.URL.Path == knowledgePagesPath {
+					_, _ = w.Write([]byte(`{"items":[]}`))
+					return
+				}
 				w.WriteHeader(test.status)
 				_, _ = w.Write([]byte(`{"detail":"the server's reason"}`))
 			})

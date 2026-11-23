@@ -42,4 +42,4 @@ What each page's fields mean (`ls -o json`, `cat -o json`):
 
 This version of the CLI reads the book only. If the user wants to change a page, say editing from the CLI is coming, then stop.
 
-Errors: exit 2 means a malformed path or folder (the message gives the rule), 3 no page at that path (for `ls`, a Konvu server that doesn't serve the book yet), 4 not logged in or no access.
+Errors: exit 2 means a malformed path or folder (the message gives the rule), 3 a page or book that isn't there, 4 not logged in or no access. On exit 3, the message tells the two apart: "no page at <path>" is a page not written yet, "this Konvu server does not serve Security Book pages" a server without the book.

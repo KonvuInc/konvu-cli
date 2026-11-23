@@ -127,15 +127,28 @@ func runKnowledgeCat(cmd *cobra.Command, args []string) error {
 	if format == "json" {
 		result, err := client.Get(route, nil)
 		if err != nil {
-			return knowledgePagesError(err, path)
+			return knowledgeCatError(client, err, path)
 		}
 		return output.WriteString(cmd.OutOrStdout(), output.FormatJSON(result)+"\n")
 	}
 	text, err := client.GetText(route, map[string]any{"format": "md"}, knowledgePageMaxBytes)
 	if err != nil {
-		return knowledgePagesError(err, path)
+		return knowledgeCatError(client, err, path)
 	}
 	return output.WriteString(cmd.OutOrStdout(), terminalText(text))
+}
+
+// knowledgeCatError maps a failed page read. A 404 alone can't tell a page not written yet from a
+// server with no book, so the list is asked: it is a 404 only on a server with no book.
+func knowledgeCatError(client *api.Client, err error, path string) error {
+	if apiErr, ok := err.(*api.APIError); ok && apiErr.StatusCode == 404 {
+		if _, listErr := client.Get(knowledgePagesPath, nil); listErr != nil {
+			if listAPIErr, ok := listErr.(*api.APIError); ok && listAPIErr.StatusCode == 404 {
+				return knowledgePagesError(listErr, "")
+			}
+		}
+	}
+	return knowledgePagesError(err, path)
 }
 
 // knowledgePage is a page path as the API takes it: one leading slash, which people type, is dropped.
