@@ -15,7 +15,7 @@ import (
 )
 
 var knowledgeCmd = &cobra.Command{
-	Use: "knowledge", Short: "Read the Security Book and manage triage knowledge",
+	Use: "knowledge", Short: "Read and edit the Security Book, send it documents, and manage triage knowledge",
 }
 
 var triageInstructionsCmd = newTriageInstructionsCommand()
