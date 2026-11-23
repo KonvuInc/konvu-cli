@@ -473,11 +473,7 @@ func (c *Client) PostMultipart(path string, files []MultipartFile) (map[string]a
 	go func() {
 		defer close(done)
 		for i, file := range files {
-			part, err := form.CreatePart(headers[i])
-			if err == nil {
-				_, err = io.Copy(part, file.Body)
-			}
-			if err != nil {
+			if err := writeMultipartFile(form, headers[i], file); err != nil {
 				writer.CloseWithError(err)
 				return
 			}
@@ -524,6 +520,23 @@ func (c *Client) PostMultipart(path string, files []MultipartFile) (map[string]a
 		return nil, err
 	}
 	return result, nil
+}
+
+// writeMultipartFile writes one part, which must hold exactly file.Size bytes: checked per file, so
+// one file that grew cannot make up for another that shrank.
+func writeMultipartFile(form *multipart.Writer, header textproto.MIMEHeader, file MultipartFile) error {
+	part, err := form.CreatePart(header)
+	if err != nil {
+		return err
+	}
+	if _, err := io.CopyN(part, file.Body, file.Size); err != nil {
+		return fmt.Errorf("%s is shorter than the %d bytes it held when checked: %w", file.Filename, file.Size, err)
+	}
+	var extra [1]byte
+	if n, _ := io.ReadFull(file.Body, extra[:]); n > 0 {
+		return fmt.Errorf("%s is longer than the %d bytes it held when checked", file.Filename, file.Size)
+	}
+	return nil
 }
 
 // PostForm sends application/x-www-form-urlencoded. Some service endpoints behind the

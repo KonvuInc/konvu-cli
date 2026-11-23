@@ -146,6 +146,9 @@ func TestKnowledgeUploadMixedStatusesExitOne(t *testing.T) {
 	if strings.Contains(cliErr.Message, "a.md") {
 		t.Errorf("message names a file that went through: %s", cliErr.Message)
 	}
+	if strings.Contains(cliErr.Suggestion, "unknown") {
+		t.Errorf("suggestion = %q", cliErr.Suggestion)
+	}
 	if !strings.Contains(out, "cannot read [2J this file") || strings.Contains(out, "\x1b") {
 		t.Errorf("table:\n%q", out)
 	}
@@ -171,6 +174,10 @@ func TestKnowledgeUploadShortAnswerMatchesNoFile(t *testing.T) {
 	cliErr, ok := err.(*clierrors.CLIError)
 	if !ok || cliErr.Code != "UPLOAD_INCOMPLETE" || !strings.Contains(cliErr.Message, "3 of 3") {
 		t.Fatalf("error = %#v", err)
+	}
+	// Sending them again could store them twice: the advice is to check first.
+	if !strings.Contains(cliErr.Suggestion, "check 'konvu knowledge uploads' before sending them again") {
+		t.Errorf("suggestion = %q", cliErr.Suggestion)
 	}
 	if strings.Contains(out, "ready") || strings.Count(out, "unknown") != 3 {
 		t.Errorf("table:\n%s", out)
@@ -209,8 +216,11 @@ func TestKnowledgeUploadRequestErrorNamesEveryFile(t *testing.T) {
 	})
 	_, err := uploadKnowledgeFiles(t, "table", args...)
 	cliErr, ok := err.(*clierrors.CLIError)
-	if !ok || cliErr.Code != "API_ERROR" {
-		t.Fatalf("error = %#v", err)
+	if !ok || cliErr.Code != "API_ERROR" || cliErr.Retryable {
+		t.Fatalf("error = %#v, want a non-retryable API_ERROR: 20 files went through", err)
+	}
+	if !strings.Contains(cliErr.Suggestion, "check 'konvu knowledge uploads' before sending them again") {
+		t.Errorf("suggestion = %q", cliErr.Suggestion)
 	}
 	for _, want := range []string{"f00.md (unsupported)", "f20.md (the request failed", "2 of 21"} {
 		if !strings.Contains(cliErr.Message, want) {

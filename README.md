@@ -413,7 +413,9 @@ empty or unreadable file, or a larger one is refused here and never sent; the
 other files are sent.
 Each file's status is `pending` or `processing` while Konvu reads it, `ready`
 once read, `failed` or `unsupported` when it could not; `upload` exits `1`, and
-names the files, if any was refused, failed or unsupported. A server too old for
+names the files, if any was refused, failed or unsupported. A file marked
+`unknown` may have been stored: check `konvu knowledge uploads` before sending it
+again. A server too old for
 uploads exits `3` and says so. `uploads` lists up to 200 at a time (`--limit`),
 and `--offset` skips the newest ones.
 

@@ -37,8 +37,10 @@ A file must be at most 20 MiB. A directory, an empty or unreadable file, or one
 over the limit is refused here and never sent. Files go 20 to a request.
 
 The table shows each file's status: pending or processing while Konvu reads it,
-ready once read, failed or unsupported when Konvu could not read it. Run
-'konvu knowledge uploads' to follow them.
+ready once read, failed or unsupported when Konvu could not read it, unknown
+when a request failed or its answer did not match the files: Konvu may hold
+those, so check before sending them again. Run 'konvu knowledge uploads' to
+follow them.
 
 Exit codes: 0 every file was sent and none failed, 1 a file was refused, failed
 or unsupported (the error names each), 2 invalid arguments, 3 a server that does
@@ -71,6 +73,8 @@ func runKnowledgeUpload(cmd *cobra.Command, args []string) error {
 	rows := make([]any, len(args))
 	failures := []any{}
 	var problems []string
+	// Files the server may hold though the request's answer did not say so.
+	unknown := 0
 	problem := func(index int, reason string) {
 		problems = append(problems, fmt.Sprintf("%s (%s)", sanitizeGuardrailsBaselineText(args[index]), reason))
 	}
@@ -79,6 +83,9 @@ func runKnowledgeUpload(cmd *cobra.Command, args []string) error {
 		row["status"], row["error"] = status, reason
 		failures = append(failures, map[string]any{"file": args[index], "status": status, "error": reason})
 		problem(index, reason)
+		if status == "unknown" {
+			unknown++
+		}
 	}
 	var send []int
 	for index, name := range args {
@@ -156,10 +163,17 @@ func runKnowledgeUpload(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	summary := fmt.Sprintf("%d of %d files did not go through: %s", len(problems), len(args), strings.Join(problems, ", "))
+	// Never "run it again": some files went through, and Konvu may hold the unknown ones.
+	advice := "Fix or convert the files named here, then upload only those again."
+	if unknown > 0 {
+		advice = "Konvu may already hold the files marked unknown: check 'konvu knowledge uploads' before sending them again. Fix or convert the other files named here, then upload only those again."
+	}
 	if requestErr != nil {
 		mapped := knowledgeWriteError(requestErr, "")
 		if cliErr, ok := mapped.(*clierrors.CLIError); ok {
 			cliErr.Message += "; " + summary
+			cliErr.Suggestion += " " + advice
+			cliErr.Retryable = false
 		}
 		return mapped
 	}
@@ -167,7 +181,7 @@ func runKnowledgeUpload(cmd *cobra.Command, args []string) error {
 		return &clierrors.CLIError{
 			Code:       "UPLOAD_INCOMPLETE",
 			Message:    summary,
-			Suggestion: "Fix or convert the files named here, then upload only those again.",
+			Suggestion: advice,
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	}

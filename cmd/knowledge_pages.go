@@ -357,9 +357,8 @@ func knowledgeWriteError(err error, path string) error {
 	detail := invariantDetail(apiErr)
 	write, retry, smaller := "edit", "Fix what the server named, then run the same command again.", "Shorten the page's text."
 	if path == "" {
-		// Earlier requests of the same upload may have gone through, so running it all again would
-		// send their files twice.
-		write, retry = "upload", "Fix what the server named, then upload only the files the table does not show as sent."
+		// The upload adds which files to send again: earlier requests may have gone through.
+		write, retry = "upload", "Fix what the server named."
 		smaller = "Send fewer or smaller files at a time: at most 20 files of 20 MiB each."
 	}
 	switch {

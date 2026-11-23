@@ -349,10 +349,19 @@ func TestClient_PostMultipart_Errors(t *testing.T) {
 	} else if apiErr, ok := err.(*APIError); !ok || apiErr.StatusCode != 422 {
 		t.Errorf("422: got %T %v", err, err)
 	}
-	// A body shorter than its declared size fails the request instead of sending other bytes.
+	// A file that changed since it was measured fails the request instead of sending other bytes,
+	// even when another file's change makes up the total.
 	status = http.StatusOK
-	short := []MultipartFile{{Field: "file", Filename: "a.md", ContentType: "text/markdown", Size: 10, Body: strings.NewReader("# A")}}
-	if _, err := client.PostMultipart("/x", short); err == nil {
-		t.Fatal("a file shorter than its size was sent")
+	for name, changed := range map[string][]MultipartFile{
+		"shorter": {{Field: "file", Filename: "a.md", Size: 10, Body: strings.NewReader("# A")}},
+		"longer":  {{Field: "file", Filename: "a.md", Size: 2, Body: strings.NewReader("# A")}},
+		"same total": {
+			{Field: "file", Filename: "a.md", Size: 2, Body: strings.NewReader("# A")},
+			{Field: "file", Filename: "b.md", Size: 4, Body: strings.NewReader("# B")},
+		},
+	} {
+		if _, err := client.PostMultipart("/x", changed); err == nil {
+			t.Errorf("%s: a file that changed size was sent", name)
+		}
 	}
 }
