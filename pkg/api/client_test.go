@@ -1,7 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -267,5 +271,88 @@ func TestClient_GetText_Error(t *testing.T) {
 	apiErr, ok := err.(*APIError)
 	if !ok || apiErr.StatusCode != http.StatusNotFound {
 		t.Fatalf("GetText() error = %#v, want a 404 APIError", err)
+	}
+}
+
+func TestClient_PostMultipart(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/knowledge/uploads" || r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("request = %s %s, auth %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		}
+		body, _ := io.ReadAll(r.Body)
+		if r.ContentLength != int64(len(body)) {
+			t.Errorf("Content-Length = %d, body is %d bytes", r.ContentLength, len(body))
+		}
+		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
+		var got []string
+		for {
+			part, err := reader.NextPart()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, _ := io.ReadAll(part)
+			got = append(got, part.FormName()+"|"+part.FileName()+"|"+part.Header.Get("Content-Type")+"|"+string(data))
+		}
+		if want := []string{`file|a "b".md|text/markdown|# A`, "file|b.pdf|application/pdf|%PDF"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Errorf("parts = %q, want %q", got, want)
+		}
+		_, _ = w.Write([]byte(`{"items":[{"status":"pending"},{"status":"ready"}]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token")
+	defer client.Close()
+	data, err := client.PostMultipart("/knowledge/uploads", []MultipartFile{
+		{Field: "file", Filename: `a "b".md`, ContentType: "text/markdown", Size: 3, Body: strings.NewReader("# A")},
+		{Field: "file", Filename: "b.pdf", ContentType: "application/pdf", Size: 4, Body: strings.NewReader("%PDF")},
+	})
+	if err != nil {
+		t.Fatalf("PostMultipart() error: %v", err)
+	}
+	if items, _ := data["items"].([]any); len(items) != 2 {
+		t.Errorf("items = %v", data["items"])
+	}
+}
+
+func TestClient_PostMultipart_Errors(t *testing.T) {
+	status := http.StatusFound
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if status == http.StatusFound {
+			http.Redirect(w, r, "/elsewhere", status)
+			return
+		}
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(`{"detail":"too many files"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token")
+	defer client.Close()
+	files := func() []MultipartFile {
+		return []MultipartFile{{Field: "file", Filename: "a.md", ContentType: "text/markdown", Size: 3, Body: strings.NewReader("# A")}}
+	}
+	if _, err := client.PostMultipart("/x", files()); err == nil {
+		t.Fatal("a redirect was taken as an answer")
+	} else if _, ok := err.(*RedirectError); !ok {
+		t.Errorf("redirect: got %T %v", err, err)
+	}
+	status = http.StatusUnprocessableEntity
+	if _, err := client.PostMultipart("/x", files()); err == nil {
+		t.Fatal("a 422 was taken as an answer")
+	} else if apiErr, ok := err.(*APIError); !ok || apiErr.StatusCode != 422 {
+		t.Errorf("422: got %T %v", err, err)
+	}
+	// A body shorter than its declared size fails the request instead of sending other bytes.
+	status = http.StatusOK
+	short := []MultipartFile{{Field: "file", Filename: "a.md", ContentType: "text/markdown", Size: 10, Body: strings.NewReader("# A")}}
+	if _, err := client.PostMultipart("/x", short); err == nil {
+		t.Fatal("a file shorter than its size was sent")
 	}
 }

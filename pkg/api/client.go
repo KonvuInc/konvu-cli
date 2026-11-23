@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"os"
 	"strings"
@@ -411,6 +413,113 @@ func (c *Client) sendBody(method, path string, data any) (any, error) {
 	}
 
 	var result any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// MultipartFile is one file part of a multipart/form-data request; an empty ContentType is sent
+// as application/octet-stream. Size must be Body's exact length: it sets the request's
+// Content-Length, so a file that changed since it was measured fails the request instead of
+// sending other bytes.
+type MultipartFile struct {
+	Field       string
+	Filename    string
+	ContentType string
+	Size        int64
+	Body        io.Reader
+}
+
+// PostMultipart sends files as one multipart/form-data POST, streamed rather than held in memory,
+// with the same login and error handling as Post. Like PostWithoutLogin it never follows a
+// redirect: a 301 or 302 would resend the request as a GET without the files, and its answer
+// would read as theirs. Any 3xx comes back as a RedirectError.
+func (c *Client) PostMultipart(path string, files []MultipartFile) (map[string]any, error) {
+	auth, err := c.authHeader()
+	if err != nil {
+		return nil, err
+	}
+	headers := make([]textproto.MIMEHeader, len(files))
+	// The framing around the files does not depend on their bytes, so writing it once with empty
+	// parts measures it.
+	var framing bytes.Buffer
+	measure := multipart.NewWriter(&framing)
+	length := int64(0)
+	for i, file := range files {
+		headers[i] = textproto.MIMEHeader{}
+		headers[i].Set("Content-Disposition", multipart.FileContentDisposition(file.Field, file.Filename))
+		contentType := file.ContentType
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		headers[i].Set("Content-Type", contentType)
+		if _, err := measure.CreatePart(headers[i]); err != nil {
+			return nil, err
+		}
+		length += file.Size
+	}
+	if err := measure.Close(); err != nil {
+		return nil, err
+	}
+	length += int64(framing.Len())
+
+	reader, writer := io.Pipe()
+	form := multipart.NewWriter(writer)
+	if err := form.SetBoundary(measure.Boundary()); err != nil {
+		return nil, err
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i, file := range files {
+			part, err := form.CreatePart(headers[i])
+			if err == nil {
+				_, err = io.Copy(part, file.Body)
+			}
+			if err != nil {
+				writer.CloseWithError(err)
+				return
+			}
+		}
+		writer.CloseWithError(form.Close())
+	}()
+	// Closing the reader stops the writer whatever became of the request, so no body is read
+	// once this returns.
+	defer func() {
+		reader.Close()
+		<-done
+	}()
+
+	req, err := http.NewRequest("POST", c.baseURL+path, reader)
+	if err != nil {
+		return nil, err
+	}
+	req.ContentLength = length
+	req.Header.Set("Authorization", auth)
+	req.Header.Set("Content-Type", form.FormDataContentType())
+
+	client := &http.Client{
+		Transport: c.httpClient.Transport,
+		// A large upload on a slow link gets one more second per 128 KiB sent.
+		Timeout: c.httpClient.Timeout + time.Duration(length/(128<<10))*time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return nil, &RedirectError{StatusCode: resp.StatusCode, Location: resp.Header.Get("Location")}
+	}
+	if err := c.checkResponse(resp); err != nil {
+		return nil, err
+	}
+	var result map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
