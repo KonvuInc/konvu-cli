@@ -48,9 +48,12 @@ func knowledgeExitCode(t *testing.T, err error) int {
 	return cliErr.ExitCode
 }
 
+// A path longer than the table's budget for its other columns: it must still print whole.
+const knowledgeLongPath = "products/payroll-api-for-european-mid-size-companies/apps/payroll-api-gateway-and-partner-portal/threat-model.md"
+
 const knowledgePagesList = `{"items":[
 	{"path":"company.md","title":"Company","kind":"chapter","written_by":"konvu","owner":null,"revision":0,"updated_at":"2026-11-18T09:12:04Z","stale":true},
-	{"path":"ops.md","title":"Ops \u001b[31mred","kind":"custom","written_by":"person","owner":null,"revision":3,"updated_at":"2026-11-20T10:00:00Z","stale":false}
+	{"path":"` + knowledgeLongPath + `","title":"Ops \u001b[31mred","kind":"custom","written_by":"person","owner":null,"revision":3,"updated_at":"2026-11-20T10:00:00Z","stale":false}
 ]}`
 
 func TestKnowledgeLsListsPages(t *testing.T) {
@@ -64,7 +67,7 @@ func TestKnowledgeLsListsPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"company.md", "Company", "konvu", "2026-11-18", "yes", "ops.md", "person", "3"} {
+	for _, want := range []string{"company.md", "Company", "konvu", "2026-11-18", "yes", knowledgeLongPath, "person", "3"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("table lacks %q:\n%s", want, out)
 		}
@@ -201,14 +204,17 @@ func TestKnowledgeErrors(t *testing.T) {
 					return
 				}
 				w.WriteHeader(test.status)
-				_, _ = w.Write([]byte(`{"detail":"the server's reason"}`))
+				_, _ = w.Write([]byte(`{"detail":"the server's\u001b[2J reason"}`))
 			})
 			_, err := runKnowledgePages(test.run, "", test.args...)
 			cliErr, ok := err.(*clierrors.CLIError)
 			if !ok || cliErr.Code != test.code || cliErr.ExitCode != test.exit {
 				t.Fatalf("error = %#v, want %s exit %d", err, test.code, test.exit)
 			}
-			if test.status == 422 && cliErr.Message != "the server's reason" {
+			if strings.ContainsRune(cliErr.Message, '\x1b') {
+				t.Errorf("message kept a control character: %q", cliErr.Message)
+			}
+			if test.status == 422 && cliErr.Message != "the server's [2J reason" {
 				t.Errorf("422 message = %q", cliErr.Message)
 			}
 		})

@@ -107,7 +107,8 @@ func runKnowledgeLs(cmd *cobra.Command, args []string) error {
 			"stale":      stale,
 		})
 	}
-	table := output.FormatTable(map[string]any{"pages": rows}, []string{"path", "title", "written_by", "revision", "updated", "stale"}, "pages", nil)
+	// The path goes last: FormatTable cuts the other columns to fit, but never the last one's words.
+	table := output.FormatTable(map[string]any{"pages": rows}, []string{"title", "written_by", "revision", "updated", "stale", "path"}, "pages", nil)
 	return output.WriteString(cmd.OutOrStdout(), table+"\n")
 }
 
@@ -173,14 +174,15 @@ func knowledgeUsage(message, suggestion string) error {
 	return &clierrors.CLIError{Code: "INVALID_ARGUMENTS", Message: message, Suggestion: suggestion, ExitCode: clierrors.ExitUsageError}
 }
 
-// knowledgePagesError maps a failed page read; path is empty for the list.
+// knowledgePagesError maps a failed page read; path is empty for the list. Every message is
+// sanitized, since a 401's detail and other errors can carry the server's text.
 func knowledgePagesError(err error, path string) error {
 	if authErr, ok := err.(*api.AuthenticationError); ok {
-		return clierrors.NewAuthError(authErr.Message)
+		return clierrors.NewAuthError(sanitizeGuardrailsBaselineText(authErr.Message))
 	}
 	apiErr, ok := err.(*api.APIError)
 	if !ok {
-		return clierrors.NewAPIError(err.Error())
+		return clierrors.NewAPIError(sanitizeGuardrailsBaselineText(err.Error()))
 	}
 	detail := invariantDetail(apiErr)
 	switch {
