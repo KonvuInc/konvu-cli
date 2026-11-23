@@ -667,9 +667,10 @@ func appsTable(apps []any) string {
 			clean(getStr(m, "product")),
 			clean(getStr(m, "module")),
 			fmt.Sprint(len(getSlice(m, "components"))),
+			clean(getStr(m, "summary")),
 		})
 	}
-	return alignedTable([]string{"Name", "Status", "Product", "Module", "Components"}, rows)
+	return alignedTable([]string{"Name", "Status", "Product", "Module", "Components", "Summary"}, rows)
 }
 
 // alignedTable lines columns up without cutting any cell: names are what a
