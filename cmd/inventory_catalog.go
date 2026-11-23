@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
@@ -422,16 +423,13 @@ func runInventoryAppsShow(cmd *cobra.Command, args []string) error {
 		}
 	}
 	fmt.Fprintf(&b, "  %-8s %s\n", "status", appStatus(app))
-	rows := make([]any, 0)
+	rows := [][]string{}
 	for _, m := range getSlice(detail, "members") {
 		member, _ := m.(map[string]any)
-		rows = append(rows, map[string]any{
-			"name": clean(getStr(member, "name")),
-			"kind": clean(getStr(member, "kind")),
-		})
+		rows = append(rows, []string{clean(getStr(member, "name")), clean(getStr(member, "kind"))})
 	}
 	b.WriteString("\n")
-	b.WriteString(output.FormatTable(map[string]any{"members": rows}, []string{"name", "kind"}, "members", nil))
+	b.WriteString(alignedTable([]string{"Component", "Kind"}, rows))
 	b.WriteString(connections(detail))
 	return output.WriteString(cmd.OutOrStdout(), b.String())
 }
@@ -462,7 +460,7 @@ func connections(detail map[string]any) string {
 	if len(edges) == 0 {
 		return "\nNo connections\n"
 	}
-	rows := make([]any, 0, len(edges))
+	rows := make([][]string, 0, len(edges))
 	for _, e := range edges {
 		m, _ := e.(map[string]any)
 		var how []string
@@ -471,11 +469,11 @@ func connections(detail map[string]any) string {
 				how = append(how, v)
 			}
 		}
-		rows = append(rows, map[string]any{
-			"from": clean(name(getStr(m, "source_component_id"), "")),
-			"kind": clean(getStr(m, "kind")),
-			"to":   clean(name(getStr(m, "target_component_id"), getStr(m, "target_name"))),
-			"via":  clean(strings.Join(how, ", ")),
+		rows = append(rows, []string{
+			clean(name(getStr(m, "source_component_id"), "")),
+			clean(getStr(m, "kind")),
+			clean(name(getStr(m, "target_component_id"), getStr(m, "target_name"))),
+			clean(strings.Join(how, ", ")),
 		})
 	}
 	note := ""
@@ -483,7 +481,7 @@ func connections(detail map[string]any) string {
 		note = " (more not shown)"
 	}
 	return fmt.Sprintf("\n%s%s\n", plural(len(edges), "connection"), note) +
-		output.FormatTable(map[string]any{"edges": rows}, []string{"from", "kind", "to", "via"}, "edges", nil)
+		alignedTable([]string{"From", "Kind", "To", "Via"}, rows)
 }
 
 func runInventoryComponentsList(cmd *cobra.Command, _ []string) error {
@@ -502,7 +500,7 @@ func runInventoryComponentsList(cmd *cobra.Command, _ []string) error {
 	if format == output.JSON {
 		return output.WriteString(cmd.OutOrStdout(), output.FormatJSON(items)+"\n")
 	}
-	rows := make([]any, 0, len(items))
+	rows := make([][]string, 0, len(items))
 	for _, item := range items {
 		m, _ := item.(map[string]any)
 		var apps []string
@@ -510,15 +508,15 @@ func runInventoryComponentsList(cmd *cobra.Command, _ []string) error {
 			app, _ := a.(map[string]any)
 			apps = append(apps, getStr(app, "name"))
 		}
-		rows = append(rows, map[string]any{
-			"name":        clean(getStr(m, "name")),
-			"kind":        clean(getStr(m, "kind")),
-			"connections": intOf(m["connections"]),
-			"apps":        clean(strings.Join(apps, ", ")),
+		rows = append(rows, []string{
+			clean(getStr(m, "name")),
+			clean(getStr(m, "kind")),
+			fmt.Sprint(intOf(m["connections"])),
+			clean(strings.Join(apps, ", ")),
 		})
 	}
-	cols := []string{"name", "kind", "connections", "apps"}
-	return output.WriteString(cmd.OutOrStdout(), output.FormatTable(map[string]any{"components": rows}, cols, "components", nil))
+	headers := []string{"Name", "Kind", "Connections", "Apps"}
+	return output.WriteString(cmd.OutOrStdout(), alignedTable(headers, rows))
 }
 
 func runInventoryComponentsShow(cmd *cobra.Command, args []string) error {
@@ -660,21 +658,31 @@ func pickByName(items []any, ref, kind string) (string, error) {
 }
 
 func appsTable(apps []any) string {
-	rows := make([]any, 0, len(apps))
+	rows := make([][]string, 0, len(apps))
 	for _, a := range apps {
 		m, _ := a.(map[string]any)
-		rows = append(rows, map[string]any{
-			"name":       clean(getStr(m, "name")),
-			"status":     appStatus(m),
-			"product":    clean(getStr(m, "product")),
-			"module":     clean(getStr(m, "module")),
-			"components": len(getSlice(m, "components")),
-			"summary":    clean(getStr(m, "summary")),
+		rows = append(rows, []string{
+			clean(getStr(m, "name")),
+			appStatus(m),
+			clean(getStr(m, "product")),
+			clean(getStr(m, "module")),
+			fmt.Sprint(len(getSlice(m, "components"))),
 		})
 	}
-	// The summary goes last: the table gives the last column the spare width.
-	cols := []string{"name", "status", "product", "module", "components", "summary"}
-	return output.FormatTable(map[string]any{"apps": rows}, cols, "apps", nil)
+	return alignedTable([]string{"Name", "Status", "Product", "Module", "Components"}, rows)
+}
+
+// alignedTable lines columns up without cutting any cell: names are what a
+// reader matches against the catalog file, so they print whole.
+func alignedTable(headers []string, rows [][]string) string {
+	var b strings.Builder
+	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, strings.Join(headers, "\t"))
+	for _, row := range rows {
+		fmt.Fprintln(w, strings.Join(row, "\t"))
+	}
+	_ = w.Flush()
+	return b.String()
 }
 
 // clean keeps server text from driving the terminal.
