@@ -150,6 +150,45 @@ func (c *Client) Delete(path string, params map[string]any) (map[string]any, err
 }
 
 func (c *Client) query(method, path string, params map[string]any) (map[string]any, error) {
+	resp, err := c.sendQuery(method, path, params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent {
+		return nil, nil
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// GetText reads an endpoint that answers with text, such as a markdown file, rather than JSON.
+// A body over maxBytes is an error, never a silently cut text.
+func (c *Client) GetText(path string, params map[string]any, maxBytes int64) (string, error) {
+	resp, err := c.sendQuery("GET", path, params)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if int64(len(body)) > maxBytes {
+		return "", fmt.Errorf("the server's answer is over %d bytes", maxBytes)
+	}
+	return string(body), nil
+}
+
+// sendQuery sends a request whose arguments travel as query parameters. The caller closes the
+// body of the response it gets; an error response is already read and closed.
+func (c *Client) sendQuery(method, path string, params map[string]any) (*http.Response, error) {
 	reqURL := c.baseURL + path
 	if len(params) > 0 {
 		values := url.Values{}
@@ -183,21 +222,12 @@ func (c *Client) query(method, path string, params map[string]any) (map[string]a
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
 	if err := c.checkResponse(resp); err != nil {
+		resp.Body.Close()
 		return nil, err
 	}
-
-	if resp.StatusCode == http.StatusNoContent {
-		return nil, nil
-	}
-
-	var result map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return resp, nil
 }
 
 // GetList calls a GET endpoint that returns a JSON array (not an object).
