@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
-	"net/textproto"
 	"net/url"
 	"os"
 	"strings"
@@ -37,6 +35,20 @@ type RedirectError struct {
 
 func (e *RedirectError) Error() string {
 	return fmt.Sprintf("the server answered %d, a redirect, which was not followed", e.StatusCode)
+}
+
+// UserAgent names the konvu CLI to Konvu's API: the server records edits it receives as made
+// with the CLI.
+const UserAgent = "konvu-cli"
+
+// newRequest is http.NewRequest with the CLI's User-Agent.
+func newRequest(method, target string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequest(method, target, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", UserAgent)
+	return req, nil
 }
 
 type Client struct {
@@ -209,7 +221,7 @@ func (c *Client) sendQuery(method, path string, params map[string]any) (*http.Re
 		reqURL += "?" + values.Encode()
 	}
 
-	req, err := http.NewRequest(method, reqURL, nil)
+	req, err := newRequest(method, reqURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +264,7 @@ func (c *Client) GetList(path string, params map[string]any) ([]any, error) {
 		reqURL += "?" + values.Encode()
 	}
 
-	req, err := http.NewRequest("GET", reqURL, nil)
+	req, err := newRequest("GET", reqURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +328,7 @@ func (c *Client) postJSON(client *http.Client, path string, data map[string]any,
 		body = bytes.NewReader(b)
 	}
 
-	req, err := http.NewRequest("POST", reqURL, body)
+	req, err := newRequest("POST", reqURL, body)
 	if err != nil {
 		return nil, err
 	}
@@ -384,7 +396,7 @@ func (c *Client) sendBody(method, path string, data any) (any, error) {
 		body = bytes.NewReader(b)
 	}
 
-	req, err := http.NewRequest(method, reqURL, body)
+	req, err := newRequest(method, reqURL, body)
 	if err != nil {
 		return nil, err
 	}
@@ -419,131 +431,11 @@ func (c *Client) sendBody(method, path string, data any) (any, error) {
 	return result, nil
 }
 
-// MultipartFile is one file part of a multipart/form-data request; an empty ContentType is sent
-// as application/octet-stream. Size must be Body's exact length: it sets the request's
-// Content-Length, so a file that changed since it was measured fails the request instead of
-// sending other bytes.
-type MultipartFile struct {
-	Field       string
-	Filename    string
-	ContentType string
-	Size        int64
-	Body        io.Reader
-}
-
-// PostMultipart sends files as one multipart/form-data POST, streamed rather than held in memory,
-// with the same login and error handling as Post. Like PostWithoutLogin it never follows a
-// redirect: a 301 or 302 would resend the request as a GET without the files, and its answer
-// would read as theirs. Any 3xx comes back as a RedirectError.
-func (c *Client) PostMultipart(path string, files []MultipartFile) (map[string]any, error) {
-	auth, err := c.authHeader()
-	if err != nil {
-		return nil, err
-	}
-	headers := make([]textproto.MIMEHeader, len(files))
-	// The framing around the files does not depend on their bytes, so writing it once with empty
-	// parts measures it.
-	var framing bytes.Buffer
-	measure := multipart.NewWriter(&framing)
-	length := int64(0)
-	for i, file := range files {
-		headers[i] = textproto.MIMEHeader{}
-		headers[i].Set("Content-Disposition", multipart.FileContentDisposition(file.Field, file.Filename))
-		contentType := file.ContentType
-		if contentType == "" {
-			contentType = "application/octet-stream"
-		}
-		headers[i].Set("Content-Type", contentType)
-		if _, err := measure.CreatePart(headers[i]); err != nil {
-			return nil, err
-		}
-		length += file.Size
-	}
-	if err := measure.Close(); err != nil {
-		return nil, err
-	}
-	length += int64(framing.Len())
-
-	reader, writer := io.Pipe()
-	form := multipart.NewWriter(writer)
-	if err := form.SetBoundary(measure.Boundary()); err != nil {
-		return nil, err
-	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for i, file := range files {
-			if err := writeMultipartFile(form, headers[i], file); err != nil {
-				writer.CloseWithError(err)
-				return
-			}
-		}
-		writer.CloseWithError(form.Close())
-	}()
-	// Closing the reader stops the writer whatever became of the request, so no body is read
-	// once this returns.
-	defer func() {
-		reader.Close()
-		<-done
-	}()
-
-	req, err := http.NewRequest("POST", c.baseURL+path, reader)
-	if err != nil {
-		return nil, err
-	}
-	req.ContentLength = length
-	req.Header.Set("Authorization", auth)
-	req.Header.Set("Content-Type", form.FormDataContentType())
-
-	client := &http.Client{
-		Transport: c.httpClient.Transport,
-		// A large upload on a slow link gets one more second per 128 KiB sent.
-		Timeout: c.httpClient.Timeout + time.Duration(length/(128<<10))*time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		return nil, &RedirectError{StatusCode: resp.StatusCode, Location: resp.Header.Get("Location")}
-	}
-	if err := c.checkResponse(resp); err != nil {
-		return nil, err
-	}
-	var result map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-// writeMultipartFile writes one part, which must hold exactly file.Size bytes: checked per file, so
-// one file that grew cannot make up for another that shrank.
-func writeMultipartFile(form *multipart.Writer, header textproto.MIMEHeader, file MultipartFile) error {
-	part, err := form.CreatePart(header)
-	if err != nil {
-		return err
-	}
-	if _, err := io.CopyN(part, file.Body, file.Size); err != nil {
-		return fmt.Errorf("%s is shorter than the %d bytes it held when checked: %w", file.Filename, file.Size, err)
-	}
-	var extra [1]byte
-	if n, _ := io.ReadFull(file.Body, extra[:]); n > 0 {
-		return fmt.Errorf("%s is longer than the %d bytes it held when checked", file.Filename, file.Size)
-	}
-	return nil
-}
-
 // PostForm sends application/x-www-form-urlencoded. Some service endpoints behind the
 // gateway take form fields rather than JSON, because the same route also accepts a file
 // upload and a route cannot take both a JSON body and a file part.
 func (c *Client) PostForm(path string, form url.Values) (map[string]any, error) {
-	req, err := http.NewRequest("POST", c.baseURL+path, strings.NewReader(form.Encode()))
+	req, err := newRequest("POST", c.baseURL+path, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}

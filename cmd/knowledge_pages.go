@@ -28,9 +28,6 @@ const (
 	knowledgePageMaxChars = 200000
 )
 
-// Konvu's own pages: a person can write one before Konvu has, with no title and no sources.
-var knowledgeKonvuPages = map[string]bool{"company.md": true, "infrastructure.md": true, "threat-model.md": true}
-
 // The same rules the server checks: a path that passes can only name a page, never another route.
 var (
 	knowledgePagePattern   = regexp.MustCompile(`^([a-z0-9-]+/){0,7}([a-z0-9-]+|README)\.md$`)
@@ -44,8 +41,8 @@ var knowledgeLsCmd = &cobra.Command{
 
 Pass a folder, such as products/acme, to list only the pages inside it.
 Konvu writes company.md, infrastructure.md and threat-model.md after its first
-scan of your company. Until then they are listed as "not written", and a person
-can still write them with 'konvu knowledge edit'.`,
+scan of your company. Until then they are listed as "not written". 'konvu book ls'
+lists the same pages with the command that edits the data behind each one.`,
 	Example: "  konvu knowledge ls\n  konvu knowledge ls products/acme -o json",
 	RunE:    runKnowledgeLs,
 }
@@ -65,36 +62,44 @@ sources as data.`,
 
 var knowledgeEditCmd = &cobra.Command{
 	Use: "edit <path> --file <md>", Args: cobra.ExactArgs(1), SilenceUsage: true,
-	Short: "Save your text for one page of your Security Book",
-	Long: `Save your markdown for one page of your company's Security Book, from --file
-or from stdin with --file -. The text replaces the page's whole body; the page
-keeps its title unless you pass --title.
+	Short: "Save your text for one of your team's pages in the Security Book",
+	Long: `Save your markdown for one of your team's pages in the Security Book, from
+--file or from stdin with --file -. The text replaces the page's whole body; the
+page keeps its title unless you pass --title.
+
+Konvu writes company.md, infrastructure.md and threat-model.md from your
+company's data, so edit is refused there: change the data with
+'konvu company apply' or 'konvu threat-model apply', and Konvu rewrites the page.
 
 Pass --base with the page as you read it, saved from
 'konvu knowledge cat <path> -o json'. The page then keeps the sources you read,
-so your footnotes [^n] cite what you saw, and if the page changed since (a
-person's edit, or Konvu rewriting its own page), nothing is saved.
+so your footnotes [^n] cite what you saw, and if the page changed since you read
+it, nothing is saved.
 
 Without --base, the page keeps its sources as they are now, and your footnotes
 are matched to them by number: if the page changed since you read it, a footnote
 can cite another source. The CLI warns when it saves an existing page that way.
-A path with no page creates one, which needs --title, except Konvu's own
-company.md, infrastructure.md and threat-model.md, which a person can write
-before Konvu has.
+A path with no page creates one, which needs --title.
 
 The text must be UTF-8, at most 200 000 characters. The server removes raw HTML,
 footnotes with no source and anything shaped like a secret: read the page back
-with cat to see what was stored. Once a person writes one of Konvu's pages,
-Konvu stops rewriting it.
+with cat to see what was stored.
 
 Exit codes: 0 saved, 1 the page changed since you read it (PAGE_CHANGED) or
-another error, 2 invalid arguments or text the server refused, 3 a server that
-does not serve or save the book, 4 not logged in, a read-only key or a demo view.`,
-	Example: "  konvu knowledge cat company.md -o json > base.json\n  konvu knowledge edit company.md --file company.md --base base.json\n  konvu knowledge edit ops.md --file ops.md --title Operations",
+another error, 2 invalid arguments, one of Konvu's pages, or text the server
+refused, 3 a server that does not serve or save the book, 4 not logged in, a
+read-only key or a demo view.`,
+	Example: "  konvu knowledge cat ops.md -o json > base.json\n  konvu knowledge edit ops.md --file ops.md --base base.json\n  konvu knowledge edit runbook.md --file runbook.md --title Runbook",
 	RunE:    runKnowledgeEdit,
 }
 
 func runKnowledgeLs(cmd *cobra.Command, args []string) error {
+	return listBookPages(cmd, args, false)
+}
+
+// listBookPages lists the book's pages for 'knowledge ls' and 'book ls'; editWith adds the command
+// that edits the data behind each page.
+func listBookPages(cmd *cobra.Command, args []string, editWith bool) error {
 	explicit, _ := cmd.Flags().GetString("output")
 	format, err := vulnerabilityReportOutputFormat(explicit)
 	if err != nil {
@@ -115,10 +120,17 @@ func runKnowledgeLs(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return knowledgePagesError(err, "")
 	}
-	if format == output.JSON {
-		return output.WriteString(cmd.OutOrStdout(), output.FormatJSON(result)+"\n")
-	}
 	items := getSlice(result, "items")
+	if format == output.JSON {
+		if editWith {
+			for _, item := range items {
+				if page, ok := item.(map[string]any); ok {
+					page["edit_with"] = bookEditWith(getStr(page, "path"), getStr(page, "kind"))
+				}
+			}
+		}
+		return output.WriteString(cmd.OutOrStdout(), terminalJSON(result)+"\n")
+	}
 	if len(items) == 0 {
 		if folder != "" {
 			return output.WriteString(cmd.OutOrStdout(), fmt.Sprintf("No pages under %s.\n", folder))
@@ -151,7 +163,11 @@ func runKnowledgeLs(cmd *cobra.Command, args []string) error {
 			"revision":   revision,
 			"updated":    sanitizeGuardrailsBaselineText(updated),
 			"stale":      stale,
+			"edit_with":  bookEditWith(getStr(page, "path"), getStr(page, "kind")),
 		})
+	}
+	if editWith {
+		return output.WriteString(cmd.OutOrStdout(), bookPagesTable(rows))
 	}
 	// The path goes last: FormatTable cuts the other columns to fit, but never the last one's words.
 	table := output.FormatTable(map[string]any{"pages": rows}, []string{"title", "written_by", "revision", "updated", "stale", "path"}, "pages", nil)
@@ -176,7 +192,7 @@ func runKnowledgeCat(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return knowledgeCatError(client, err, path)
 		}
-		return output.WriteString(cmd.OutOrStdout(), output.FormatJSON(result)+"\n")
+		return output.WriteString(cmd.OutOrStdout(), terminalJSON(result)+"\n")
 	}
 	text, err := client.GetText(route, map[string]any{"format": "md"}, knowledgePageMaxBytes)
 	if err != nil {
@@ -194,6 +210,14 @@ func runKnowledgeEdit(cmd *cobra.Command, args []string) error {
 	path, err := knowledgePage(args[0])
 	if err != nil {
 		return err
+	}
+	if command := bookDataCommands[path]; command != "" {
+		return &clierrors.CLIError{
+			Code:       "KONVU_PAGE",
+			Message:    fmt.Sprintf("%s is written by Konvu from your company's data, so its text cannot be edited", path),
+			Suggestion: fmt.Sprintf("Edit the data instead: run '%s get -o json > data.json', change it, then '%s apply --file data.json --dry-run'. Konvu rewrites the page after the change.", command, command),
+			ExitCode:   clierrors.ExitUsageError,
+		}
 	}
 	file, _ := cmd.Flags().GetString("file")
 	if strings.TrimSpace(file) == "" {
@@ -258,7 +282,7 @@ func runKnowledgeEdit(cmd *cobra.Command, args []string) error {
 		if err := output.WriteString(cmd.ErrOrStderr(), warning); err != nil {
 			return err
 		}
-	case title == "" && !knowledgeKonvuPages[path]:
+	case title == "":
 		return knowledgeUsage(fmt.Sprintf("%s is a new page, which needs a title", path), "Pass --title with the page's title.")
 	}
 	payload["revision"] = current
@@ -348,22 +372,16 @@ func knowledgePageChanged(path, message string) error {
 	}
 }
 
-// knowledgeWriteError maps a refused write: an edit of path, or an upload when path is empty.
+// knowledgeWriteError maps a refused edit of path.
 func knowledgeWriteError(err error, path string) error {
 	apiErr, ok := err.(*api.APIError)
 	if !ok {
 		return knowledgePagesError(err, path)
 	}
 	detail := invariantDetail(apiErr)
-	write, retry, smaller := "edit", "Fix what the server named, then run the same command again.", "Shorten the page's text."
-	if path == "" {
-		// The upload adds which files to send again: earlier requests may have gone through.
-		write, retry = "upload", "Fix what the server named."
-		smaller = "Send fewer or smaller files at a time: at most 20 files of 20 MiB each."
-	}
 	switch {
 	case apiErr.StatusCode == 403:
-		message := "Konvu refused the " + write + ": your key is read-only, or this is a demo view"
+		message := "Konvu refused the edit: your key is read-only, or this is a demo view"
 		if detail != "" {
 			message += " (" + detail + ")"
 		}
@@ -372,25 +390,23 @@ func knowledgeWriteError(err error, path string) error {
 			Suggestion: "Use a read-write API key, or log in as a person of the company with 'konvu login'.",
 			ExitCode:   clierrors.ExitAuthFailed,
 		}
-	case apiErr.StatusCode == 409 && path != "":
+	case apiErr.StatusCode == 409:
 		message := path + " changed since you read it"
 		if detail != "" {
 			message += " (" + detail + ")"
 		}
 		return knowledgePageChanged(path, message)
 	case apiErr.StatusCode == 422:
-		return knowledgeUsage(detail, retry)
+		return knowledgeUsage(detail, "Fix what the server named, then run the same command again.")
 	case apiErr.StatusCode == 413:
 		message := "the server refused the request as too large"
 		if detail != "" {
 			message += " (" + detail + ")"
 		}
 		return &clierrors.CLIError{
-			Code: "REQUEST_TOO_LARGE", Message: message, Suggestion: smaller,
+			Code: "REQUEST_TOO_LARGE", Message: message, Suggestion: "Shorten the page's text.",
 			ExitCode: clierrors.ExitGeneralError,
 		}
-	case path == "" && (apiErr.StatusCode == 404 || apiErr.StatusCode == 405):
-		return knowledgeUploadsUnavailable()
 	case apiErr.StatusCode == 405:
 		return &clierrors.CLIError{
 			Code: "KNOWLEDGE_EDIT_UNAVAILABLE", Message: "this Konvu server does not save Security Book edits",
@@ -427,7 +443,7 @@ func knowledgeCatError(client *api.Client, err error, path string) error {
 func knowledgePage(value string) (string, error) {
 	path := strings.TrimPrefix(strings.TrimSpace(value), "/")
 	if len(path) > knowledgePageMaxLength || !knowledgePagePattern.MatchString(path) {
-		return "", knowledgeUsage(fmt.Sprintf("invalid page path %q: %s", sanitizeGuardrailsBaselineText(value), knowledgePageRule), "Run 'konvu knowledge ls' to see the pages.")
+		return "", knowledgeUsage(fmt.Sprintf("invalid page path %q: %s", sanitizeGuardrailsBaselineText(value), knowledgePageRule), "Run 'konvu book ls' to see the pages.")
 	}
 	return path, nil
 }
@@ -436,7 +452,7 @@ func knowledgePage(value string) (string, error) {
 func knowledgeFolder(value string) (string, error) {
 	folder := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(value), "/"), "/")
 	if len(folder) > knowledgePageMaxLength || !knowledgeFolderPattern.MatchString(folder) {
-		return "", knowledgeUsage(fmt.Sprintf("invalid folder %q: %s", sanitizeGuardrailsBaselineText(value), knowledgeFolderRule), "Run 'konvu knowledge ls' to see the folders.")
+		return "", knowledgeUsage(fmt.Sprintf("invalid folder %q: %s", sanitizeGuardrailsBaselineText(value), knowledgeFolderRule), "Run 'konvu book ls' to see the folders.")
 	}
 	return folder, nil
 }
@@ -460,7 +476,7 @@ func knowledgePagesError(err error, path string) error {
 	case apiErr.StatusCode == 404 && path != "":
 		return &clierrors.CLIError{
 			Code: "PAGE_NOT_FOUND", Message: fmt.Sprintf("no page at %s", path),
-			Suggestion: "Run 'konvu knowledge ls' to see the pages. Konvu writes its own pages after its first scan of your company.",
+			Suggestion: "Run 'konvu book ls' to see the pages. Konvu writes its own pages after its first scan of your company.",
 			ExitCode:   clierrors.ExitNotFound,
 		}
 	case apiErr.StatusCode == 404:
@@ -470,7 +486,7 @@ func knowledgePagesError(err error, path string) error {
 			ExitCode:   clierrors.ExitNotFound,
 		}
 	case apiErr.StatusCode == 422:
-		return knowledgeUsage(detail, "Run 'konvu knowledge ls' to see the pages and folders.")
+		return knowledgeUsage(detail, "Run 'konvu book ls' to see the pages and folders.")
 	case apiErr.StatusCode == 403:
 		return &clierrors.CLIError{
 			Code: "FORBIDDEN", Message: detail,

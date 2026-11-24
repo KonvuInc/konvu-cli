@@ -293,7 +293,7 @@ func (s *knowledgeEditServer) start(t *testing.T) {
 
 func savedAt(revision int) func(t *testing.T, body map[string]any) (int, string) {
 	return func(t *testing.T, body map[string]any) (int, string) {
-		return 200, fmt.Sprintf(`{"path":"company.md","revision":%d,"written_by":"person"}`, revision)
+		return 200, fmt.Sprintf(`{"path":"ops.md","revision":%d,"written_by":"person"}`, revision)
 	}
 }
 
@@ -324,38 +324,38 @@ func knowledgeEditFile(t *testing.T, text string) string {
 	return path
 }
 
-const knowledgeCompanyRead = `{"path":"company.md","title":"Company","written_by":"konvu","revision":0,"updated_at":"2026-11-18T09:12:04Z","body_md":"Old.[^1]","sources":[{"n":1,"url":"https://acme.example/about","quote":"Payroll"}]}`
+const knowledgeTeamPageRead = `{"path":"ops.md","title":"Operations","written_by":"person","revision":0,"updated_at":"2026-11-18T09:12:04Z","body_md":"Old.[^1]","sources":[{"n":1,"url":"https://acme.example/about","quote":"Payroll"}]}`
 
 func TestKnowledgeEditWithBaseSendsTheSourcesRead(t *testing.T) {
 	server := &knowledgeEditServer{
-		page: knowledgeCompanyRead,
+		page: knowledgeTeamPageRead,
 		put: func(t *testing.T, body map[string]any) (int, string) {
-			return 200, `{"path":"company.md","revision":1,"written_by":"person\u001b[2J","body_md":"New."}`
+			return 200, `{"path":"ops.md","revision":1,"written_by":"person\u001b[2J","body_md":"New."}`
 		},
 	}
 	server.start(t)
-	file := knowledgeEditFile(t, "## What it sells\r\n\r\nPayroll.[^1]\r\n")
-	out, warnings, err := editKnowledgePage(t, "", []string{"/company.md"}, map[string]string{"file": file, "base": knowledgeEditFile(t, knowledgeCompanyRead), "output": "table"})
+	file := knowledgeEditFile(t, "## Deploys\r\n\r\nDaily.[^1]\r\n")
+	out, warnings, err := editKnowledgePage(t, "", []string{"/ops.md"}, map[string]string{"file": file, "base": knowledgeEditFile(t, knowledgeTeamPageRead), "output": "table"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "Saved company.md at revision 1, written by person [2J.") || strings.Contains(out, "\x1b") {
+	if !strings.Contains(out, "Saved ops.md at revision 1, written by person [2J.") || strings.Contains(out, "\x1b") {
 		t.Errorf("out = %q", out)
 	}
 	if warnings != "" {
 		t.Errorf("warned with a base: %q", warnings)
 	}
 	sent, _ := json.Marshal(server.gotPuts[0])
-	want := `{"body_md":"## What it sells\n\nPayroll.[^1]\n","revision":0,"sources":[{"n":1,"quote":"Payroll","url":"https://acme.example/about"}]}`
+	want := `{"body_md":"## Deploys\n\nDaily.[^1]\n","revision":0,"sources":[{"n":1,"quote":"Payroll","url":"https://acme.example/about"}]}`
 	if string(sent) != want {
 		t.Errorf("PUT body = %s, want %s", sent, want)
 	}
 }
 
 func TestKnowledgeEditWithoutBaseWarns(t *testing.T) {
-	server := &knowledgeEditServer{page: knowledgeCompanyRead, put: savedAt(1)}
+	server := &knowledgeEditServer{page: knowledgeTeamPageRead, put: savedAt(1)}
 	server.start(t)
-	_, warnings, err := editKnowledgePage(t, "New.[^1]", []string{"company.md"}, map[string]string{"file": "-"})
+	_, warnings, err := editKnowledgePage(t, "New.[^1]", []string{"ops.md"}, map[string]string{"file": "-"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,31 +390,42 @@ func TestKnowledgeEditNewPage(t *testing.T) {
 	}
 }
 
-func TestKnowledgeEditKonvuPageBeforeKonvu(t *testing.T) {
-	server := &knowledgeEditServer{put: savedAt(1)}
-	server.start(t)
-	if _, _, err := editKnowledgePage(t, "## Attackers\n", []string{"threat-model.md"}, map[string]string{"file": "-", "output": "table"}); err != nil {
-		t.Fatal(err)
+// Konvu writes its own pages from the company's data: their text is never sent, and the error names
+// the command that edits that data.
+func TestKnowledgeEditRefusesKonvuPages(t *testing.T) {
+	calls := knowledgePagesServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("request sent: %s %s", r.Method, r.URL.String())
+	})
+	for path, command := range map[string]string{
+		"company.md":         "konvu company apply",
+		"/infrastructure.md": "konvu company apply",
+		"threat-model.md":    "konvu threat-model apply",
+	} {
+		// The file is not even read: a missing one still gets the refusal.
+		_, _, err := editKnowledgePage(t, "", []string{path}, map[string]string{"file": filepath.Join(t.TempDir(), "missing.md")})
+		cliErr, ok := err.(*clierrors.CLIError)
+		if !ok || cliErr.Code != "KONVU_PAGE" || cliErr.ExitCode != clierrors.ExitUsageError || !strings.Contains(cliErr.Suggestion, command) {
+			t.Errorf("%s: error = %#v", path, err)
+		}
 	}
-	sent, _ := json.Marshal(server.gotPuts[0])
-	if want := `{"body_md":"## Attackers\n","revision":0,"sources":[]}`; string(sent) != want {
-		t.Errorf("PUT body = %s, want %s", sent, want)
+	if *calls != 0 {
+		t.Errorf("%d requests sent", *calls)
 	}
 }
 
 func TestKnowledgeEditRefusesAMovedPageBeforeAnyPut(t *testing.T) {
 	for _, test := range []struct{ name, page string }{
-		{"edited by a person", strings.Replace(knowledgeCompanyRead, `"revision":0`, `"revision":2`, 1)},
-		// Konvu rewrites its own pages without moving their revision.
-		{"rewritten by Konvu", strings.Replace(knowledgeCompanyRead, "2026-11-18T09:12:04Z", "2026-11-23T08:00:00Z", 1)},
-		{"given back to Konvu before it wrote the page", ""},
+		{"edited by a person", strings.Replace(knowledgeTeamPageRead, `"revision":0`, `"revision":2`, 1)},
+		// A page can be rewritten without moving its revision.
+		{"rewritten at the same revision", strings.Replace(knowledgeTeamPageRead, "2026-11-18T09:12:04Z", "2026-11-23T08:00:00Z", 1)},
+		{"deleted since", ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := &knowledgeEditServer{page: test.page, put: savedAt(1)}
 			server.start(t)
-			_, _, err := editKnowledgePage(t, "Text.", []string{"company.md"}, map[string]string{"file": "-", "base": knowledgeEditFile(t, knowledgeCompanyRead)})
+			_, _, err := editKnowledgePage(t, "Text.", []string{"ops.md"}, map[string]string{"file": "-", "base": knowledgeEditFile(t, knowledgeTeamPageRead)})
 			cliErr, ok := err.(*clierrors.CLIError)
-			if !ok || cliErr.Code != "PAGE_CHANGED" || cliErr.ExitCode != clierrors.ExitGeneralError || !strings.Contains(cliErr.Suggestion, "cat company.md -o json") {
+			if !ok || cliErr.Code != "PAGE_CHANGED" || cliErr.ExitCode != clierrors.ExitGeneralError || !strings.Contains(cliErr.Suggestion, "cat ops.md -o json") {
 				t.Fatalf("error = %#v", err)
 			}
 			if server.puts != 0 {
@@ -429,20 +440,20 @@ func TestKnowledgeEditRefusesABaseOfAnotherPage(t *testing.T) {
 		t.Errorf("request sent: %s %s", r.Method, r.URL.String())
 	})
 	for name, base := range map[string]string{
-		"another page":  strings.Replace(knowledgeCompanyRead, `"company.md"`, `"ops.md"`, 1),
-		"no sources":    `{"path":"company.md","revision":0}`,
-		"no revision":   `{"path":"company.md","sources":[]}`,
+		"another page":  strings.Replace(knowledgeTeamPageRead, `"ops.md"`, `"runbook.md"`, 1),
+		"no sources":    `{"path":"ops.md","revision":0}`,
+		"no revision":   `{"path":"ops.md","sources":[]}`,
 		"not JSON":      "# Company",
 		"the list":      `{"items":[]}`,
-		"null sources":  `{"path":"company.md","revision":0,"sources":null}`,
-		"string number": `{"path":"company.md","revision":"0","sources":[]}`,
+		"null sources":  `{"path":"ops.md","revision":0,"sources":null}`,
+		"string number": `{"path":"ops.md","revision":"0","sources":[]}`,
 	} {
-		_, _, err := editKnowledgePage(t, "Text.", []string{"company.md"}, map[string]string{"file": "-", "base": knowledgeEditFile(t, base)})
+		_, _, err := editKnowledgePage(t, "Text.", []string{"ops.md"}, map[string]string{"file": "-", "base": knowledgeEditFile(t, base)})
 		if knowledgeExitCode(t, err) != clierrors.ExitUsageError {
 			t.Errorf("%s: exit %d", name, knowledgeExitCode(t, err))
 		}
 	}
-	if _, _, err := editKnowledgePage(t, "Text.", []string{"company.md"}, map[string]string{"file": "-", "base": filepath.Join(t.TempDir(), "missing.json")}); knowledgeExitCode(t, err) != clierrors.ExitUsageError {
+	if _, _, err := editKnowledgePage(t, "Text.", []string{"ops.md"}, map[string]string{"file": "-", "base": filepath.Join(t.TempDir(), "missing.json")}); knowledgeExitCode(t, err) != clierrors.ExitUsageError {
 		t.Errorf("missing base: exit %d", knowledgeExitCode(t, err))
 	}
 	if *calls != 0 {
@@ -466,13 +477,13 @@ func TestKnowledgeEditRefusals(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.code, func(t *testing.T) {
 			server := &knowledgeEditServer{
-				page: knowledgeCompanyRead,
+				page: knowledgeTeamPageRead,
 				put: func(t *testing.T, body map[string]any) (int, string) {
 					return test.status, `{"detail":"the server's\u001b[2J reason"}`
 				},
 			}
 			server.start(t)
-			_, _, err := editKnowledgePage(t, "Text.", []string{"company.md"}, map[string]string{"file": "-", "base": knowledgeEditFile(t, knowledgeCompanyRead)})
+			_, _, err := editKnowledgePage(t, "Text.", []string{"ops.md"}, map[string]string{"file": "-", "base": knowledgeEditFile(t, knowledgeTeamPageRead)})
 			cliErr, ok := err.(*clierrors.CLIError)
 			if !ok || cliErr.Code != test.code || cliErr.ExitCode != test.exit {
 				t.Fatalf("error = %#v, want %s exit %d", err, test.code, test.exit)
@@ -492,12 +503,12 @@ func TestKnowledgeEditRefusals(t *testing.T) {
 
 // A redirect turns the PUT into a GET, answered with the page as it was: that saved nothing.
 func TestKnowledgeEditRefusesAnAnswerThatSavedNothing(t *testing.T) {
-	server := &knowledgeEditServer{page: knowledgeCompanyRead, put: func(t *testing.T, body map[string]any) (int, string) {
-		return 200, knowledgeCompanyRead
+	server := &knowledgeEditServer{page: knowledgeTeamPageRead, put: func(t *testing.T, body map[string]any) (int, string) {
+		return 200, knowledgeTeamPageRead
 	}}
 	server.start(t)
-	_, _, err := editKnowledgePage(t, "Text.", []string{"company.md"}, map[string]string{"file": "-", "base": knowledgeEditFile(t, knowledgeCompanyRead)})
-	if cliErr, ok := err.(*clierrors.CLIError); !ok || cliErr.ExitCode != clierrors.ExitGeneralError || !strings.Contains(cliErr.Message, "does not show company.md saved") {
+	_, _, err := editKnowledgePage(t, "Text.", []string{"ops.md"}, map[string]string{"file": "-", "base": knowledgeEditFile(t, knowledgeTeamPageRead)})
+	if cliErr, ok := err.(*clierrors.CLIError); !ok || cliErr.ExitCode != clierrors.ExitGeneralError || !strings.Contains(cliErr.Message, "does not show ops.md saved") {
 		t.Fatalf("error = %#v", err)
 	}
 }
@@ -505,7 +516,7 @@ func TestKnowledgeEditRefusesAnAnswerThatSavedNothing(t *testing.T) {
 func TestKnowledgeEditOnAServerWithNoBook(t *testing.T) {
 	server := &knowledgeEditServer{list: 404, put: savedAt(1)}
 	server.start(t)
-	_, _, err := editKnowledgePage(t, "Text.", []string{"company.md"}, map[string]string{"file": "-"})
+	_, _, err := editKnowledgePage(t, "Text.", []string{"ops.md"}, map[string]string{"file": "-"})
 	if cliErr, ok := err.(*clierrors.CLIError); !ok || cliErr.Code != "KNOWLEDGE_PAGES_UNAVAILABLE" {
 		t.Fatalf("error = %#v", err)
 	}
@@ -525,7 +536,7 @@ func TestKnowledgeEditRefusesBadTextBeforeAnyRequest(t *testing.T) {
 		"over limit": strings.Repeat("é", knowledgePageMaxChars+1),
 		"way over":   strings.Repeat("a", 4*knowledgePageMaxChars+1),
 	} {
-		if _, _, err := editKnowledgePage(t, text, []string{"company.md"}, map[string]string{"file": "-"}); knowledgeExitCode(t, err) != clierrors.ExitUsageError {
+		if _, _, err := editKnowledgePage(t, text, []string{"ops.md"}, map[string]string{"file": "-"}); knowledgeExitCode(t, err) != clierrors.ExitUsageError {
 			t.Errorf("%s: exit %d", name, knowledgeExitCode(t, err))
 		}
 	}
@@ -536,11 +547,11 @@ func TestKnowledgeEditRefusesBadTextBeforeAnyRequest(t *testing.T) {
 		"empty base":   {"file": "-", "base": ""},
 		"bad output":   {"file": "-", "output": "yaml"},
 	} {
-		if _, _, err := editKnowledgePage(t, "Text.", []string{"company.md"}, flags); knowledgeExitCode(t, err) != clierrors.ExitUsageError {
+		if _, _, err := editKnowledgePage(t, "Text.", []string{"ops.md"}, flags); knowledgeExitCode(t, err) != clierrors.ExitUsageError {
 			t.Errorf("%s: exit %d", name, knowledgeExitCode(t, err))
 		}
 	}
-	if _, _, err := editKnowledgePage(t, "Text.", []string{"../company.md"}, map[string]string{"file": "-"}); knowledgeExitCode(t, err) != clierrors.ExitUsageError {
+	if _, _, err := editKnowledgePage(t, "Text.", []string{"../ops.md"}, map[string]string{"file": "-"}); knowledgeExitCode(t, err) != clierrors.ExitUsageError {
 		t.Errorf("bad path: exit %d", knowledgeExitCode(t, err))
 	}
 	if *calls != 0 {
@@ -554,9 +565,9 @@ func TestKnowledgeEditAcceptsTheLimit(t *testing.T) {
 		// Over the limit in raw characters, under it once CRLF is made LF: counted after.
 		"CRLF line ends": strings.Repeat("\r\n", knowledgePageMaxChars*3/4) + "a",
 	} {
-		server := &knowledgeEditServer{put: savedAt(1)}
+		server := &knowledgeEditServer{page: knowledgeTeamPageRead, put: savedAt(1)}
 		server.start(t)
-		if _, _, err := editKnowledgePage(t, text, []string{"company.md"}, map[string]string{"file": "-"}); err != nil {
+		if _, _, err := editKnowledgePage(t, text, []string{"ops.md"}, map[string]string{"file": "-"}); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		if server.puts != 1 {

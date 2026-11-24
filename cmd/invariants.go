@@ -713,9 +713,9 @@ func withRepositoryIDs(stderr io.Writer, client *api.Client, invariants []any) (
 	return sent, lookedUp
 }
 
-// konvuRepository is one of the company's Konvu repositories: its id, and where it lives, like
-// github:acme/api.
-type konvuRepository struct{ id, label string }
+// konvuRepository is one of the company's Konvu repositories: its id, where it lives, like
+// github:acme/api, and its host, like github.com.
+type konvuRepository struct{ id, label, host string }
 
 // konvuRepositoriesByName lists the company's Konvu repositories (the ones coverage lists) by
 // lowercased owner/name: a GitHub and a GitLab repository can share one. A lookup that takes
@@ -754,7 +754,7 @@ func konvuRepositoriesByName(client *api.Client, timeout time.Duration) (map[str
 		}
 		seen[id] = true
 		key := strings.ToLower(name)
-		byName[key] = append(byName[key], konvuRepository{id: id, label: label})
+		byName[key] = append(byName[key], konvuRepository{id: id, label: label, host: repositoryHost(getStr(repo, "url"))})
 	}
 	for _, matches := range byName {
 		sort.Slice(matches, func(a, b int) bool {
