@@ -203,7 +203,7 @@ func runBookDataApply(cmd *cobra.Command, object bookDataObject) error {
 	}
 	applied, known := getBool(result, "applied")
 	changes := stringsOf(getSlice(result, "changes"))
-	answerErr := bookDataAnswerError(object, known, applied, dryRun, len(changes))
+	answerErr := bookDataAnswerError(object, known, applied, dryRun, changes)
 	if format == output.JSON {
 		// One JSON document: the answer, or the error carrying what it said, fit for a terminal.
 		if answerErr != nil {
@@ -216,21 +216,17 @@ func runBookDataApply(cmd *cobra.Command, object bookDataObject) error {
 		}
 		return output.WriteString(cmd.OutOrStdout(), terminalJSON(result)+"\n")
 	}
-	if known {
-		if err := output.WriteString(cmd.OutOrStdout(), bookDataChanges(object, result, applied, changes)); err != nil {
-			return err
-		}
-	}
+	// An answer that fails its checks prints nothing as if it had worked: the error says what it did.
 	if answerErr != nil {
 		return answerErr
 	}
-	return nil
+	return output.WriteString(cmd.OutOrStdout(), bookDataChanges(object, result, applied, changes))
 }
 
 // bookDataAnswerError is the error for an apply's answer that does not show the write as asked, or
 // nil: an answer is never reported as success unless it says the changes were applied, or that a
 // dry run wrote nothing.
-func bookDataAnswerError(object bookDataObject, known, applied, dryRun bool, changes int) *clierrors.CLIError {
+func bookDataAnswerError(object bookDataObject, known, applied, dryRun bool, changes []string) *clierrors.CLIError {
 	switch {
 	case !known:
 		return &clierrors.CLIError{
@@ -240,16 +236,20 @@ func bookDataAnswerError(object bookDataObject, known, applied, dryRun bool, cha
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	case dryRun && applied:
+		lines := ""
+		for _, change := range changes {
+			lines += "\n  " + clean(change)
+		}
 		return &clierrors.CLIError{
 			Code:       "DRY_RUN_APPLIED",
-			Message:    fmt.Sprintf("the server applied the changes to your %s though --dry-run was passed", object.what),
+			Message:    fmt.Sprintf("the server applied %s to your %s though --dry-run was passed%s", plural(len(changes), "change"), object.what, lines),
 			Suggestion: "Run 'konvu history' to see the edit, and 'konvu history revert <id> --revision <revision>' to undo it.",
 			ExitCode:   clierrors.ExitGeneralError,
 		}
-	case !dryRun && !applied && changes > 0:
+	case !dryRun && !applied && len(changes) > 0:
 		return &clierrors.CLIError{
 			Code:       "NOT_APPLIED",
-			Message:    fmt.Sprintf("the server's answer does not show the changes to your %s applied", object.what),
+			Message:    fmt.Sprintf("the server's answer lists %s to your %s but does not show them applied", plural(len(changes), "change"), object.what),
 			Suggestion: fmt.Sprintf("Check KONVU_API_URL, then run '%s' to see what it holds now.", bookDataGetCommand(object)),
 			ExitCode:   clierrors.ExitGeneralError,
 		}
@@ -257,7 +257,8 @@ func bookDataAnswerError(object bookDataObject, known, applied, dryRun bool, cha
 	return nil
 }
 
-// bookDataChanges prints an apply's answer: what changed or would change, then the new revision.
+// bookDataChanges prints an apply's answer that passed bookDataAnswerError: what changed or, on a dry
+// run, would change, then the new revision.
 func bookDataChanges(object bookDataObject, result map[string]any, applied bool, changes []string) string {
 	var b strings.Builder
 	switch {

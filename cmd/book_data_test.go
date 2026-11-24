@@ -210,7 +210,7 @@ func TestBookDataApplyChecksTheAnswer(t *testing.T) {
 		answer map[string]any
 		code   string
 	}{
-		{"applied on a dry run", true, map[string]any{"applied": true, "changes": []any{"x"}, "revision": "r8"}, "DRY_RUN_APPLIED"},
+		{"applied on a dry run", true, map[string]any{"applied": true, "changes": []any{"Set industry: Payroll → HR"}, "revision": "r8"}, "DRY_RUN_APPLIED"},
 		{"not applied", false, map[string]any{"applied": false, "changes": []any{"x"}, "revision": "r7"}, "NOT_APPLIED"},
 		{"no applied field", false, map[string]any{"revision": "r7"}, "UNEXPECTED_ANSWER"},
 	} {
@@ -222,15 +222,19 @@ func TestBookDataApplyChecksTheAnswer(t *testing.T) {
 			if test.dryRun {
 				args = append(args, "--dry-run")
 			}
-			_, err := runInvariants(newBookDataCmd(companyData), args...)
+			out, err := runInvariants(newBookDataCmd(companyData), args...)
 			if cliErr := bookDataCLIError(t, err); cliErr.Code != test.code || cliErr.ExitCode != clierrors.ExitGeneralError {
 				t.Errorf("error = %#v", cliErr)
+			}
+			// Nothing prints as if the save, or the preview, had worked: the error says what happened.
+			if out != "" {
+				t.Errorf("printed %q", out)
 			}
 			// With -o json, stdout is one document: the error, carrying the answer.
 			reviewServer(t, map[string][]invariantReply{
 				"PUT /company_profile/facts/company": {{http.StatusOK, test.answer}},
 			})
-			out, _ := runInvariants(newBookDataCmd(companyData), append(args, "-o", "json")...)
+			out, _ = runInvariants(newBookDataCmd(companyData), append(args, "-o", "json")...)
 			var printed struct {
 				Error struct {
 					Code    string         `json:"code"`

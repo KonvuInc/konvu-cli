@@ -376,9 +376,9 @@ where every item is rejected exits `1`.
 
 Your Security Book is what Konvu knows about your company, as markdown pages:
 the pages Konvu writes (`company.md`, `infrastructure.md`, `threat-model.md`,
-products and apps) and the pages your team writes. The book is read-only: you
-change the data behind it, with commands named after that data, and Konvu
-rewrites the pages that show it. Every edit is recorded (who, when, before,
+products and apps) and the pages your team writes. Konvu's pages are read-only:
+you change the data behind them, with commands named after that data, and Konvu
+rewrites the pages that show it. Every data edit is recorded (who, when, before,
 after) and can be reverted.
 
 ```bash
@@ -407,7 +407,8 @@ without the EDIT WITH column.
 
 Findings, scans, ratings and feedback, triage history, the repository list, the
 inventory graph, collected files, Konvu's sources and computed scores are not
-editable.
+book data and are not edited here; rating or dismissing a finding keeps its own
+`konvu finding` commands.
 
 ```bash
 konvu company get > company.json                          # revision, company, infrastructure, provenance

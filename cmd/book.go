@@ -21,9 +21,10 @@ func newBookCmd() *cobra.Command {
 		Use:   "book",
 		Short: "Read your Security Book and see which command edits the data behind each page",
 		Long: `The Security Book is what Konvu knows about your company, as markdown pages.
-It is read-only: Konvu writes it from your company's data, and rewrites a page
-when the data shown on it changes. To change a page, change its data with the
-command 'book ls' names in its EDIT WITH column.`,
+Konvu's pages are read-only: Konvu writes them from your company's data, and
+rewrites a page when the data shown on it changes. To change a page, use the
+command 'book ls' names in its EDIT WITH column: the one that changes its data,
+or 'konvu knowledge edit' for your team's own pages.`,
 		Example: "  konvu book ls\n  konvu book read company.md\n  konvu company get -o json > company.json",
 	}
 	ls := &cobra.Command{

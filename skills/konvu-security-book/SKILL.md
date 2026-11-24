@@ -1,7 +1,7 @@
 ---
 name: konvu-security-book
 version: 2.0.0
-description: "Read the company's Security Book in Konvu with the konvu CLI, and change the data behind it: company facts, infrastructure, threat model, a repository's threat profile, products and apps, principles, triage instructions and the team's own pages. The book is read-only; Konvu rewrites its pages when their data changes. Covers what is editable and with which command, the get, dry run, approve, apply flow, and the history of edits and how to revert one. Use when the user or a task needs the company's security context (what it sells, its infrastructure, its threat model, the team's notes), asks what Konvu knows about the company, or wants to correct or change any of it."
+description: "Read the company's Security Book in Konvu with the konvu CLI, and change the data behind it: company facts, infrastructure, threat model, a repository's threat profile, products and apps, principles, triage instructions and the team's own pages. Konvu's pages are read-only; Konvu rewrites them when their data changes. Covers what is editable and with which command, the get, dry run, approve, apply flow, and the history of edits and how to revert one. Use when the user or a task needs the company's security context (what it sells, its infrastructure, its threat model, the team's notes), asks what Konvu knows about the company, or wants to correct or change any of it."
 metadata:
   requires:
     bins: ["konvu"]
@@ -9,7 +9,7 @@ metadata:
 
 # Konvu Security Book
 
-The Security Book is what Konvu knows about the company, as markdown pages. It is read-only. You read it with the konvu CLI and answer from it. When something in it is wrong or missing, you change the data behind it with the command named after that data, never the book's wording: Konvu then rewrites the pages that show it. Every edit is recorded (who, when, before, after) and can be reverted. You never guess what a page says, and you change data only when the user asks.
+The Security Book is what Konvu knows about the company, as markdown pages. Konvu's pages are read-only. You read the book with the konvu CLI and answer from it. When something on one of Konvu's pages is wrong or missing, you change the data behind it with the command named after that data, never the page's wording: Konvu then rewrites the pages that show it. Every data edit is recorded (who, when, before, after) and can be reverted. Only the team's own pages are text a person edits. You never guess what a page says, and you change data only when the user asks.
 
 ## Setup
 
@@ -35,7 +35,7 @@ The Security Book is what Konvu knows about the company, as markdown pages. It i
 | Triage instructions of a repository | none | `konvu knowledge triage-instructions` |
 | The team's own pages | their path | `konvu knowledge edit` |
 
-Not editable, by anyone: findings, scans, ratings and feedback, triage history, the repository list, the inventory graph, collected files, Konvu's sources, and computed scores (a repository's score and tier follow from its threat profile). When the user wants one of these changed, say it is not editable and, when it applies, which data above drives it. Never edit a book page's text to change what it shows: `konvu knowledge edit` refuses Konvu's pages.
+Not book data, so never changed through these commands: findings, scans, ratings and feedback, triage history, the repository list, the inventory graph, collected files, Konvu's sources, and computed scores (a repository's score and tier follow from its threat profile). When the user wants the book to show one of these differently, say it is not editable here and, when it applies, which data above drives it. Rating or dismissing a finding is not a book edit: it keeps its own `konvu finding` commands. Never edit a book page's text to change what it shows: `konvu knowledge edit` refuses Konvu's pages.
 
 ## Change data
 
