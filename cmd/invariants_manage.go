@@ -119,19 +119,19 @@ func runInvariantsEdit(cmd *cobra.Command, args []string) error {
 			ExitCode:   clierrors.ExitUsageError,
 		}
 	}
-	doc, revision, err := readInvariantEditFile(file, id)
-	if err != nil {
-		return invalidEditFile(err.Error(), id)
-	}
-
 	client := api.NewClient("", "")
 	defer client.Close()
 	current, err := client.Get(invariantPath(id), nil)
 	if err != nil {
 		return invariantReadError(err, id)
 	}
+	// Before the file: an older server's 'get' prints no revision, so its file would look invalid.
 	if _, ok := getFloat(current, "revision"); !ok {
 		return principlesNotSupported("edit")
+	}
+	doc, revision, err := readInvariantEditFile(file, id)
+	if err != nil {
+		return invalidEditFile(err.Error(), id)
 	}
 	if status := getStr(current, "status"); status != invariantValidated {
 		return invariantNotActive("edited", id, status)
@@ -431,6 +431,9 @@ func runInvariantsDelete(cmd *cobra.Command, args []string) error {
 	current, err := client.Get(invariantPath(id), nil)
 	if err != nil {
 		return invariantReadError(err, id)
+	}
+	if _, ok := getFloat(current, "revision"); !ok {
+		return principlesNotSupported("delete")
 	}
 	status := getStr(current, "status")
 	if status != invariantValidated && status != "retired" {

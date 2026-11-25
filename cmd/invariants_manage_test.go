@@ -191,10 +191,13 @@ func TestInvariantsEditRefusesABadFileBeforeWriting(t *testing.T) {
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
-			reviewServer(t, nil)
+			_, calls := reviewServer(t, map[string][]invariantReply{invariantRoute("GET"): {{200, activeInvariant(3)}}})
 			_, err := runInvariants(newInvariantsEditCmd(), testInvariantID, "--file", writeInvariants(t, body))
 			if e := cliErrorOf(t, err); e.Code != "INVALID_EDIT" || e.ExitCode != clierrors.ExitUsageError {
 				t.Fatalf("err = %#v", e)
+			}
+			if len(calls()) != 1 {
+				t.Fatalf("calls = %#v, want only the read", calls())
 			}
 		})
 	}
@@ -235,11 +238,13 @@ func TestInvariantsEditRefusesWhatIsNotActive(t *testing.T) {
 }
 
 func TestInvariantsEditOnAnOlderServerSaysSo(t *testing.T) {
-	old := oneInvariant(invariantValidated)
-	reviewServer(t, map[string][]invariantReply{invariantRoute("GET"): {{200, old}}})
-	_, err := runInvariants(newInvariantsEditCmd(), testInvariantID, "--file", editFile(t, 1, map[string]any{"rank": 2}))
-	if e := cliErrorOf(t, err); e.Code != "NOT_SUPPORTED" || e.ExitCode != clierrors.ExitNotFound {
-		t.Fatalf("err = %#v", e)
+	// The second file is what an older server's 'get -o json' prints: no revision.
+	for _, file := range []string{editFile(t, 1, map[string]any{"rank": 2}), editFile(t, 1, map[string]any{"rank": 2, "revision": nil})} {
+		reviewServer(t, map[string][]invariantReply{invariantRoute("GET"): {{200, oneInvariant(invariantValidated)}}})
+		_, err := runInvariants(newInvariantsEditCmd(), testInvariantID, "--file", file)
+		if e := cliErrorOf(t, err); e.Code != "NOT_SUPPORTED" || e.ExitCode != clierrors.ExitNotFound {
+			t.Fatalf("err = %#v", e)
+		}
 	}
 }
 
@@ -396,6 +401,20 @@ func TestInvariantsDeleteRefusesASuggestion(t *testing.T) {
 				t.Fatalf("err = %#v, calls = %#v", e, calls())
 			}
 		})
+	}
+}
+
+func TestInvariantsDeleteOnAnOlderServerSaysSoBeforeAsking(t *testing.T) {
+	for _, canPrompt := range []bool{false, true} {
+		asked := setDeletePrompt(t, canPrompt, true)
+		_, calls := reviewServer(t, map[string][]invariantReply{invariantRoute("GET"): {{200, oneInvariant(invariantValidated)}}})
+		_, err := runInvariants(newInvariantsDeleteCmd(), testInvariantID)
+		if e := cliErrorOf(t, err); e.Code != "NOT_SUPPORTED" || e.ExitCode != clierrors.ExitNotFound {
+			t.Fatalf("terminal=%v: err = %#v", canPrompt, e)
+		}
+		if len(*asked) != 0 || len(calls()) != 1 {
+			t.Fatalf("terminal=%v: asked = %v, calls = %#v", canPrompt, *asked, calls())
+		}
 	}
 }
 
