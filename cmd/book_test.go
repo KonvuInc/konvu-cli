@@ -110,6 +110,12 @@ func TestBookEditWith(t *testing.T) {
 		{"repositories.md", "generated", "read-only"},
 		{"inventory/endpoints.md", "generated", "read-only"},
 		{"manual-feedback.md", "", "read-only"},
+		// Konvu writes one page per note label; any other page under context/ is not one of them.
+		{"context/deployment.md", "generated", "konvu knowledge note add"},
+		{"context/other.md", "custom", "konvu knowledge note add"},
+		{"context/runbook.md", "custom", "konvu knowledge edit"},
+		{"context/team/deployment.md", "generated", "read-only"},
+		{"docs/context/deployment.md", "generated", "read-only"},
 	} {
 		if got := bookEditWith(test.path, test.kind); got != test.want {
 			t.Errorf("bookEditWith(%q, %q) = %q, want %q", test.path, test.kind, got, test.want)

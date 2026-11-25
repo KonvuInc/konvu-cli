@@ -70,6 +70,8 @@ page keeps its title unless you pass --title.
 Konvu writes company.md, infrastructure.md and threat-model.md from your
 company's data, so edit is refused there: change the data with
 'konvu company apply' or 'konvu threat-model apply', and Konvu rewrites the page.
+It writes context/<label>.md from your team's notes: add or remove a note with
+'konvu knowledge note' instead.
 
 Pass --base with the page as you read it, saved from
 'konvu knowledge cat <path> -o json'. The page then keeps the sources you read,
@@ -216,6 +218,14 @@ func runKnowledgeEdit(cmd *cobra.Command, args []string) error {
 			Code:       "KONVU_PAGE",
 			Message:    fmt.Sprintf("%s is written by Konvu from your company's data, so its text cannot be edited", path),
 			Suggestion: fmt.Sprintf("Edit the data instead: run '%s get -o json > data.json', change it, then '%s apply --file data.json --dry-run'. Konvu rewrites the page after the change.", command, command),
+			ExitCode:   clierrors.ExitUsageError,
+		}
+	}
+	if label := notePageLabel(path); label != "" {
+		return &clierrors.CLIError{
+			Code:       "KONVU_PAGE",
+			Message:    fmt.Sprintf("%s is written by Konvu from your team's notes labeled %s, so its text cannot be edited", path, label),
+			Suggestion: fmt.Sprintf("Add a note instead with 'konvu knowledge note add --label %s --repo <repo> --text ...', or remove one with 'konvu knowledge note rm <id>'. Konvu rewrites the page after the change.", label),
 			ExitCode:   clierrors.ExitUsageError,
 		}
 	}

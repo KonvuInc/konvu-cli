@@ -397,9 +397,10 @@ func TestKnowledgeEditRefusesKonvuPages(t *testing.T) {
 		t.Errorf("request sent: %s %s", r.Method, r.URL.String())
 	})
 	for path, command := range map[string]string{
-		"company.md":         "konvu company apply",
-		"/infrastructure.md": "konvu company apply",
-		"threat-model.md":    "konvu threat-model apply",
+		"company.md":           "konvu company apply",
+		"/infrastructure.md":   "konvu company apply",
+		"threat-model.md":      "konvu threat-model apply",
+		"context/ownership.md": "konvu knowledge note add --label ownership",
 	} {
 		// The file is not even read: a missing one still gets the refusal.
 		_, _, err := editKnowledgePage(t, "", []string{path}, map[string]string{"file": filepath.Join(t.TempDir(), "missing.md")})

@@ -24,7 +24,8 @@ func newBookCmd() *cobra.Command {
 Konvu's pages are read-only: Konvu writes them from your company's data, and
 rewrites a page when the data shown on it changes. To change a page, use the
 command 'book ls' names in its EDIT WITH column: the one that changes its data,
-or 'konvu knowledge edit' for your team's own pages.`,
+'konvu knowledge note add' for the context/<label>.md pages Konvu writes from
+your team's notes, or 'konvu knowledge edit' for your team's own pages.`,
 		Example: "  konvu book ls\n  konvu book read company.md\n  konvu company get -o json > company.json",
 	}
 	ls := &cobra.Command{
@@ -37,6 +38,7 @@ like 'konvu knowledge ls', with the command that edits the data behind each page
   threat-model.md                 konvu threat-model apply
   products/... and app pages      konvu inventory catalog apply
   security-principles.md          konvu principles
+  context/<label>.md              konvu knowledge note add
   your team's own pages           konvu knowledge edit
   any other page                  read-only
 
@@ -68,6 +70,9 @@ sources as data.`,
 // bookEditWith is the command that edits the data behind a page, or "read-only". kind is the
 // server's: "custom" is a page a person created, "app" one of Konvu's app pages.
 func bookEditWith(path, kind string) string {
+	if notePageLabel(path) != "" {
+		return "konvu knowledge note add"
+	}
 	if kind == "custom" {
 		return "konvu knowledge edit"
 	}
@@ -82,6 +87,17 @@ func bookEditWith(path, kind string) string {
 		return "konvu inventory catalog apply"
 	}
 	return bookReadOnly
+}
+
+// notePageLabel is the label whose notes Konvu writes the page at path from, or "" when it is not
+// one of those pages: Konvu writes one per label, at context/<label>.md.
+func notePageLabel(path string) string {
+	for _, label := range noteLabels {
+		if path == "context/"+label+".md" {
+			return label
+		}
+	}
+	return ""
 }
 
 // bookPagesTable prints the rows of listBookPages whole: an EDIT WITH command or a path cut short

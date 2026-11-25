@@ -413,6 +413,14 @@ func bookDataRoute(cmd *cobra.Command, client *api.Client, object bookDataObject
 // repository whose owner/name it is, exactly (any case). A name of several repositories, such as
 // a GitHub and a GitLab one, is refused unless --repo names where it lives.
 func bookDataRepository(client *api.Client, ref string) (string, error) {
+	return repositoryByRef(ref, func() (map[string][]konvuRepository, error) {
+		return konvuRepositoriesByName(client, repositoryLookupTimeout)
+	})
+}
+
+// repositoryByRef is bookDataRepository with the repository list from lookup, which is only called
+// for a ref that is not an id.
+func repositoryByRef(ref string, lookup func() (map[string][]konvuRepository, error)) (string, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return "", bookDataUsage("--repo is required", "Pass the repository as owner/name, such as acme/api, or its Konvu id.")
@@ -427,7 +435,7 @@ func bookDataRepository(client *api.Client, ref string) (string, error) {
 	if len(name) > maxRepositoryChars || !repositoryNamePattern.MatchString(name) || slices.ContainsFunc(strings.Split(name, "/"), isDotSegment) {
 		return "", bookDataUsage(fmt.Sprintf("--repo %q is not a repository", clean(ref)), "Pass the repository as owner/name, such as acme/api, a repository URL, or its Konvu id.")
 	}
-	byName, err := konvuRepositoriesByName(client, repositoryLookupTimeout)
+	byName, err := lookup()
 	if err != nil {
 		var authErr *api.AuthenticationError
 		if errors.As(err, &authErr) {
