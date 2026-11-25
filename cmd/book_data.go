@@ -300,7 +300,7 @@ func bookDataAnswerError(object bookDataObject, known, applied, dryRun bool, cha
 		}
 		suggestion := "Run 'konvu history' to see the edit, and 'konvu history revert <id> --revision <revision>' to undo it."
 		if !object.history {
-			suggestion = fmt.Sprintf("Run '%s' to see what it holds now, and apply your earlier file again to undo it.", bookDataGetCommand(object))
+			suggestion = fmt.Sprintf("To undo it, run '%s' for the new revision, put your earlier values back in that document, then apply it with --dry-run and again without.", bookDataGetCommand(object))
 		}
 		return &clierrors.CLIError{
 			Code:       "DRY_RUN_APPLIED",
