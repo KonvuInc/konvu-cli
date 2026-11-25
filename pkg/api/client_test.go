@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -291,5 +292,44 @@ func TestClient_SendsTheCLIUserAgent(t *testing.T) {
 		if agent != UserAgent {
 			t.Errorf("User-Agent = %q, want %q", agent, UserAgent)
 		}
+	}
+}
+
+// A write is never redirected: Go would resend a 301, 302 or 303 as a GET, whose answer passes
+// for the write's, and a 307 or 308 with its body. A read still follows one.
+func TestClient_WritesFollowNoRedirect(t *testing.T) {
+	var reached []string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = append(reached, r.Method)
+		json.NewEncoder(w).Encode(map[string]any{"revision": 1})
+	}))
+	defer target.Close()
+	var status int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.Path, status)
+	}))
+	defer server.Close()
+	client := NewClient(server.URL, "test-token")
+	defer client.Close()
+
+	writes := map[string]func() error{
+		"PATCH":  func() error { _, err := client.Patch("/p", map[string]any{}); return err },
+		"PUT":    func() error { _, err := client.Put("/p", map[string]any{}); return err },
+		"POST":   func() error { _, err := client.Post("/p", map[string]any{}); return err },
+		"DELETE": func() error { _, err := client.Delete("/p", nil); return err },
+	}
+	for _, status = range []int{301, 302, 303, 307, 308} {
+		for method, write := range writes {
+			var redirect *RedirectError
+			if err := write(); !errors.As(err, &redirect) || redirect.StatusCode != status {
+				t.Errorf("%s answered %d: err = %v", method, status, err)
+			}
+		}
+		if _, err := client.Get("/p", nil); err != nil {
+			t.Errorf("GET answered %d: err = %v", status, err)
+		}
+	}
+	if len(reached) != 5 || strings.Join(reached, ",") != "GET,GET,GET,GET,GET" {
+		t.Fatalf("the target got %v", reached)
 	}
 }

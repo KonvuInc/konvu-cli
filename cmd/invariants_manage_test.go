@@ -299,6 +299,19 @@ func TestInvariantsEditAfterAServerErrorReadsTheOutcomeBack(t *testing.T) {
 			t.Fatalf("err = %#v", e)
 		}
 	})
+	// A redirect is not followed, and an answer that is not the principle saved nothing known.
+	for name, reply := range map[string]invariantReply{"redirected": {303, activeInvariant(3)}, "empty answer": {200, map[string]any{}}} {
+		t.Run(name, func(t *testing.T) {
+			reviewServer(t, map[string][]invariantReply{
+				invariantRoute("GET"):   {{200, activeInvariant(3)}, {200, activeInvariant(3)}},
+				invariantRoute("PATCH"): {reply},
+			})
+			_, err := runInvariants(newInvariantsEditCmd(), testInvariantID, "--file", file)
+			if e := cliErrorOf(t, err); e.Code != "EDIT_UNCONFIRMED" {
+				t.Fatalf("err = %#v", e)
+			}
+		})
+	}
 	t.Run("changed by someone else", func(t *testing.T) {
 		other := activeInvariant(5)
 		other["statement"] = "Someone else's wording."
@@ -472,4 +485,17 @@ func TestInvariantsDeleteAfterAServerErrorReadsTheOutcomeBack(t *testing.T) {
 			t.Fatalf("err = %#v", e)
 		}
 	})
+	// A redirect is not followed, and an answer that does not show it retired deleted nothing known.
+	for name, reply := range map[string]invariantReply{"redirected": {303, activeInvariant(1)}, "still active": {200, activeInvariant(1)}} {
+		t.Run(name, func(t *testing.T) {
+			reviewServer(t, map[string][]invariantReply{
+				invariantRoute("GET"):    {{200, activeInvariant(1)}, {200, activeInvariant(1)}},
+				invariantRoute("DELETE"): {reply},
+			})
+			_, err := runInvariants(newInvariantsDeleteCmd(), testInvariantID, "--yes")
+			if e := cliErrorOf(t, err); e.Code != "DELETE_UNCONFIRMED" {
+				t.Fatalf("err = %#v", e)
+			}
+		})
+	}
 }

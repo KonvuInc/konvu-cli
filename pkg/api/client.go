@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,8 +69,21 @@ func NewClient(baseURL, accessToken string) *Client {
 	return &Client{
 		baseURL:       baseURL,
 		explicitToken: accessToken,
-		httpClient:    &http.Client{Timeout: 120 * time.Second},
+		httpClient:    &http.Client{Timeout: 120 * time.Second, CheckRedirect: followReadsOnly},
 	}
+}
+
+// followReadsOnly follows a redirect for a read only. Go resends a redirected write as a GET (301,
+// 302, 303), whose answer would pass for the write's, or resends its body elsewhere (307, 308);
+// a write's 3xx comes back as a RedirectError instead, whether it saved anything unknown.
+func followReadsOnly(_ *http.Request, via []*http.Request) error {
+	if method := via[0].Method; method != http.MethodGet && method != http.MethodHead {
+		return http.ErrUseLastResponse
+	}
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	return nil
 }
 
 func (c *Client) Close() {
@@ -133,6 +147,10 @@ func ServerDetail(body []byte) string {
 }
 
 func (c *Client) checkResponse(resp *http.Response) error {
+	// A 3xx still here was not followed, so its body is no answer to this request.
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return &RedirectError{StatusCode: resp.StatusCode, Location: resp.Header.Get("Location")}
+	}
 	if resp.StatusCode == 401 {
 		// A 401 can also come from a service behind the API refusing the request for its
 		// own reasons. Saying only "log in again" then sends the user round a loop that
@@ -346,10 +364,6 @@ func (c *Client) postJSON(client *http.Client, path string, data map[string]any,
 	}
 	defer resp.Body.Close()
 
-	// A 3xx still here was not followed, so its body is no answer to this request.
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		return nil, &RedirectError{StatusCode: resp.StatusCode, Location: resp.Header.Get("Location")}
-	}
 	if err := c.checkResponse(resp); err != nil {
 		return nil, err
 	}

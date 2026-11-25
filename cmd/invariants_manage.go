@@ -152,13 +152,16 @@ func runInvariantsEdit(cmd *cobra.Command, args []string) error {
 	}
 
 	resp, err := client.Patch(invariantPath(id), body)
+	edited, _ := resp.(map[string]any)
+	if err == nil && !isPrinciple(edited, id) {
+		err = errors.New("the server's answer is not the principle")
+	}
 	if err != nil {
 		if dryRun || !outcomeUnknown(err) {
 			return invariantEditError(client, err, id, revision, dryRun)
 		}
 		return confirmEdit(cmd, client, err, id, format, body, revision)
 	}
-	edited, _ := resp.(map[string]any)
 	switch {
 	case dryRun:
 		output.PrintStderr("Dry run: nothing was written. Run without --dry-run to edit it.")
@@ -251,6 +254,13 @@ func assetsKindAndName(assets []any) []any {
 		kept = append(kept, item)
 	}
 	return kept
+}
+
+// isPrinciple reports whether a write's answer is principle id with its revision: an empty one,
+// such as a proxy's, shows nothing written.
+func isPrinciple(inv map[string]any, id string) bool {
+	_, ok := getFloat(inv, "revision")
+	return ok && strings.EqualFold(getStr(inv, "id"), id)
 }
 
 // editChanges reports whether an edit body differs from the principle as Konvu holds it.
@@ -461,6 +471,9 @@ func runInvariantsDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	deleted, err := client.Delete(invariantPath(id), nil)
+	if err == nil && (!isPrinciple(deleted, id) || getStr(deleted, "status") != "retired") {
+		err = errors.New("the server's answer does not show the principle deleted")
+	}
 	if err != nil {
 		if !outcomeUnknown(err) {
 			return invariantDeleteError(err, id)
@@ -530,8 +543,7 @@ func invariantDeleteError(err error, id string) error {
 
 func printManagedInvariant(cmd *cobra.Command, format output.OutputFormat, inv map[string]any) error {
 	if format == output.JSON {
-		fmt.Fprintln(cmd.OutOrStdout(), output.FormatJSON(inv))
-		return nil
+		return output.WriteString(cmd.OutOrStdout(), output.FormatJSON(inv)+"\n")
 	}
 	row := map[string]any{
 		"rank":      intField(inv, "rank"),
@@ -540,6 +552,5 @@ func printManagedInvariant(cmd *cobra.Command, format output.OutputFormat, inv m
 		"statement": displayText(inv, "statement"),
 	}
 	cols := []string{"rank", "status", "revision", "statement"}
-	fmt.Fprint(cmd.OutOrStdout(), output.FormatTable(map[string]any{"invariants": []any{row}}, cols, "invariants", nil))
-	return nil
+	return output.WriteString(cmd.OutOrStdout(), output.FormatTable(map[string]any{"invariants": []any{row}}, cols, "invariants", nil))
 }

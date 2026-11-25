@@ -291,8 +291,8 @@ func runKnowledgeEdit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return knowledgeWriteError(err, path)
 	}
-	// A save is one revision up. Anything else, such as a redirect answered with the page read
-	// back, saved nothing.
+	// A save is one revision up. Anything else, such as an empty answer from a proxy, shows
+	// nothing saved.
 	if revision, ok := getFloat(saved, "revision"); !ok || int(revision) != current+1 {
 		return &clierrors.CLIError{
 			Code: "API_ERROR", Message: fmt.Sprintf("the server's answer does not show %s saved", path),
