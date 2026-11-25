@@ -379,7 +379,8 @@ the pages Konvu writes (`company.md`, `infrastructure.md`, `threat-model.md`,
 products and apps) and the pages your team writes. Konvu's pages are read-only:
 you change the data behind them, with commands named after that data, and Konvu
 rewrites the pages that show it. Every data edit is recorded (who, when, before,
-after) and can be reverted.
+after) and can be reverted, except a repository's endpoints and data objects,
+whose `get` shows who set or hid each item.
 
 ```bash
 konvu book ls                              # Every page, with EDIT WITH: the command that changes its data
@@ -400,13 +401,15 @@ without the EDIT WITH column.
 | Company and infrastructure facts (`company.md`, `infrastructure.md`) | `konvu company get` / `apply` |
 | Threat model (`threat-model.md`) | `konvu threat-model get` / `apply` |
 | A repository's threat profile | `konvu threat-profile get` / `apply --repo <owner/name>` |
+| A repository's endpoints (Inventory › Endpoints) | `konvu inventory endpoints get` / `apply --repo <owner/name>` |
+| A repository's data objects and their fields (Inventory › Data objects) | `konvu inventory data-objects get` / `apply --repo <owner/name>` |
 | Products, modules and apps (`products/...`) | `konvu inventory catalog get` / `apply` |
 | Principles (`security-principles.md`) | `konvu principles` |
 | Triage instructions of a repository | `konvu knowledge triage-instructions` |
 | Your team's own pages | `konvu knowledge edit` |
 
 Findings, scans, ratings and feedback, triage history, the repository list, the
-inventory graph, collected files, Konvu's sources and computed scores are not
+rest of the inventory graph (controls and their code), collected files, Konvu's sources and computed scores are not
 book data and are not edited here; rating or dismissing a finding keeps its own
 `konvu finding` commands.
 
@@ -421,7 +424,23 @@ konvu threat-profile apply --repo acme/api --file api.json --dry-run
 konvu history                                             # Every edit, newest first: when, who, field, before → after, id
 konvu history --object threat-profile --key <repository-id> --limit 20
 konvu history revert <id> --revision <current revision>   # Undo one edit
+konvu inventory endpoints get --repo acme/api > endpoints.json
+konvu inventory endpoints apply --repo acme/api --file endpoints.json --dry-run
+konvu inventory data-objects get --repo acme/api | jq '.data_objects += [{"name": "Invoice", "fields": ["amount"]}]' \
+  | konvu inventory data-objects apply --repo acme/api --file - --dry-run
 ```
+
+`inventory endpoints` and `inventory data-objects` edit what Konvu's mapping
+found in a repository. `get` prints `revision`, the list (an endpoint is
+`{name, description, location, routes: [{method, path}]}`, a data object
+`{name, description, location, fields}`), `provenance` (who set each item a
+person added or changed) and `hidden` (the items people hid), the last two
+read-only. `apply` makes the repository show exactly the list in the file: an
+item left as printed stays Konvu's, one you add or change is yours, and one you
+leave out is hidden. Every later mapping run keeps yours and never brings a
+hidden one back; list it again by name to show it. Names match ignoring case and
+punctuation. The Security Book's Inventory, the dashboard and Konvu's PR check
+read the result. `konvu history` does not list these edits: `get` shows them.
 
 `get` prints the data as one JSON document: its `revision`, the data (each value
 a text, a list of texts, or `null`), and `provenance` (who set each value:

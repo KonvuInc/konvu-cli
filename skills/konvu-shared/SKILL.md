@@ -1,6 +1,6 @@
 ---
 name: konvu-shared
-version: 1.2.0
+version: 1.3.0
 description: "Konvu CLI: Auth setup, global flags, env vars, and common patterns."
 metadata:
   requires:
@@ -73,12 +73,14 @@ konvu company get > company.json             # Company and infrastructure facts 
 konvu company apply --file company.json [--dry-run]                  # Change them: prints one line per change
 konvu threat-model get / apply --file F [--dry-run]                  # The threat model, the same way
 konvu threat-profile get --repo <owner/name|id> / apply --repo R --file F [--dry-run]   # A repository's threat profile
+konvu inventory endpoints get --repo <owner/name|id> / apply --repo R --file F|- [--dry-run]      # A repository's endpoints
+konvu inventory data-objects get --repo <owner/name|id> / apply --repo R --file F|- [--dry-run]   # A repository's data objects and their fields
 konvu history [--object company|threat-model|threat-profile|catalog] [--key ID] [--limit N] [--offset N]   # Every edit: when, who, before → after
 konvu history revert <id> --revision <current revision>              # Undo one edit; the revision is the object's 'get' one
 konvu knowledge edit <path> --file <md>|- [--title T] [--base <cat -o json file>]   # Text of one of your team's own pages
 ```
 
-Konvu's pages are read-only: change the data behind a page with the command `book ls` names for it, and Konvu rewrites the page; only the team's own pages take `knowledge edit`. `get` prints `revision`, the data and `provenance` (read-only, never sent; the threat model adds read-only `overrides`, and its sections `assets`, `boundaries` and `exposures` show exactly the list applied, items left out staying hidden after later runs); in `apply`, a value left out keeps its value and `null` clears it, and the apply is refused with `DATA_CHANGED` (exit 1, nothing written) once the data changed since that `get`: get it again and redo the edit. Exit 2 lists every problem in the file, exit 3 an unknown repository or edit, or a server without these routes yet, exit 4 a read-only key or the demo view. `knowledge edit` refuses `company.md`, `infrastructure.md` and `threat-model.md` (exit 2). Findings, scans, ratings, triage history, the repository list, the inventory graph, collected files, sources and scores are not book data and are not edited here (rating or dismissing a finding keeps its own `konvu finding` commands). Change data only when the user asks, after showing them the dry run.
+Konvu's pages are read-only: change the data behind a page with the command `book ls` names for it, and Konvu rewrites the page; only the team's own pages take `knowledge edit`. `get` prints `revision`, the data and `provenance` (read-only, never sent; the threat model adds read-only `overrides`, and its sections `assets`, `boundaries` and `exposures` show exactly the list applied, items left out staying hidden after later runs; `inventory endpoints` and `inventory data-objects` add read-only `hidden`, and their list shows exactly what is applied: an item left as printed stays Konvu's, one added or changed is the person's and kept by every later mapping run, one left out stays hidden; `konvu history` does not list them); in `apply`, a value left out keeps its value and `null` clears it, and the apply is refused with `DATA_CHANGED` (exit 1, nothing written) once the data changed since that `get`: get it again and redo the edit. Exit 2 lists every problem in the file, exit 3 an unknown repository or edit, or a server without these routes yet, exit 4 a read-only key or the demo view. `knowledge edit` refuses `company.md`, `infrastructure.md` and `threat-model.md` (exit 2). Findings, scans, ratings, triage history, the repository list, the rest of the inventory graph (controls and their code), collected files, sources and scores are not book data and are not edited here (rating or dismissing a finding keeps its own `konvu finding` commands). Change data only when the user asks, after showing them the dry run.
 
 ## Tips
 
