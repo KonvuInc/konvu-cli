@@ -31,7 +31,7 @@ The Security Book is what Konvu knows about the company, as markdown pages. Konv
 | Threat model | `threat-model.md` | `konvu threat-model get` / `apply` |
 | A repository's threat profile | pages about that repository | `konvu threat-profile get` / `apply --repo <owner/name>` |
 | Products, modules and apps | `products/...` | `konvu inventory catalog get` / `apply` (the `konvu-catalog` skill) |
-| Principles | `security-principles.md` | `konvu principles` (the `konvu-principles` and `konvu-decide-suggestions` skills) |
+| Principles | `security-principles.md` | `konvu principles push` (add), `accept` / `amend` / `decline` (Konvu's suggestions), `edit` / `delete` (active ones) |
 | Triage instructions of a repository | none | `konvu knowledge triage-instructions` |
 | The team's own pages | their path | `konvu knowledge edit` |
 
