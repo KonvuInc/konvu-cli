@@ -248,10 +248,11 @@ func TestBookDataApplyChecksTheAnswer(t *testing.T) {
 	}
 }
 
-// Every key but provenance goes back as the file has it, so keys this CLI does not know survive.
+// Every key but the read-only provenance and overrides goes back as the file has it, so keys
+// this CLI does not know survive.
 func TestThreatModelApplySendsEveryOtherKeyBack(t *testing.T) {
 	_, calls := reviewServer(t, map[string][]invariantReply{
-		"GET /company_profile/facts/threat-model": {{http.StatusOK, json.RawMessage(`{"revision": "r3", "threat_model": {"attackers_of_interest": ["fraudsters"]}, "assumptions": {"a": 1}, "provenance": {}}`)}},
+		"GET /company_profile/facts/threat-model": {{http.StatusOK, json.RawMessage(`{"revision": "r3", "threat_model": {"attackers_of_interest": ["fraudsters"]}, "assumptions": {"a": 1}, "provenance": {}, "overrides": {"assets": {"added": [{"value": "billing", "asserted_by": "a@acme.com"}], "hidden": []}}}`)}},
 		"PUT /company_profile/facts/threat-model": {{http.StatusOK, map[string]any{"applied": true, "changes": []any{"Set attackers_of_interest: fraudsters → fraudsters, insiders"}, "revision": "r4"}}},
 	})
 	out, err := runInvariants(newBookDataCmd(threatModelData), "get")
@@ -263,7 +264,7 @@ func TestThreatModelApplySendsEveryOtherKeyBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	sent := calls()[1].body
-	if _, ok := sent["assumptions"].(map[string]any); !ok || sent["provenance"] != nil || len(sent) != 3 {
+	if _, ok := sent["assumptions"].(map[string]any); !ok || sent["provenance"] != nil || sent["overrides"] != nil || len(sent) != 3 {
 		t.Errorf("body = %v", sent)
 	}
 	attackers, _ := sent["threat_model"].(map[string]any)["attackers_of_interest"].([]any)

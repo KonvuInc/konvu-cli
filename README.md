@@ -425,7 +425,10 @@ konvu history revert <id> --revision <current revision>   # Undo one edit
 
 `get` prints the data as one JSON document: its `revision`, the data (each value
 a text, a list of texts, or `null`), and `provenance` (who set each value:
-read-only, never sent back). `apply` needs `revision` and the data objects; a
+read-only, never sent back). The threat model's sections (`assets`, `boundaries`,
+`exposures`) show exactly the list you apply: an item you add is kept, and one
+you leave out stays hidden even after later Konvu runs; `overrides` lists the
+items people added or hid (read-only, never sent back). `apply` needs `revision` and the data objects; a
 value left out of the file keeps its value, and `null` clears it. Once the data changed
 since your `get` (someone else's edit, or Konvu's), `apply` writes nothing and
 exits `1` with `DATA_CHANGED`: get it again and redo your edit. A file the

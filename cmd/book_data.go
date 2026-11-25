@@ -35,6 +35,8 @@ type bookDataObject struct {
 	// required are the document's objects besides "revision": a file without one is refused, as
 	// not a document 'get' printed.
 	required []string
+	// readOnly are the keys 'get' prints that apply never sends: Konvu sets them.
+	readOnly []string
 	// byRepo is true for data kept per repository, addressed with --repo.
 	byRepo bool
 	path   string
@@ -43,7 +45,7 @@ type bookDataObject struct {
 
 var (
 	companyData = bookDataObject{
-		name: "company", what: "company facts", required: []string{"company", "infrastructure"}, path: companyFactsPath,
+		name: "company", what: "company facts", required: []string{"company", "infrastructure"}, readOnly: []string{"provenance"}, path: companyFactsPath,
 		long: `What Konvu knows about your company and its infrastructure, as one JSON document:
 
   revision        the version you read; apply is refused once it changed since
@@ -57,13 +59,20 @@ facts, and rewrites them after a change. Every change is recorded: 'konvu histor
 lists them and 'konvu history revert' undoes one.`,
 	}
 	threatModelData = bookDataObject{
-		name: "threat-model", what: "threat model", required: []string{"threat_model"}, path: threatModelFactsPath,
+		name: "threat-model", what: "threat model", required: []string{"threat_model"}, readOnly: []string{"provenance", "overrides"}, path: threatModelFactsPath,
 		long: `Your company's threat model as one JSON document:
 
   revision      the version you read; apply is refused once it changed since
-  threat_model  what attackers would go after, by key: a text, a list of texts,
-                or null for none
+  threat_model  what attackers would go after, by key (data_classes,
+                attackers_of_interest, assets, boundaries, exposures): a list
+                of texts, or null for none
   provenance    who set each value (Konvu or a person): read-only, never sent
+  overrides     the items people added to or hid from each section:
+                read-only, never sent
+
+The sections assets, boundaries and exposures show exactly the list you apply:
+an item you add is kept, and one you leave out stays hidden, even after later
+Konvu runs find it again.
 
 Any other key 'get' prints is sent back as it is in your file. Konvu writes
 threat-model.md in your Security Book from this data, and rewrites it after a
@@ -71,7 +80,7 @@ change. Every change is recorded: 'konvu history' lists them and
 'konvu history revert' undoes one.`,
 	}
 	threatProfileData = bookDataObject{
-		name: "threat-profile", what: "repository threat profile", required: []string{"attributes"}, byRepo: true,
+		name: "threat-profile", what: "repository threat profile", required: []string{"attributes"}, readOnly: []string{"provenance"}, byRepo: true,
 		long: `One repository's threat profile attributes as one JSON document, such as
 whether it is internet exposed or holds customer data:
 
@@ -115,7 +124,7 @@ are required. A value left out of the file keeps its value; null clears it.
 
 "revision" names the version the file was read from: once the data changed
 since (someone else's edit, or Konvu's), apply is refused and writes nothing.
-Get it again and redo the edit then. "provenance" is read-only and never sent.
+Get it again and redo the edit then. %[4]s read-only and never sent.
 
 --dry-run lists the changes and writes nothing. Nothing is written either when
 the file has a problem: every problem is listed. After a change, Konvu rewrites
@@ -123,7 +132,7 @@ the Security Book's pages that show this data.
 
 Exit codes: 0 success, 1 the data changed since you read it or another error,
 2 invalid file, 3 not found or a server that does not support this yet, 4 not
-logged in, no access, a read-only key or the demo view`, object.what, object.name, requiredKeys(object)),
+logged in, no access, a read-only key or the demo view`, object.what, object.name, requiredKeys(object), readOnlyKeys(object)),
 		Example: fmt.Sprintf(`  konvu %[1]s apply%[2]s --file %[1]s.json --dry-run
   konvu %[1]s apply%[2]s --file %[1]s.json
   konvu %[1]s get%[2]s | jq '...' | konvu %[1]s apply%[2]s --file - --dry-run`, object.name, repo),
@@ -144,11 +153,26 @@ logged in, no access, a read-only key or the demo view`, object.what, object.nam
 
 // requiredKeys lists the keys an apply needs, quoted: "revision", "company" and "infrastructure".
 func requiredKeys(object bookDataObject) string {
-	keys := append([]string{"revision"}, object.required...)
-	for i, key := range keys {
-		keys[i] = strconv.Quote(key)
+	return quotedList(append([]string{"revision"}, object.required...))
+}
+
+// readOnlyKeys names the keys apply never sends, as the subject of "is" or "are".
+func readOnlyKeys(object bookDataObject) string {
+	if len(object.readOnly) == 1 {
+		return strconv.Quote(object.readOnly[0]) + " is"
 	}
-	return strings.Join(keys[:len(keys)-1], ", ") + " and " + keys[len(keys)-1]
+	return quotedList(object.readOnly) + " are"
+}
+
+func quotedList(keys []string) string {
+	quoted := make([]string, len(keys))
+	for i, key := range keys {
+		quoted[i] = strconv.Quote(key)
+	}
+	if len(quoted) == 1 {
+		return quoted[0]
+	}
+	return strings.Join(quoted[:len(quoted)-1], ", ") + " and " + quoted[len(quoted)-1]
 }
 
 func runBookDataGet(cmd *cobra.Command, object bookDataObject) error {
@@ -282,7 +306,7 @@ func bookDataChanges(object bookDataObject, result map[string]any, applied bool,
 
 // readBookDataFile reads a document as 'get' prints it, keeping every value as it is (numbers
 // included), and refuses one that is not: no revision, as the text 'get' printed, or a required
-// object missing. provenance is read-only, so it is never sent.
+// object missing. Its read-only keys (provenance, overrides) are never sent.
 func readBookDataFile(cmd *cobra.Command, file string, object bookDataObject) (map[string]any, error) {
 	start := fmt.Sprintf("Start from '%s' and edit that file.", bookDataGetCommand(object))
 	var reader io.Reader = cmd.InOrStdin()
@@ -319,7 +343,9 @@ func readBookDataFile(cmd *cobra.Command, file string, object bookDataObject) (m
 	if len(problems) > 0 {
 		return nil, bookDataInvalid(fmt.Sprintf("the file has %s", strings.Join(problems, "; ")), start)
 	}
-	delete(doc, "provenance")
+	for _, key := range object.readOnly {
+		delete(doc, key)
+	}
 	return doc, nil
 }
 

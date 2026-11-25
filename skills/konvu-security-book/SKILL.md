@@ -41,8 +41,8 @@ Not book data, so never changed through these commands: findings, scans, ratings
 
 Change only what the user asked, in the object they named.
 
-1. **Get.** Run `konvu company get > /tmp/company.json` (or `threat-model get`, `threat-profile get --repo <owner/name>`). It prints one JSON document: `revision`, the data objects, and `provenance` (who set each value; read-only, never sent).
-2. **Edit the file.** Change only the values the user asked for. A value is a text, a list of texts, or `null` for none; `null` clears it. Keep every other key and value as it is, and never touch `revision`: it names the version you read.
+1. **Get.** Run `konvu company get > /tmp/company.json` (or `threat-model get`, `threat-profile get --repo <owner/name>`). It prints one JSON document: `revision`, the data objects, and `provenance` (who set each value; read-only, never sent). The threat model also prints `overrides`: the items people added to or hid from each section (read-only, never sent).
+2. **Edit the file.** Change only the values the user asked for. A value is a text, a list of texts, or `null` for none; `null` clears it. Keep every other key and value as it is, and never touch `revision`: it names the version you read. The threat model's sections `assets`, `boundaries` and `exposures` show exactly the list you apply: an item you add is kept, and one you leave out stays hidden, even after later Konvu runs find it again. So remove an item by deleting it from the list, and keep every item the user did not ask to remove.
 3. **Dry run.** Run `konvu company apply --file /tmp/company.json --dry-run`. It prints the change lines, one per field, and writes nothing.
 4. **Ask.** Show the user the change lines and ask whether to apply them. Apply only after an explicit yes. If the dry run lists a change they did not ask for, fix the file and dry-run again.
 5. **Apply.** Run the same command without `--dry-run`. It prints the changes applied and the new revision. Konvu rewrites the pages that show this data; read them again later with `konvu book read`.
