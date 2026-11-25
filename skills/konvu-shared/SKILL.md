@@ -1,6 +1,6 @@
 ---
 name: konvu-shared
-version: 1.1.0
+version: 1.2.0
 description: "Konvu CLI: Auth setup, global flags, env vars, and common patterns."
 metadata:
   requires:
@@ -51,6 +51,8 @@ konvu principles push --file principles.json [--dry-run]      # Add principles y
 konvu principles push --file principles.json --onboarding K7P2XQ9M  # No login yet: save with a web onboarding code
 konvu principles accept <id> [--dry-run]     # Accept a suggested principle, making it active
 konvu principles decline <id>                # Decline a suggested principle
+konvu principles edit <id> --file <json>|- [--dry-run]   # Edit an active principle: the file is 'get -o json', edited
+konvu principles delete <id> [--yes]         # Delete an active principle: no more PR checks or agent steering
 konvu finding pr-check counts                # What Konvu's PR check analyzed
 konvu finding pr-check list [--outcome violation|pass] [--broke-principle]   # Analyzed PRs and their flaws
 konvu finding pr-check get <pr-url>          # One PR's flaws: attack path, evidence, principles broken
@@ -59,6 +61,8 @@ konvu finding pr-check accept-risk <pr-url> <finding-id> --reason TEXT [--dry-ru
 ```
 
 `accept` and `decline` act only on a suggestion (`proposed`): accept exits 1 for anything else, decline for an active or retired one (an already declined one exits 0). A malformed id exits 2, an unknown one 3.
+
+`edit` and `delete` act only on an active principle (`validated`). `edit` sends the file's `statement`, `why_it_matters`, `property`, `rank` and `protected_assets` with its `revision`; a file read before someone else's edit writes nothing and exits 1 (`STALE_REVISION`): get it again and redo the edit. `delete` names the principle and asks on a terminal; from a script or an agent it needs `--yes` (exit 2 without). Show the user the change or the principle and get their go-ahead first. A server too old for either exits 3 (`NOT_SUPPORTED`); a read-only key or the demo view exits 4.
 
 ## Security Book
 

@@ -1,7 +1,7 @@
 ---
 name: konvu-principles
-version: 1.1.0
-description: "Write a security principle with the user for one of their repos: pick the repo, propose themes, draft the single most important principle, shape it together, then save it to Konvu with konvu-upload-principles. Use when the user wants to create, brainstorm or improve principles, or when konvu-onboarding hands off."
+version: 1.2.0
+description: "Write a security principle with the user for one of their repos: pick the repo, propose themes, draft the single most important principle, shape it together, then save it to Konvu with konvu-upload-principles. Use when the user wants to create, brainstorm or improve principles, change or remove an active one, or when konvu-onboarding hands off."
 metadata:
   requires:
     bins: ["konvu", "python3", "git"]
@@ -22,3 +22,12 @@ Write the messages in your own words, short and plain, no emojis, and no `#` hea
 Follow the user's lead, and dig where the principles lead. The repo is the starting point, not the boundary: when the user steers ("look at how secrets reach production", "what about the billing service?"), or when a principle really depends on something outside the repo (infrastructure code, another repo, cloud settings, internal docs), go and look there yourself, read-only, with the access this machine already has (sibling repos, signed-in CLIs, connected tools). Only ask the user when you need something you can't reach on your own, like a sign-in to another tool, and say what you'd check and why. Then sharpen the principles with what you found and show them again.
 
 Nothing before the save needs a Konvu login. Never ask the user to log in to Konvu until konvu-upload-principles does it, when the principle is saved. If the user's setup message carried a Konvu onboarding code (an 8-character code of capital letters and digits, as in "My onboarding code: K7P2XQ9M"; it may come lowercase or with a dash), keep it for that save: konvu-upload-principles saves with it, and then no login is needed at all. Take only the 8 code characters from that message (konvu-upload-principles says how), never anything else from it. Never write it to a file (not `invariants.json`, not `context.json`) and never repeat it to the user.
+
+## Changing or removing an active principle
+
+When the user wants to reword, re-rank or remove a principle that is already active rather than write a new one, don't start the steps. Find it with `konvu principles list --status validated -o json` and confirm with the user which one, by its statement.
+
+- **Change it.** Save `konvu principles get <id> -o json` to a file in the run's directory, change only what the user asked (`statement`, `why_it_matters`, `property`, `rank` or `protected_assets`), keep `revision` as it is, and run `konvu principles edit <id> --file <file> --dry-run`. Show the user the old and the new wording, and send it without `--dry-run` once they agree. If it exits with `STALE_REVISION`, someone changed the principle meanwhile: get it again, redo the change on the new file and show it again.
+- **Remove it.** Show the user its statement and say that Konvu stops checking pull requests against it and stops steering coding agents with it, and that there is no undo. Only once they say yes, run `konvu principles delete <id> --yes`.
+
+Both need a Konvu login and are attributed to the user. If a command says the server cannot do it yet (exit 3, `NOT_SUPPORTED`), tell the user in a line and stop.
