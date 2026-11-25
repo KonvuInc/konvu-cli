@@ -18,6 +18,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// bookPagesRewritten is what shows company and threat data after an apply.
+const bookPagesRewritten = "Konvu rewrites the Security Book's pages that show this data."
+
 const (
 	companyFactsPath     = "/company_profile/facts/company"
 	threatModelFactsPath = "/company_profile/facts/threat-model"
@@ -41,11 +44,30 @@ type bookDataObject struct {
 	byRepo bool
 	path   string
 	long   string
+	// command is the command's path under konvu when it is more than its name, such as
+	// "inventory endpoints".
+	command string
+	// section is the one list of a repository's inventory document the object edits: get prints
+	// only it, and its required key is that list.
+	section string
+	// refused are keys apply never sends: another command applies them.
+	refused []string
+	// repoPath is the route of a repository's data, given its escaped Konvu id.
+	repoPath func(id string) string
+	// notFound is the suggestion when the repository has none of this data yet.
+	notFound string
+	// history is true when 'konvu history' lists the object's changes.
+	history bool
+	// shown says what shows the data after an apply.
+	shown string
+	// applyLong replaces apply's generic help when set.
+	applyLong string
 }
 
 var (
 	companyData = bookDataObject{
 		name: "company", what: "company facts", required: []string{"company", "infrastructure"}, readOnly: []string{"provenance"}, path: companyFactsPath,
+		history: true, shown: bookPagesRewritten,
 		long: `What Konvu knows about your company and its infrastructure, as one JSON document:
 
   revision        the version you read; apply is refused once it changed since
@@ -60,6 +82,7 @@ lists them and 'konvu history revert' undoes one.`,
 	}
 	threatModelData = bookDataObject{
 		name: "threat-model", what: "threat model", required: []string{"threat_model"}, readOnly: []string{"provenance", "overrides"}, path: threatModelFactsPath,
+		history: true, shown: bookPagesRewritten,
 		long: `Your company's threat model as one JSON document:
 
   revision      the version you read; apply is refused once it changed since
@@ -81,6 +104,9 @@ change. Every change is recorded: 'konvu history' lists them and
 	}
 	threatProfileData = bookDataObject{
 		name: "threat-profile", what: "repository threat profile", required: []string{"attributes"}, readOnly: []string{"provenance"}, byRepo: true,
+		history: true, shown: bookPagesRewritten,
+		repoPath: func(id string) string { return threatProfileRepoPath + id + "/attributes" },
+		notFound: "Konvu keeps a threat profile once it has analyzed the repository: check it with 'konvu inventory show <repo>'.",
 		long: `One repository's threat profile attributes as one JSON document, such as
 whether it is internet exposed or holds customer data:
 
@@ -100,13 +126,14 @@ func newBookDataCmd(object bookDataObject) *cobra.Command {
 	if object.byRepo {
 		repo = " --repo acme/api"
 	}
+	command := bookDataCommand(object)
 	parent := &cobra.Command{
 		Use:   object.name,
 		Short: fmt.Sprintf("Read and edit your %s, the data behind your Security Book", object.what),
 		Long:  object.long,
-		Example: fmt.Sprintf(`  konvu %[1]s get%[2]s > %[1]s.json
-  konvu %[1]s apply%[2]s --file %[1]s.json --dry-run
-  konvu %[1]s apply%[2]s --file %[1]s.json`, object.name, repo),
+		Example: fmt.Sprintf(`  %[1]s get%[2]s > %[3]s.json
+  %[1]s apply%[2]s --file %[3]s.json --dry-run
+  %[1]s apply%[2]s --file %[3]s.json`, command, repo, object.name),
 	}
 	get := &cobra.Command{
 		Use:   "get",
@@ -132,12 +159,15 @@ the Security Book's pages that show this data.
 
 Exit codes: 0 success, 1 the data changed since you read it or another error,
 2 invalid file, 3 not found or a server that does not support this yet, 4 not
-logged in, no access, a read-only key or the demo view`, object.what, object.name, requiredKeys(object), readOnlyKeys(object)),
-		Example: fmt.Sprintf(`  konvu %[1]s apply%[2]s --file %[1]s.json --dry-run
-  konvu %[1]s apply%[2]s --file %[1]s.json
-  konvu %[1]s get%[2]s | jq '...' | konvu %[1]s apply%[2]s --file - --dry-run`, object.name, repo),
+logged in, no access, a read-only key or the demo view`, object.what, strings.TrimPrefix(command, "konvu "), requiredKeys(object), readOnlyKeys(object)),
+		Example: fmt.Sprintf(`  %[1]s apply%[2]s --file %[3]s.json --dry-run
+  %[1]s apply%[2]s --file %[3]s.json
+  %[1]s get%[2]s | jq '...' | %[1]s apply%[2]s --file - --dry-run`, command, repo, object.name),
 		Args: cobra.NoArgs,
 		RunE: withJSONErrors(func(cmd *cobra.Command, _ []string) error { return runBookDataApply(cmd, object) }),
+	}
+	if object.applyLong != "" {
+		apply.Long = object.applyLong
 	}
 	apply.Flags().String("file", "", "JSON document to apply, or '-' for stdin")
 	apply.Flags().Bool("dry-run", false, "List the changes without writing anything")
@@ -191,8 +221,12 @@ func runBookDataGet(cmd *cobra.Command, object bookDataObject) error {
 	if err != nil {
 		return bookDataError(err, object, false)
 	}
+	found := true
+	if object.section != "" {
+		raw, found = bookDataSection(raw, object.section)
+	}
 	var indented bytes.Buffer
-	if err := json.Indent(&indented, []byte(raw), "", "  "); err != nil || !strings.HasPrefix(strings.TrimSpace(raw), "{") {
+	if err := json.Indent(&indented, []byte(raw), "", "  "); err != nil || !found || !strings.HasPrefix(strings.TrimSpace(raw), "{") {
 		return clierrors.NewAPIError(fmt.Sprintf("the server's answer is not your %s as a JSON object", object.what))
 	}
 	return output.WriteString(cmd.OutOrStdout(), terminalSafeJSON(indented.String())+"\n")
@@ -221,7 +255,7 @@ func runBookDataApply(cmd *cobra.Command, object bookDataObject) error {
 	result, err := client.Put(route+"?dry_run="+strconv.FormatBool(dryRun), doc)
 	if err != nil {
 		if !dryRun && outcomeUnknown(err) {
-			return writeOutcomeUnknown(err, "the apply", "konvu history --object "+object.name)
+			return writeOutcomeUnknown(err, "the apply", bookDataHistoryCommand(object))
 		}
 		return bookDataError(err, object, true)
 	}
@@ -264,10 +298,14 @@ func bookDataAnswerError(object bookDataObject, known, applied, dryRun bool, cha
 		for _, change := range changes {
 			lines += "\n  " + clean(change)
 		}
+		suggestion := "Run 'konvu history' to see the edit, and 'konvu history revert <id> --revision <revision>' to undo it."
+		if !object.history {
+			suggestion = fmt.Sprintf("Run '%s' to see what it holds now, and apply your earlier file again to undo it.", bookDataGetCommand(object))
+		}
 		return &clierrors.CLIError{
 			Code:       "DRY_RUN_APPLIED",
 			Message:    fmt.Sprintf("the server applied %s to your %s though --dry-run was passed%s", plural(len(changes), "change"), object.what, lines),
-			Suggestion: "Run 'konvu history' to see the edit, and 'konvu history revert <id> --revision <revision>' to undo it.",
+			Suggestion: suggestion,
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	case !dryRun && !applied && len(changes) > 0:
@@ -298,7 +336,7 @@ func bookDataChanges(object bookDataObject, result map[string]any, applied bool,
 	}
 	if applied {
 		if revision := revisionText(result["revision"]); revision != "" {
-			fmt.Fprintf(&b, "Now at revision %s. Konvu rewrites the Security Book's pages that show this data.\n", revision)
+			fmt.Fprintf(&b, "Now at revision %s. %s\n", revision, object.shown)
 		}
 	}
 	return b.String()
@@ -336,8 +374,17 @@ func readBookDataFile(cmd *cobra.Command, file string, object bookDataObject) (m
 		problems = append(problems, `no "revision" as 'get' printed it`)
 	}
 	for _, key := range object.required {
-		if _, ok := doc[key].(map[string]any); !ok {
+		if object.section != "" {
+			if _, ok := doc[key].([]any); !ok {
+				problems = append(problems, fmt.Sprintf("no %q list", key))
+			}
+		} else if _, ok := doc[key].(map[string]any); !ok {
 			problems = append(problems, fmt.Sprintf("no %q object", key))
+		}
+	}
+	for _, key := range object.refused {
+		if _, ok := doc[key]; ok {
+			problems = append(problems, fmt.Sprintf("a %q list, which this command does not apply", key))
 		}
 	}
 	if len(problems) > 0 {
@@ -359,7 +406,7 @@ func bookDataRoute(cmd *cobra.Command, client *api.Client, object bookDataObject
 	if err != nil {
 		return "", err
 	}
-	return threatProfileRepoPath + url.PathEscape(id) + "/attributes", nil
+	return object.repoPath(url.PathEscape(id)), nil
 }
 
 // bookDataRepository resolves --repo to a Konvu repository id: an id as given, else the one
@@ -432,12 +479,43 @@ func repositoryHost(repoURL string) string {
 	return strings.ToLower(parsed.Hostname())
 }
 
+// bookDataCommand is the object's command, such as "konvu inventory endpoints".
+func bookDataCommand(object bookDataObject) string {
+	return "konvu " + orDefault(object.command, object.name)
+}
+
 // bookDataGetCommand is the command that prints the object's document.
 func bookDataGetCommand(object bookDataObject) string {
 	if object.byRepo {
-		return "konvu " + object.name + " get --repo <repo>"
+		return bookDataCommand(object) + " get --repo <repo>"
 	}
-	return "konvu " + object.name + " get"
+	return bookDataCommand(object) + " get"
+}
+
+// bookDataHistoryCommand is the command that shows whether a write landed.
+func bookDataHistoryCommand(object bookDataObject) string {
+	if object.history {
+		return "konvu history --object " + object.name
+	}
+	return bookDataGetCommand(object)
+}
+
+// bookDataSection is the part of a repository's inventory document an object edits, each value
+// as Konvu sent it: the revision, the section's list, and who set and who hid its items. False
+// when the document has no revision or no such list.
+func bookDataSection(raw, section string) (string, bool) {
+	var doc map[string]json.RawMessage
+	if json.Unmarshal([]byte(raw), &doc) != nil || doc["revision"] == nil || doc[section] == nil {
+		return raw, false
+	}
+	parts := []string{`"revision":` + string(doc["revision"]), strconv.Quote(section) + ":" + string(doc[section])}
+	for _, key := range []string{"provenance", "hidden"} {
+		var byKind map[string]json.RawMessage
+		if json.Unmarshal(doc[key], &byKind) == nil && byKind[section] != nil {
+			parts = append(parts, strconv.Quote(key)+":"+string(byKind[section]))
+		}
+	}
+	return "{" + strings.Join(parts, ",") + "}", true
 }
 
 func bookDataUsage(message, suggestion string) error {
@@ -477,7 +555,7 @@ func bookDataError(err error, object bookDataObject, writing bool) error {
 	case apiErr.StatusCode == 404:
 		suggestion := "Run 'konvu whoami' to check your company."
 		if object.byRepo {
-			suggestion = "Konvu keeps a threat profile once it has analyzed the repository: check it with 'konvu inventory show <repo>'."
+			suggestion = object.notFound
 		}
 		return &clierrors.CLIError{Code: "NOT_FOUND", Message: orDefault(detail, "not found"), Suggestion: suggestion, ExitCode: clierrors.ExitNotFound}
 	case apiErr.StatusCode == 403 && writing:
