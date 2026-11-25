@@ -406,6 +406,7 @@ without the EDIT WITH column.
 | Products, modules and apps (`products/...`) | `konvu inventory catalog get` / `apply` |
 | Principles (`security-principles.md`) | `konvu principles` |
 | Triage instructions of a repository | `konvu knowledge triage-instructions` |
+| Notes: what your team knows that none of the data above holds (`context/<label>.md`) | `konvu knowledge note` |
 | Your team's own pages | `konvu knowledge edit` |
 
 Findings, scans, ratings and feedback, triage history, the repository list, the
@@ -459,9 +460,29 @@ the edit; `--revision` is the object's current revision from its `get`, and the
 revert is refused if the data changed since. A catalog edit is undone by
 applying the catalog again.
 
+A note holds what your team knows that none of the data above holds, such as
+how a service is deployed or who owns it. Each note has a label (`deployment`,
+`ownership`, `compliance`, `architecture` or `other`) and names the repositories
+it concerns; Konvu writes one read-only page per label, `context/<label>.md`,
+and rewrites it after a note is added or removed.
+
+```bash
+konvu knowledge note add --label deployment --repo acme/api --text "Deployed to EKS by Argo CD"
+konvu knowledge note add --label ownership --repo acme/api --repo acme/web --file owners.md
+konvu knowledge note list --label deployment --repo acme/api   # ID, LABEL, REPOS, AUTHOR, WHEN, TEXT
+konvu knowledge note rm <id> --yes                             # --yes is required without a terminal
+```
+
+`--repo` takes owner/name, a repository URL or a Konvu id, like `threat-profile`,
+and repeats. The text (`--text`, or `--file`, `-` for stdin) is UTF-8, at most
+20 000 characters, checked before anything is sent. A note has no edit: add the
+corrected one and remove the old one. An add that fails once sent exits `1`
+with `OUTCOME_UNKNOWN`: list the notes before adding it again.
+
 `knowledge edit` saves the text of one of your team's own pages; it refuses
-Konvu's pages (`company.md`, `infrastructure.md`, `threat-model.md`) and names
-the command that edits their data instead.
+Konvu's pages (`company.md`, `infrastructure.md`, `threat-model.md`, and the
+`context/<label>.md` pages written from notes) and names the command that edits
+their data instead.
 
 ```bash
 konvu knowledge cat ops.md -o json > base.json                   # The page as you read it
@@ -480,7 +501,7 @@ footnote can then cite another source.
 
 Exit codes: `1` data or a page that changed since you read it, or another error;
 `2` a malformed path, flag or file, a file the server refused, or an edit of one
-of Konvu's pages; `3` a missing page, repository or edit, or a server without
+of Konvu's pages; `3` a missing page, repository, edit or note, or a server without
 the book or these commands yet; `4` not logged in, no access, a read-only key or
 the demo view. The `konvu-security-book` skill teaches your agent to read the
 book and change its data after you approve the dry run.
