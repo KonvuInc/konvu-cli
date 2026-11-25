@@ -1073,6 +1073,8 @@ func init() {
 		newInvariantsAcceptCmd(),
 		newInvariantsAmendCmd(),
 		newInvariantsDeclineCmd(),
+		newInvariantsEditCmd(),
+		newInvariantsDeleteCmd(),
 	)
 	rootCmd.AddCommand(invariantsCmd)
 }
