@@ -203,23 +203,26 @@ func runHistoryRevert(cmd *cobra.Command, args []string) error {
 	}
 	client := api.NewClient("", "")
 	defer client.Close()
+	// The edit, once read: a revert's outcome is checked against its field's history.
+	var edit map[string]any
 	if !uuidRe.MatchString(id) {
-		if id, err = historyEditByPrefix(client, id); err != nil {
+		if edit, err = historyEditByPrefix(client, id); err != nil {
 			return err
 		}
+		id = getStr(edit, "id")
 	}
 	path := dataEditsPath + "/" + url.PathEscape(id) + "/revert"
 	body := map[string]any{"revision": revision}
 	result, err := client.Post(path, body)
-	// A revert the server failed may have landed: the history tells. One that did not is sent
-	// once more, which cannot apply it twice: a landed revert changed the revision.
+	// A revert the server failed may have landed: the newest edit of its field tells. One that
+	// did not is sent once more, which cannot apply it twice: a landed revert changed the revision.
 	if err != nil && outcomeUnknown(err) {
-		if revert := historyRevertOf(client, id); revert != nil {
+		if revert := historyRevertOf(client, id, &edit); revert != nil {
 			return writeRevertLanded(cmd, format, id, revert, err)
 		}
 		result, err = client.Post(path, body)
 		if err != nil && outcomeUnknown(err) {
-			if revert := historyRevertOf(client, id); revert != nil {
+			if revert := historyRevertOf(client, id, &edit); revert != nil {
 				return writeRevertLanded(cmd, format, id, revert, err)
 			}
 			return revertUnconfirmed(err)
@@ -228,7 +231,7 @@ func runHistoryRevert(cmd *cobra.Command, args []string) error {
 	// A repeat of a revert that landed is refused as stale: the history says it landed.
 	var apiErr *api.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusConflict {
-		if revert := historyRevertOf(client, id); revert != nil {
+		if revert := historyRevertOf(client, id, &edit); revert != nil {
 			return writeRevertLanded(cmd, format, id, revert, err)
 		}
 	}
@@ -286,59 +289,109 @@ func commonPrefixLen(a, b string) int {
 	return n
 }
 
-// historyEditByPrefix is the id of the one edit whose id starts with prefix, read from the
-// whole history.
-func historyEditByPrefix(client *api.Client, prefix string) (string, error) {
-	prefix = strings.ToLower(prefix)
-	var matches []string
+// historyScan reads the history params select, newest first, page by page, and passes each edit
+// to visit once, even when new edits shift the pages, until visit returns true.
+func historyScan(client *api.Client, params map[string]any, visit func(edit map[string]any) bool) error {
+	seen := map[string]bool{}
 	for offset := 0; ; offset += historyMaxLimit {
-		page, err := client.Get(dataEditsPath, map[string]any{"limit": historyMaxLimit, "offset": offset})
+		query := map[string]any{"limit": historyMaxLimit, "offset": offset}
+		for key, value := range params {
+			query[key] = value
+		}
+		page, err := client.Get(dataEditsPath, query)
 		if err != nil {
-			return "", historyError(err, "")
+			return err
 		}
 		items := getSlice(page, "items")
 		for _, item := range items {
 			edit, _ := item.(map[string]any)
-			if id := getStr(edit, "id"); strings.HasPrefix(strings.ToLower(id), prefix) && uuidRe.MatchString(id) {
-				matches = append(matches, id)
+			id := hexID(getStr(edit, "id"))
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			if visit(edit) {
+				return nil
 			}
 		}
 		total, hasTotal := getFloat(page, "total")
 		if len(items) < historyMaxLimit || (hasTotal && float64(offset+len(items)) >= total) {
-			break
+			return nil
 		}
+	}
+}
+
+// historyEditByPrefix is the one edit whose id starts with prefix, read from the whole history.
+func historyEditByPrefix(client *api.Client, prefix string) (map[string]any, error) {
+	prefix = strings.ToLower(prefix)
+	var matches []map[string]any
+	err := historyScan(client, nil, func(edit map[string]any) bool {
+		if strings.HasPrefix(strings.ToLower(getStr(edit, "id")), prefix) {
+			matches = append(matches, edit)
+		}
+		return false
+	})
+	if err != nil {
+		return nil, historyError(err, "")
 	}
 	switch len(matches) {
 	case 1:
 		return matches[0], nil
 	case 0:
-		return "", &clierrors.CLIError{
+		return nil, &clierrors.CLIError{
 			Code:       "NOT_FOUND",
 			Message:    fmt.Sprintf("no edit id starts with %s", clean(prefix)),
 			Suggestion: "Run 'konvu history' for the edits and their ids.",
 			ExitCode:   clierrors.ExitNotFound,
 		}
 	}
-	return "", bookDataUsage(
-		fmt.Sprintf("%d edit ids start with %s: %s", len(matches), clean(prefix), clean(strings.Join(matches[:min(len(matches), 5)], ", "))),
+	ids := make([]string, 0, 5)
+	for _, match := range matches[:min(len(matches), 5)] {
+		ids = append(ids, getStr(match, "id"))
+	}
+	return nil, bookDataUsage(
+		fmt.Sprintf("%d edit ids start with %s: %s", len(matches), clean(prefix), clean(strings.Join(ids, ", "))),
 		"Pass more of the id, or all of it, from 'konvu history -o json'.",
 	)
 }
 
-// historyRevertOf is the newest listed edit that reverted edit id, or nil, also when the
-// history cannot be read.
-func historyRevertOf(client *api.Client, id string) map[string]any {
-	page, err := client.Get(dataEditsPath, map[string]any{"limit": historyMaxLimit})
+// historyRevertOf is the revert of edit id that is in effect: the newest revert of it, when no
+// later edit of the object changed its field or the edit's (a note's revert can write another
+// field than the edit). A revert later undone is not; nil also when the history cannot be read.
+// edit is the edit when known, and is looked up otherwise.
+func historyRevertOf(client *api.Client, id string, edit *map[string]any) map[string]any {
+	if *edit == nil {
+		_ = historyScan(client, nil, func(row map[string]any) bool {
+			if hexID(getStr(row, "id")) == hexID(id) {
+				*edit = row
+				return true
+			}
+			return false
+		})
+		if *edit == nil {
+			return nil
+		}
+	}
+	changed := map[string]bool{}
+	var revert map[string]any
+	params := map[string]any{"object": getStr(*edit, "object"), "object_key": getStr(*edit, "object_key")}
+	err := historyScan(client, params, func(row map[string]any) bool {
+		if hexID(getStr(row, "reverted_edit_id")) == hexID(id) {
+			if !changed[getStr(row, "field")] && !changed[getStr(*edit, "field")] {
+				revert = row
+			}
+			return true
+		}
+		if hexID(getStr(row, "id")) == hexID(id) {
+			return true
+		}
+		changed[getStr(row, "field")] = true
+		return false
+	})
 	if err != nil {
 		return nil
 	}
-	for _, item := range getSlice(page, "items") {
-		edit, _ := item.(map[string]any)
-		if reverted := getStr(edit, "reverted_edit_id"); reverted != "" && hexID(reverted) == hexID(id) {
-			return edit
-		}
-	}
-	return nil
+	return revert
 }
 
 // revertUnconfirmed is a revert the server failed twice, with no revert of the edit in its history.
