@@ -1,6 +1,6 @@
 ---
 name: konvu-shared
-version: 1.3.0
+version: 1.4.0
 description: "Konvu CLI: Auth setup, global flags, env vars, and common patterns."
 metadata:
   requires:
@@ -75,15 +75,15 @@ konvu threat-model get / apply --file F [--dry-run]                  # The threa
 konvu threat-profile get --repo <owner/name|id> / apply --repo R --file F [--dry-run]   # A repository's threat profile
 konvu inventory endpoints get --repo <owner/name|id> / apply --repo R --file F|- [--dry-run]      # A repository's endpoints
 konvu inventory data-objects get --repo <owner/name|id> / apply --repo R --file F|- [--dry-run]   # A repository's data objects and their fields
-konvu history [--object company|threat-model|threat-profile|catalog] [--key ID] [--limit N] [--offset N]   # Every edit: when, who, before → after
-konvu history revert <id> --revision <current revision>              # Undo one edit; the revision is the object's 'get' one
-konvu knowledge edit <path> --file <md>|- [--title T] [--base <cat -o json file>]   # Text of one of your team's own pages
-konvu knowledge note add --label L --repo R [--repo R2] --text T|--file F|-   # A note no other data holds; Konvu rewrites context/<label>.md
-konvu knowledge note list [--label L] [--repo R] [--limit N] [--offset N]      # Notes, newest first
-konvu knowledge note rm <id> [--yes]                                          # Remove a note; --yes without a terminal
+konvu history [--object company|threat-model|threat-profile|catalog|note] [--key ID] [--limit N] [--offset N]   # Every edit: when, who, before → after
+konvu history revert <id> --revision <current revision>              # Undo one edit; the revision is the object's 'get' one (a note's updated_at)
+konvu knowledge note add --label L --repo R [--repo R2] --text T|--file F|-   # A note no other data holds; Konvu places it in the book
+konvu knowledge note list [--label L] [--repo R] [--limit N] [--offset N]      # Notes, newest first, with the page each was placed on
+konvu knowledge note edit <id> [--label L] [--text T|--file F|-] [--repo R ...]  # Change a note; what is left out keeps its value
+konvu knowledge note rm <id> [--yes]                                          # Remove a note (undo with history revert); --yes without a terminal
 ```
 
-Konvu's pages are read-only: change the data behind a page with the command `book ls` names for it, and Konvu rewrites the page; only the team's own pages take `knowledge edit`. `get` prints `revision`, the data and `provenance` (read-only, never sent; the threat model adds read-only `overrides`, and its sections `assets`, `boundaries` and `exposures` show exactly the list applied, items left out staying hidden after later runs; `inventory endpoints` and `inventory data-objects` add read-only `hidden`, and their list shows exactly what is applied: an item left as printed stays Konvu's, one added or changed is the person's and kept by every later mapping run, one left out stays hidden; `konvu history` does not list them); in `apply`, a value left out keeps its value and `null` clears it, and the apply is refused with `DATA_CHANGED` (exit 1, nothing written) once the data changed since that `get`: get it again and redo the edit. Exit 2 lists every problem in the file, exit 3 an unknown repository or edit, or a server without these routes yet, exit 4 a read-only key or the demo view. `knowledge edit` refuses `company.md`, `infrastructure.md`, `threat-model.md` and the `context/<label>.md` pages (exit 2). Notes are for knowledge that fits none of that data, always with a label (`deployment`, `ownership`, `compliance`, `architecture`, `other`) and a `--repo` for each repository they concern; Konvu rewrites one read-only page per label, `context/<label>.md`. A note has no edit: add the corrected one and `rm` the old one. Findings, scans, ratings, triage history, the repository list, the rest of the inventory graph (controls and their code), collected files, sources and scores are not book data and are not edited here (rating or dismissing a finding keeps its own `konvu finding` commands). Change data only when the user asks, after showing them the dry run.
+Every page is read-only, and no command writes a page's text: change the data behind a page with the command `book ls` names for it, and Konvu rewrites the page. `get` prints `revision`, the data and `provenance` (read-only, never sent; the threat model adds read-only `overrides`, and its sections `assets`, `boundaries` and `exposures` show exactly the list applied, items left out staying hidden after later runs; `inventory endpoints` and `inventory data-objects` add read-only `hidden`, and their list shows exactly what is applied: an item left as printed stays Konvu's, one added or changed is the person's and kept by every later mapping run, one left out stays hidden; `konvu history` does not list them); in `apply`, a value left out keeps its value and `null` clears it, and the apply is refused with `DATA_CHANGED` (exit 1, nothing written) once the data changed since that `get`: get it again and redo the edit. Exit 2 lists every problem in the file, exit 3 an unknown repository or edit, or a server without these routes yet, exit 4 a read-only key or the demo view. Notes are for knowledge that fits none of that data, always with a label of the user's choosing (1 to 40 lowercase letters, digits and dashes) and a `--repo` for each repository they concern; after each add, edit or removal Konvu places the note in the book, blending it into one of its pages or writing a `context/<page>.md` page for it (`note list` shows where, or "not placed yet"). To change what a `context/` page says, edit the notes behind it. Every note change is in `konvu history --object note` and can be reverted. Findings, scans, ratings, triage history, the repository list, the rest of the inventory graph (controls and their code), collected files, sources and scores are not book data and are not edited here (rating or dismissing a finding keeps its own `konvu finding` commands). Change data only when the user asks, after showing them the dry run.
 
 ## Tips
 

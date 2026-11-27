@@ -61,7 +61,7 @@ func TestNoteAddSendsTheNoteAndLooksRepositoriesUpOnce(t *testing.T) {
 	if body["label"] != "deployment" || body["text"] != "Deployed by Argo CD\nfrom the deploy repo" || len(ids) != 2 || ids[0] != testRepoID || ids[1] != otherTestRepoID {
 		t.Errorf("body = %v", body)
 	}
-	for _, want := range []string{"Saved note " + testNoteID, "acme/api, acme/web 2J", "alice@acme.com", "2026-11-25 10:00", "Konvu will rewrite context/deployment.md"} {
+	for _, want := range []string{"Saved note " + testNoteID, "acme/api, acme/web 2J", "alice@acme.com", "2026-11-25 10:00", "Konvu places it in the Security Book"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("out lacks %q:\n%s", want, out)
 		}
@@ -104,7 +104,7 @@ func TestNoteAddRefusesBeforeAnyRequest(t *testing.T) {
 		args []string
 	}{
 		{"no label", []string{"--text", "x"}},
-		{"unknown label", []string{"--label", "secrets", "--text", "x"}},
+		{"invalid label", []string{"--label", "on call", "--text", "x"}},
 		{"text and file", []string{"--label", "other", "--text", "x", "--file", noteFile(t, "y")}},
 		{"no text", []string{"--label", "other"}},
 		{"blank text", []string{"--label", "other", "--text", " \n"}},
@@ -193,7 +193,7 @@ func TestNoteListPrintsOneLinePerNote(t *testing.T) {
 }
 
 func TestNoteListRefusalsAndAnswers(t *testing.T) {
-	for _, args := range [][]string{{"--limit", "0"}, {"--offset", "-1"}, {"--label", "secrets"}, {"--repo", ""}} {
+	for _, args := range [][]string{{"--limit", "0"}, {"--offset", "-1"}, {"--label", "-secrets"}, {"--repo", ""}} {
 		_, calls := reviewServer(t, map[string][]invariantReply{})
 		_, err := runInvariants(newKnowledgeNoteCmd(), append([]string{"list", "-o", "table"}, args...)...)
 		if cliErr := bookDataCLIError(t, err); cliErr.ExitCode != clierrors.ExitUsageError || len(calls()) != 0 {
@@ -242,7 +242,7 @@ func TestNoteRmAsksOrNeedsYes(t *testing.T) {
 	asked = setDeletePrompt(t, true, true)
 	_, calls = reviewServer(t, map[string][]invariantReply{noteDelete: {{http.StatusNoContent, nil}, {http.StatusNoContent, nil}}})
 	out, err := runInvariants(newKnowledgeNoteCmd(), "rm", testNoteID, "-o", "table")
-	if err != nil || out != "Removed note "+testNoteID+". Konvu rewrites the page of its label without it.\n" || len(*asked) != 1 {
+	if err != nil || !strings.HasPrefix(out, "Removed note "+testNoteID+". Konvu rewrites the page it was placed on without it.\n") || !strings.Contains(out, "konvu history --object note --key "+testNoteID) || len(*asked) != 1 {
 		t.Errorf("confirmed: %v, %q, asked %v", err, out, *asked)
 	}
 	out, err = runInvariants(newKnowledgeNoteCmd(), "rm", testNoteID, "--yes", "-o", "json")
@@ -272,6 +272,155 @@ func TestNoteRmRefusals(t *testing.T) {
 		_, err := runInvariants(newKnowledgeNoteCmd(), "rm", testNoteID, "--yes", "-o", "table")
 		if cliErr := bookDataCLIError(t, err); cliErr.Code != test.code || cliErr.ExitCode != test.exit {
 			t.Errorf("%d %v: error = %#v", test.reply.status, test.reply.body, cliErr)
+		}
+	}
+}
+
+const notePut = "PUT " + notesRoute + "/" + testNoteID
+
+func TestNoteLabelIsAnySlug(t *testing.T) {
+	for value, want := range map[string]string{
+		"on-call": "on-call", " Runbooks ": "runbooks", "a": "a", "9-to-5": "9-to-5", strings.Repeat("a", 40): strings.Repeat("a", 40),
+	} {
+		if got, err := noteLabel(value); err != nil || got != want {
+			t.Errorf("noteLabel(%q) = %q, %v; want %q", value, got, err, want)
+		}
+	}
+	for _, value := range []string{"", " ", "-deploy", "on call", "on_call", "ops/deploy", "café", strings.Repeat("a", 41)} {
+		if _, err := noteLabel(value); bookDataCLIError(t, err).ExitCode != clierrors.ExitUsageError {
+			t.Errorf("noteLabel(%q) accepted", value)
+		}
+	}
+	_, calls := reviewServer(t, map[string][]invariantReply{notePost: {{http.StatusCreated, savedNote()}}})
+	if _, err := runInvariants(newKnowledgeNoteCmd(), "add", "--label", "On-Call", "--text", "x", "-o", "table"); err != nil {
+		t.Fatal(err)
+	}
+	if label := calls()[0].body["label"]; label != "on-call" {
+		t.Errorf("label sent = %v", label)
+	}
+}
+
+func TestNoteListShowsWhereEachNoteWasPlaced(t *testing.T) {
+	placed, unplaced, older := savedNote(), savedNote(), savedNote()
+	placed["placement"], placed["updated_at"] = "infrastructure.md", "2026-11-26T08:30:00Z"
+	unplaced["placement"] = nil
+	answer := map[string]any{"items": []any{placed, unplaced, older}, "total": 3}
+	reviewServer(t, map[string][]invariantReply{notesGet: {{http.StatusOK, answer}}})
+	out, err := runInvariants(newKnowledgeNoteCmd(), "list", "-o", "table")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(out, "\n")
+	if !strings.Contains(lines[0], "PLACEMENT") || !strings.Contains(lines[1], "infrastructure.md") || !strings.Contains(lines[1], "2026-11-26 08:30") ||
+		!strings.Contains(lines[2], "not placed yet") || strings.Contains(lines[3], "not placed yet") {
+		t.Errorf("table:\n%s", out)
+	}
+}
+
+func TestNoteEditKeepsWhatItDoesNotChange(t *testing.T) {
+	other := savedNote()
+	other["id"] = "0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b5"
+	edited := savedNote()
+	edited["text"], edited["updated_at"] = "Deployed by Flux", "2026-11-26T08:30:00Z"
+	_, calls := reviewServer(t, map[string][]invariantReply{
+		// The note is on the list's second page.
+		notesGet: {
+			{http.StatusOK, map[string]any{"items": []any{other}, "total": 2}},
+			{http.StatusOK, map[string]any{"items": []any{savedNote()}, "total": 2}},
+		},
+		notePut: {{http.StatusOK, edited}},
+	})
+	out, err := runInvariants(newKnowledgeNoteCmd(), "edit", strings.ToUpper(testNoteID), "--text", "Deployed by Flux\r\n", "-o", "table")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(calls()); got != 3 {
+		t.Fatalf("calls = %v", calls())
+	}
+	second, _ := url.ParseQuery(calls()[1].query)
+	if second.Get("offset") != "1" || second.Get("limit") != "200" {
+		t.Errorf("second page query = %q", calls()[1].query)
+	}
+	put := calls()[2]
+	ids, _ := put.body["repository_ids"].([]any)
+	if put.path != notesRoute+"/"+testNoteID || put.body["label"] != "deployment" || put.body["text"] != "Deployed by Flux\n" ||
+		len(ids) != 2 || ids[0] != testRepoID || ids[1] != otherTestRepoID {
+		t.Errorf("PUT %s %v", put.path, put.body)
+	}
+	for _, want := range []string{"Saved note " + testNoteID, "changed  2026-11-26 08:30", "Deployed by Flux", "konvu knowledge note list"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("out lacks %q:\n%s", want, out)
+		}
+	}
+
+	// A new label and repositories, the text kept; --repo replaces the whole list.
+	_, calls = reviewServer(t, map[string][]invariantReply{
+		coverageRead: {threatProfileCoverage()},
+		notesGet:     {{http.StatusOK, map[string]any{"items": []any{savedNote()}, "total": 1}}},
+		notePut:      {{http.StatusOK, savedNote()}},
+	})
+	out, err = runInvariants(newKnowledgeNoteCmd(), "edit", testNoteID, "--label", "On-Call", "--repo", "acme/api", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var printed map[string]any
+	if json.Unmarshal([]byte(out), &printed) != nil || printed["id"] != testNoteID {
+		t.Errorf("out is not the saved note:\n%s", out)
+	}
+	body := calls()[2].body
+	ids, _ = body["repository_ids"].([]any)
+	if body["label"] != "on-call" || body["text"] != savedNote()["text"] || len(ids) != 1 || ids[0] != testRepoID {
+		t.Errorf("body = %v", body)
+	}
+}
+
+func TestNoteEditRefusesBeforeAnyRequest(t *testing.T) {
+	for _, args := range [][]string{
+		{testNoteID},
+		{"../admin", "--text", "x"},
+		{testNoteID, "--label", "on call"},
+		{testNoteID, "--text", "x", "--file", noteFile(t, "y")},
+		{testNoteID, "--text", " "},
+		{testNoteID, "--repo", " "},
+	} {
+		_, calls := reviewServer(t, map[string][]invariantReply{})
+		_, err := runInvariants(newKnowledgeNoteCmd(), append([]string{"edit", "-o", "table"}, args...)...)
+		if cliErr := bookDataCLIError(t, err); cliErr.ExitCode != clierrors.ExitUsageError || len(calls()) != 0 {
+			t.Errorf("%v: error = %#v, calls %v", args, cliErr, calls())
+		}
+	}
+}
+
+func TestNoteEditServerAnswers(t *testing.T) {
+	found := invariantReply{http.StatusOK, map[string]any{"items": []any{savedNote()}, "total": 1}}
+	// No such note on the list: nothing is sent.
+	_, calls := reviewServer(t, map[string][]invariantReply{notesGet: {{http.StatusOK, map[string]any{"items": []any{}, "total": 0}}}})
+	_, err := runInvariants(newKnowledgeNoteCmd(), "edit", testNoteID, "--text", "x", "-o", "table")
+	if cliErr := bookDataCLIError(t, err); cliErr.Code != "NOT_FOUND" || cliErr.ExitCode != clierrors.ExitNotFound || len(calls()) != 1 {
+		t.Errorf("not listed: error = %#v, calls %v", cliErr, calls())
+	}
+	for _, test := range []struct {
+		name  string
+		reply invariantReply
+		code  string
+		exit  int
+		want  string
+	}{
+		{"removed meanwhile", invariantReply{http.StatusNotFound, map[string]any{"detail": "Note not found"}}, "NOT_FOUND", clierrors.ExitNotFound, "no note " + testNoteID},
+		{"older server", invariantReply{http.StatusNotFound, map[string]any{"detail": "Not Found"}}, "NOTES_UNAVAILABLE", clierrors.ExitNotFound, "editing notes"},
+		{"no PUT", invariantReply{http.StatusMethodNotAllowed, map[string]any{"detail": "Method Not Allowed"}}, "NOTES_UNAVAILABLE", clierrors.ExitNotFound, "editing notes"},
+		{"refused", invariantReply{http.StatusUnprocessableEntity, map[string]any{"detail": []any{
+			map[string]any{"loc": []any{"body", "label"}, "msg": "bad label"},
+		}}}, "INVALID_DATA", clierrors.ExitUsageError, "label: bad label"},
+		{"read-only key", invariantReply{http.StatusForbidden, map[string]any{"detail": "Read-only key"}}, "FORBIDDEN", clierrors.ExitAuthFailed, "Read-only key"},
+		{"server error", invariantReply{http.StatusBadGateway, map[string]any{"detail": "upstream"}}, "OUTCOME_UNKNOWN", clierrors.ExitGeneralError, "may have been applied"},
+		{"no id", invariantReply{http.StatusOK, map[string]any{}}, "UNEXPECTED_ANSWER", clierrors.ExitGeneralError, "does not show the note saved"},
+	} {
+		reviewServer(t, map[string][]invariantReply{notesGet: {found}, notePut: {test.reply}})
+		_, err := runInvariants(newKnowledgeNoteCmd(), "edit", testNoteID, "--text", "x", "-o", "table")
+		cliErr := bookDataCLIError(t, err)
+		if cliErr.Code != test.code || cliErr.ExitCode != test.exit || !strings.Contains(cliErr.Message, test.want) {
+			t.Errorf("%s: error = %#v", test.name, cliErr)
 		}
 	}
 }

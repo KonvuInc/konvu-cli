@@ -24,7 +24,7 @@ var bookPagesEditWith = map[string]string{
 	"threat-model.md":        "konvu threat-model apply",
 	"security-principles.md": "konvu principles",
 	"products/acme/apps/billing/threat-model.md": "konvu inventory catalog apply",
-	"ops.md": "konvu knowledge edit",
+	"ops.md": "konvu knowledge note add",
 }
 
 func TestBookLsShowsTheCommandThatEditsEachPage(t *testing.T) {
@@ -101,19 +101,19 @@ func TestKnowledgeLsHasNoEditWith(t *testing.T) {
 func TestBookEditWith(t *testing.T) {
 	for _, test := range []struct{ path, kind, want string }{
 		// Only the three root pages are built from the company's data, as the server has it.
-		{"company/README.md", "custom", "konvu knowledge edit"},
+		{"company/README.md", "custom", "konvu knowledge note add"},
 		{"company/README.md", "generated", "read-only"},
 		{"products/README.md", "generated", "konvu inventory catalog apply"},
 		{"products/acme/security-principles.md", "generated", "konvu principles"},
-		{"products/acme/notes.md", "custom", "konvu knowledge edit"},
-		{"runbooks/README.md", "custom", "konvu knowledge edit"},
+		{"products/acme/notes.md", "custom", "konvu knowledge note add"},
+		{"runbooks/README.md", "custom", "konvu knowledge note add"},
 		{"repositories.md", "generated", "read-only"},
 		{"inventory/endpoints.md", "generated", "read-only"},
 		{"manual-feedback.md", "", "read-only"},
-		// Konvu writes one page per note label; any other page under context/ is not one of them.
-		{"context/deployment.md", "generated", "konvu knowledge note add"},
-		{"context/other.md", "custom", "konvu knowledge note add"},
-		{"context/runbook.md", "custom", "konvu knowledge edit"},
+		// Konvu writes a page under context/ for each topic of the notes, with any slug.
+		{"context/deployment.md", "generated", "konvu knowledge note list"},
+		{"context/on-call-rota.md", "generated", "konvu knowledge note list"},
+		{"context/runbook.md", "custom", "konvu knowledge note list"},
 		{"context/team/deployment.md", "generated", "read-only"},
 		{"docs/context/deployment.md", "generated", "read-only"},
 	} {

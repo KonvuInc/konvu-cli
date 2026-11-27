@@ -1,7 +1,7 @@
 ---
 name: konvu-security-book
-version: 2.2.0
-description: "Read the company's Security Book in Konvu with the konvu CLI, and change the data behind it: company facts, infrastructure, threat model, a repository's threat profile, a repository's endpoints and data objects, products and apps, principles, triage instructions, the team's notes and the team's own pages. Konvu's pages are read-only; Konvu rewrites them when their data changes. Covers what is editable and with which command, the get, dry run, approve, apply flow, and the history of edits and how to revert one. Use when the user or a task needs the company's security context (what it sells, its infrastructure, its threat model, the team's notes), asks what Konvu knows about the company, or wants to correct or change any of it."
+version: 2.3.0
+description: "Read the company's Security Book in Konvu with the konvu CLI, and change the data behind it: company facts, infrastructure, threat model, a repository's threat profile, a repository's endpoints and data objects, products and apps, principles, triage instructions and the team's notes. Every page is read-only; Konvu rewrites them when their data or notes change. Covers what is editable and with which command, the get, dry run, approve, apply flow, and the history of edits and how to revert one. Use when the user or a task needs the company's security context (what it sells, its infrastructure, its threat model, the team's notes), asks what Konvu knows about the company, or wants to correct or change any of it."
 metadata:
   requires:
     bins: ["konvu"]
@@ -9,7 +9,7 @@ metadata:
 
 # Konvu Security Book
 
-The Security Book is what Konvu knows about the company, as markdown pages. Konvu's pages are read-only. You read the book with the konvu CLI and answer from it. When something on one of Konvu's pages is wrong or missing, you change the data behind it with the command named after that data, never the page's wording: Konvu then rewrites the pages that show it. Every data edit is recorded (who, when, before, after) and can be reverted, except a repository's endpoints and data objects, whose `get` shows who set or hid each item. Knowledge none of that data holds goes in a note, which Konvu turns into a page per label. Only the team's own pages are text a person edits. You never guess what a page says, and you change data only when the user asks.
+The Security Book is what Konvu knows about the company, as markdown pages. Konvu's pages are read-only. You read the book with the konvu CLI and answer from it. When something on one of Konvu's pages is wrong or missing, you change the data behind it with the command named after that data, never the page's wording: Konvu then rewrites the pages that show it. Every data edit is recorded (who, when, before, after) and can be reverted, except a repository's endpoints and data objects, whose `get` shows who set or hid each item. Knowledge none of that data holds goes in a note, which Konvu places in the book: blended into one of its pages, or on a page of its own under `context/`. No one writes a page's text. You never guess what a page says, and you change data only when the user asks.
 
 ## Setup
 
@@ -35,10 +35,9 @@ The Security Book is what Konvu knows about the company, as markdown pages. Konv
 | Products, modules and apps | `products/...` | `konvu inventory catalog get` / `apply` (the `konvu-catalog` skill) |
 | Principles | `security-principles.md` | `konvu principles push` (add), `accept` / `amend` / `decline` (Konvu's suggestions), `edit` / `delete` (active ones) |
 | Triage instructions of a repository | none | `konvu knowledge triage-instructions` |
-| Notes: what the team knows that none of the data above holds | `context/<label>.md` | `konvu knowledge note add` / `list` / `rm` |
-| The team's own pages | their path | `konvu knowledge edit` |
+| Notes: what the team knows that none of the data above holds | the page Konvu places each one on (`note list` shows it): one of its pages, or `context/<page>.md` | `konvu knowledge note add` / `list` / `edit` / `rm` |
 
-Not book data, so never changed through these commands: findings, scans, ratings and feedback, triage history, the repository list, the rest of the inventory graph (its controls and the code that implements them), collected files, Konvu's sources, and computed scores (a repository's score and tier follow from its threat profile). When the user wants the book to show one of these differently, say it is not editable here and, when it applies, which data above drives it. Rating or dismissing a finding is not a book edit: it keeps its own `konvu finding` commands. Never edit a book page's text to change what it shows: `konvu knowledge edit` refuses Konvu's pages.
+Not book data, so never changed through these commands: findings, scans, ratings and feedback, triage history, the repository list, the rest of the inventory graph (its controls and the code that implements them), collected files, Konvu's sources, and computed scores (a repository's score and tier follow from its threat profile). When the user wants the book to show one of these differently, say it is not editable here and, when it applies, which data above drives it. Rating or dismissing a finding is not a book edit: it keeps its own `konvu finding` commands. Never try to edit a book page's text to change what it shows: no command does, and `konvu knowledge edit` was removed.
 
 ## Change data
 
@@ -53,20 +52,17 @@ Change only what the user asked, in the object they named.
 
 ## History and revert
 
-- `konvu history` lists the edits, newest first (endpoints and data objects excepted: their `get` shows who set each item in `provenance`, and who hid one in `hidden`): when, who, object, field, before → after, and the edit's id. Narrow it with `--object company|threat-model|threat-profile|catalog`, `--key <id>` (such as a repository id), `--limit N` and `--offset N`; `-o json` has the values whole.
-- `konvu history revert <id> --revision <current revision>` puts that field back to its value before the edit, and is itself recorded. `--revision` is required: take it from the object's `get` (`konvu threat-profile get --repo <object key>` for a threat profile). If the data changed since, the revert is refused (`DATA_CHANGED`, exit 1). A catalog edit is undone by applying the catalog again, not by revert. Revert only when the user asks, after showing them the edit from `history`.
+- `konvu history` lists the edits, newest first (endpoints and data objects excepted: their `get` shows who set each item in `provenance`, and who hid one in `hidden`): when, who, object, field, before → after, and the edit's id. Narrow it with `--object company|threat-model|threat-profile|catalog|note`, `--key <id>` (such as a repository id, or a note id), `--limit N` and `--offset N`; `-o json` has the values whole.
+- `konvu history revert <id> --revision <current revision>` puts that field back to its value before the edit, and is itself recorded. `--revision` is required: take it from the object's `get` (`konvu threat-profile get --repo <object key>` for a threat profile), or for a note its `updated_at` from `konvu knowledge note list -o json`. Reverting a note's removal brings it back; reverting its addition removes it. If the data changed since, the revert is refused (`DATA_CHANGED`, exit 1). A catalog edit is undone by applying the catalog again, not by revert. Revert only when the user asks, after showing them the edit from `history`.
 
 ## Notes
 
-A note is for knowledge that fits none of the data above, such as how a service is deployed or who owns it. A fact the table keeps as data (company facts, threat model, a threat profile, endpoints, data objects, catalog, principles) goes there, never in a note. A note always has a label (`deployment`, `ownership`, `compliance`, `architecture` or `other`) and a `--repo` for each repository it concerns. Konvu rewrites one page per label, `context/<label>.md`, from the notes with that label; the page itself is read-only (`konvu knowledge edit` refuses it).
+A note is for knowledge that fits none of the data above, such as how a service is deployed or who owns it. A fact the table keeps as data (company facts, threat model, a threat profile, endpoints, data objects, catalog, principles) goes there, never in a note. A note always has a label, chosen with the user (1 to 40 lowercase letters, digits and dashes, such as `deployment` or `on-call`), and a `--repo` for each repository it concerns. After each add, edit or removal, Konvu places the note in the book: it blends it into one of its pages, such as `infrastructure.md`, or writes a page for it under `context/`, and rewrites that page. `note list` shows each note's page in PLACEMENT ("not placed yet" until Konvu has). To change what a `context/` page says, edit the notes behind it.
 
-1. **Check.** Run `konvu knowledge note list --label <label> --repo <owner/name>` for a note that already says it.
+1. **Check.** Run `konvu knowledge note list --repo <owner/name>` (or `--label <label>`) for a note that already says it: edit that one rather than adding a second.
 2. **Ask.** Show the user the label, the repositories and the text, and add only after an explicit yes: `konvu knowledge note add --label <label> --repo <owner/name> [--repo …] --text "…"` (or `--file <path>|-`; at most 20 000 characters, checked before anything is sent).
-3. **Correct or remove.** There is no edit and no undo: to correct a note, add the new one, then remove the old one with `konvu knowledge note rm <id> --yes`, both after the user's yes. `rm` without `--yes` exits 2 when there is no terminal to ask on.
-4. **On `OUTCOME_UNKNOWN` (exit 1)** the add may have landed: list the notes before adding it again, since a second add saves a second note.
+3. **Edit.** After the user's yes, `konvu knowledge note edit <id> [--label …] [--text "…"|--file …] [--repo … ...]`: what you leave out keeps its value, and `--repo` replaces the whole list.
+4. **Remove.** After the user's yes, `konvu knowledge note rm <id> --yes`. `rm` without `--yes` exits 2 when there is no terminal to ask on. A removal is undone with `konvu history revert` (find it with `konvu history --object note --key <id>`).
+5. **On `OUTCOME_UNKNOWN` (exit 1)** the write may have landed: list the notes before trying again, since a second add saves a second note.
 
-## The team's own pages
-
-A page a person created (`edit_with: konvu knowledge edit`) is text, not data. To change it when the user asks: save it with `konvu knowledge cat <path> -o json > /tmp/base.json`, write the whole new body to a file from its `body_md`, keeping the footnotes `[^n]` that still apply, show the user the diff, and after an explicit yes run `konvu knowledge edit <path> --file <file> --base /tmp/base.json`. On `PAGE_CHANGED` (exit 1), read it again and redo the change. A new page needs `--title`.
-
-Errors: exit 1 is `DATA_CHANGED` or `PAGE_CHANGED` (read again, redo the edit) or another failure. Exit 2 is a malformed path, flag or file, a file the server refused (each problem listed), or an edit of one of Konvu's pages, or `note rm` without `--yes` and no terminal. Exit 3 is a page not written yet, a repository Konvu does not know, a note already removed, or a Konvu server that does not support this yet (it says so). Exit 4 is not logged in, no access, a read-only key, or the demo view.
+Errors: exit 1 is `DATA_CHANGED` (read again, redo the edit) or another failure. Exit 2 is a malformed path, flag, label or file, a file or note the server refused (each problem listed), or `note rm` without `--yes` and no terminal. Exit 3 is a page not written yet, a repository Konvu does not know, a note that does not exist or was removed, or a Konvu server that does not support this yet (it says so). Exit 4 is not logged in, no access, a read-only key, or the demo view.
