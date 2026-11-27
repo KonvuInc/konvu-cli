@@ -924,7 +924,7 @@ Principles, PR checks and the Security Book come as these skills:
 - `/konvu-decide-suggestions` — go through the principles Konvu suggested, checked against your code, then accept or decline the ones you pick
 - `/konvu-audit-principles` — read-only audit of your active principles (all, or the ids you give): where each is enforced, its gaps, agent steering and PR check outcomes
 - `/konvu-review-pr-checks` — read-only review of what Konvu's PR check found, on every analyzed PR or on one PR URL
-- `/konvu-clear <pr-url>` — make a PR Konvu Clear (no open findings): verifies each finding against the code, fixes the real ones in one commit, dismisses false positives with a reason, asks you before accepting a risk, then waits for the re-check
+- `/konvu-clear <pr-url>` — make a PR Konvu Clear (no open findings): verifies each finding against the code, fixes the real ones in one commit, dismisses false positives with a reason, decides medium and low findings itself, asks you before accepting a high or critical risk, then waits for the re-check
 - `/konvu-catalog` — explore and fix your products, apps and components, with a dry run before any change
 - `/konvu-security-book` — read your Security Book, and change the data behind it (company facts, infrastructure, threat model, threat profiles) after a dry run you approve; it lists what is editable and with which command, and how to revert an edit
 
