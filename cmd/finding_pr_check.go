@@ -400,11 +400,11 @@ func prCheckRepository(client *api.Client, ref string) (string, error) {
 	name, _ := konvuRepositoryName(ref)
 	if name == "" && hexID(ref) == "" && strings.Contains(ref, "/") {
 		name = strings.Trim(ref, "/")
+	}
+	if name != "" {
 		if !validRepositoryRef(name) {
 			return "", prCheckUsageError(fmt.Sprintf("--repo %q is not a repository", clean(ref)), repoRefHint)
 		}
-	}
-	if name != "" {
 		return name, nil
 	}
 	repo, err := findingRepository(client, ref)

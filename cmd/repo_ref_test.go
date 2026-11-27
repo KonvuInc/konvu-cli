@@ -216,7 +216,9 @@ func TestPRCheckRepositoryFilter(t *testing.T) {
 	if got, err := prCheckRepository(client, "juice-shop"); err != nil || got != "acmekonvu/juice-shop" {
 		t.Errorf("juice-shop: got %q, %v", got, err)
 	}
-	if _, err := prCheckRepository(nil, "../x"); err == nil {
-		t.Error("../x: no error")
+	for _, ref := range []string{"../x", "https://github.com/../x"} {
+		if _, err := prCheckRepository(nil, ref); err == nil {
+			t.Errorf("%s: no error", ref)
+		}
 	}
 }
