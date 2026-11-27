@@ -1,6 +1,6 @@
 ---
 name: konvu-shared
-version: 1.5.0
+version: 1.6.0
 description: "Konvu CLI: Auth setup, global flags, env vars, and common patterns."
 metadata:
   requires:
@@ -77,7 +77,7 @@ konvu threat-profile get --app <name|id> [-o table] / apply --app A --file F [--
 konvu inventory endpoints get --repo <owner/name|id> / apply --repo R --file F|- [--dry-run]      # A repository's endpoints
 konvu inventory data-objects get --repo <owner/name|id> / apply --repo R --file F|- [--dry-run]   # A repository's data objects and their fields
 konvu history [--object company|threat-model|threat-profile|app-threat-profile|catalog|note] [--key ID] [--limit N] [--offset N]   # Every edit: when, who, before → after
-konvu history revert <id> --revision <current revision>              # Undo one edit; the revision is the object's 'get' one (a note's REVISION from note list)
+konvu history revert <id> --revision <current revision>              # Undo one edit (<id> whole or as the ID column shows it); the revision is the object's 'get' one (a note's REVISION from note list)
 konvu knowledge note add --label L --repo R [--repo R2] --text T|--file F|-   # A note no other data holds; Konvu places it in the book
 konvu knowledge note list [--label L] [--repo R] [--limit N] [--offset N]      # Notes, newest first, with their revision and the page each was placed on
 konvu knowledge note edit <id> [--label L] [--text T|--file F|-] [--repo R ...|--no-repos]  # Change a note; what is left out keeps its value
@@ -88,6 +88,8 @@ Every page is read-only, and no command writes a page's text: change the data be
 
 ## Tips
 
+- `--repo` (`-r`) on `finding list|counts`, `finding sast`, `finding pr-check`, `dismiss`, `coverage` and the Security Book commands takes owner/name, a repository URL, its Konvu id, or a name only one repository has. One naming no repository exits 3 with close matches, and one naming several exits 2 with each candidate: pick one and pass it as owner/name or id.
+- `finding sca assess` exits 1 with `NOT_COVERED` (not retryable) when no coverage scope runs analysis on the finding's repository: check `konvu coverage list`.
 - Pipe with `-o json` for structured output: `konvu finding list -o json | jq '.findings[]'`
 - Use `-q` on finding list for bare IDs: `konvu finding list -q | xargs -I {} konvu finding get {}`
 - Use `--help-all` for the complete reference of all commands and flags
