@@ -15,6 +15,7 @@ var graphData = bookDataObject{
 	name: "graph", command: "inventory graph", what: "product graph", path: inventoryGraphPath,
 	readOnly: []string{"nodes", "rejected_edges"},
 	shown:    "Your product graph shows these connections on its next read.",
+	maxBytes: 32 << 20,
 }
 
 func newInventoryGraphCmd() *cobra.Command {
@@ -38,14 +39,16 @@ name is nonempty and at most 255 characters. Each edge accepts:
   source, target  required node ids, or a resource target as above
   kind            required: depends_on, serves, calls, deploys, messages,
                   or shares_store
-  evidence        JSON values supporting the connection (at most 100)
-  via             interface keys as strings (at most 100)
-  protocol        a protocol name of at most 100 characters, or null
+  evidence        JSON values supporting the connection
+  via             interface keys as strings
+  protocol        a protocol name, or null
   exposure        internet, internal, or null
   confidence      a number from 0 to 1, or null
 
 Edge id, origin, provenance, count and component_edge_ids are read-only.
 Read-only fields are never sent by apply. Other keys are refused.
+New or changed edges allow at most 100 evidence values, 100 via keys and 100
+protocol characters. Keep unchanged metadata as printed, even if it is larger.
 
 Apply replaces only the document's level: keep every edge you want to retain.
 Unchanged edges keep their origin; additions and edits become yours and survive
@@ -91,7 +94,8 @@ contain revision, level and an edges list; [] intentionally removes all connecti
 at that level. Nodes and rejected_edges are read-only and never sent.
 
 Additions and edits survive mapping runs. An omitted connection stays hidden;
-re-add the same source, target and kind to restore it. Other levels are preserved.
+re-add the same source, target and kind to restore it. Manual decisions at other
+levels are preserved; higher-level views are recalculated.
 Use 'konvu inventory graph --help' for the edge schema and editing workflow.
 
 --dry-run lists the changes without writing anything. A stale revision or invalid

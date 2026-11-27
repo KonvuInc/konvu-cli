@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	clierrors "github.com/KonvuInc/konvu-cli/pkg/errors"
+	"github.com/spf13/cobra"
 )
 
 const graphDocument = `{"revision":"g1","level":"component",
@@ -192,5 +194,98 @@ func TestInventoryGraphGetRejectsInvalidFlagsBeforeARequest(t *testing.T) {
 	}
 	if len(calls()) != 0 {
 		t.Errorf("bad flags made requests: %v", calls())
+	}
+}
+
+func TestInventoryGraphLargeDocumentRoundTrips(t *testing.T) {
+	evidence := strings.Repeat("x", bookDataMaxBytes+128)
+	document, err := json.Marshal(map[string]any{
+		"revision": "g1", "level": "component", "nodes": []any{}, "rejected_edges": []any{},
+		"edges": []any{map[string]any{
+			"source": "component:web", "target": "resource:api.acme.test", "kind": "calls", "evidence": []string{evidence},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	applies := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_, _ = w.Write(document)
+			return
+		}
+		applies++
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		edge := body["edges"].([]any)[0].(map[string]any)
+		if edge["evidence"].([]any)[0] != evidence || body["level"] != "component" || r.URL.RawQuery != "dry_run=true" {
+			t.Error("large graph changed during round trip")
+		}
+		_, _ = w.Write([]byte(`{"applied":false,"changes":[],"revision":"g1"}`))
+	}))
+	defer server.Close()
+	invariantsEnv(t, server)
+	out, err := runInvariants(newInventoryGraphCmd(), "get")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) <= bookDataMaxBytes || int64(len(out)) > graphData.maxBytes {
+		t.Fatalf("graph output size = %d", len(out))
+	}
+	apply := newInventoryGraphCmd()
+	apply.SetIn(strings.NewReader(out))
+	if _, err := runInvariants(apply, "apply", "--file", "-", "--dry-run"); err != nil {
+		t.Fatal(err)
+	}
+	if applies != 1 {
+		t.Errorf("apply requests = %d", applies)
+	}
+}
+
+func TestInventoryGraphCompactsOnlyWhenFormattingWouldExceedItsFileBound(t *testing.T) {
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, []byte(graphDocument)); err != nil {
+		t.Fatal(err)
+	}
+	object := graphData
+	object.maxBytes = int64(compact.Len() + 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(compact.Bytes())
+	}))
+	defer server.Close()
+	invariantsEnv(t, server)
+	out, err := runInvariants(newBookDataCmd(object), "get")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != compact.String()+"\n" {
+		t.Errorf("fallback changed or truncated the document: %q", out)
+	}
+	cmd := &cobra.Command{}
+	cmd.SetIn(strings.NewReader(out))
+	if _, err := readBookDataFile(cmd, "-", object); err != nil {
+		t.Fatalf("get output cannot be reapplied: %v", err)
+	}
+}
+
+func TestInventoryGraphFileBoundDoesNotRaiseOtherDocumentBounds(t *testing.T) {
+	for _, test := range []struct {
+		object bookDataObject
+		limit  int64
+	}{
+		{graphData, 32 << 20},
+		{companyData, bookDataMaxBytes},
+	} {
+		if got := bookDataByteLimit(test.object); got != test.limit {
+			t.Fatalf("%s bound = %d, want %d", test.object.name, got, test.limit)
+		}
+		cmd := &cobra.Command{}
+		cmd.SetIn(strings.NewReader(strings.Repeat(" ", int(test.limit)+1)))
+		_, err := readBookDataFile(cmd, "-", test.object)
+		if cliErr := bookDataCLIError(t, err); cliErr.Code != "INVALID_DATA" || !strings.Contains(cliErr.Message, "the file is over") {
+			t.Errorf("%s oversized file error = %#v", test.object.name, cliErr)
+		}
 	}
 }
