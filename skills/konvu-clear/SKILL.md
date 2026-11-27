@@ -1,7 +1,7 @@
 ---
 name: konvu-clear
-version: 1.0.0
-description: "Make a pull request Konvu Clear: no open findings in Konvu's PR check. Reads the PR's latest check, verifies each open finding against the code, fixes the real ones in one commit, dismisses false positives with a reason, asks the user before accepting any risk, then waits for Konvu to re-check. Use when the user says 'make it Konvu Clear', 'get this PR Konvu Clear', runs /konvu-clear with a PR, or pastes the agent prompt from a Konvu Prevent PR comment."
+version: 1.1.0
+description: "Make a pull request Konvu Clear: no open findings in Konvu's PR check. Reads the PR's latest check, verifies each open finding against the code, fixes the real ones in one commit, dismisses false positives with a reason, decides medium and low findings itself, asks the user before accepting a high or critical risk, then waits for Konvu to re-check. Use when the user says 'make it Konvu Clear', 'get this PR Konvu Clear', runs /konvu-clear with a PR, or pastes the agent prompt from a Konvu Prevent PR comment."
 metadata:
   requires:
     bins: ["konvu", "gh", "git"]
@@ -26,10 +26,11 @@ Use `-o json` for every konvu call.
 3. **Act on it.**
    - Real: fix it in the code with the smallest change that closes the attack path. Use `fix` as a hint, not an order. Where the repo has tests for that code, add one that fails without the fix.
    - False positive: `konvu finding pr-check dismiss <pr-url> <finding_id> --reason "<why, with file:line>" -o json`.
-   - Real but acceptable, or unsure: never decide alone. Ask the user, and only on their explicit yes run `konvu finding pr-check accept-risk <pr-url> <finding_id> --reason "<their reason>" -o json`.
+   - Real but acceptable, or unsure, and its `severity` is medium or low: decide yourself, without asking. You have read the code; the user expects you to make this call. Fix it when the fix is small, otherwise run `konvu finding pr-check accept-risk <pr-url> <finding_id> --reason "<why the risk is acceptable, with file:line>" -o json`.
+   - Real but acceptable, or unsure, and its `severity` is high, critical or null: never decide alone. Ask the user, and only on their explicit yes run `konvu finding pr-check accept-risk <pr-url> <finding_id> --reason "<their reason>" -o json`.
 4. **Commit once.** If you changed code, run the repo's tests and linters, then put every fix in one commit and push it to the PR branch. Never force-push and never skip hooks. If you only recorded verdicts, skip the commit: they show in `pr-check get` at once.
 5. **Re-check.** Repeat from step 1: after a push it waits for Konvu's check on that commit, after verdicts alone it reads the same check again. Stop after 3 rounds and report what is left.
 
 ## Report
 
-One line per finding: its title, your verdict, and what you did (fixed in `<sha>`, dismissed, accepted by the user, or left for the user and why). End with `<pr-url>: Konvu Clear`, `<pr-url>: At risk, N open` and what blocks it, or `<pr-url>: unchecked` when Konvu has not checked the current commit.
+One line per finding: its title, your verdict, and what you did (fixed in `<sha>`, dismissed, accepted by you, accepted by the user, or left for the user and why). End with `<pr-url>: Konvu Clear`, `<pr-url>: At risk, N open` and what blocks it, or `<pr-url>: unchecked` when Konvu has not checked the current commit.

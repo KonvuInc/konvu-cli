@@ -26,7 +26,7 @@ const (
 )
 
 // The objects whose edits Konvu records, as --object takes them.
-var historyObjects = []string{"company", "threat-model", "threat-profile", "catalog"}
+var historyObjects = []string{"company", "threat-model", "threat-profile", "app-threat-profile", "catalog", "note"}
 
 func newHistoryCmd() *cobra.Command {
 	history := &cobra.Command{
@@ -36,11 +36,13 @@ func newHistoryCmd() *cobra.Command {
 changed which field of which object, when, and its value before and after.
 
 Every edit is recorded, from the CLI ('konvu company apply',
-'konvu threat-model apply', 'konvu threat-profile apply',
-'konvu inventory catalog apply', 'konvu inventory graph apply') or from Konvu's
-web app. Graph edits appear under --object catalog. Undo catalog or graph edits
-by applying that document again; 'konvu history revert <id>' undoes other edits.
-Values are shortened in the table; -o json has them whole.
+'konvu threat-model apply', 'konvu threat-profile apply' (--repo or --app),
+'konvu inventory catalog apply', 'konvu inventory graph apply',
+'konvu knowledge note add', 'edit' and 'rm') or from Konvu's web app.
+Graph edits appear under --object catalog. Undo catalog or graph edits by applying
+that document again; 'konvu history revert <id>' undoes other edits. A note's
+edits are keyed by its id: --object note --key <note-id>. Values are shortened in
+the table; -o json has them whole.
 
 Exit codes: 0 success, 1 error, 2 invalid arguments, 3 a server that does not
 keep this history yet, 4 not logged in or no access`,
@@ -51,7 +53,7 @@ keep this history yet, 4 not logged in or no access`,
 		RunE: withJSONErrors(runHistory),
 	}
 	history.Flags().String("object", "", "Only edits of this object: "+strings.Join(historyObjects, ", "))
-	history.Flags().String("key", "", "Only edits of this object id, such as a repository id for threat-profile")
+	history.Flags().String("key", "", "Only edits of this object id, such as a repository id for threat-profile or a note id for note")
 	history.Flags().Int("limit", 0, "How many edits to list, from 1 to 200 (default: the server's, 50)")
 	history.Flags().Int("offset", 0, "How many of the newest edits to skip")
 	history.Flags().StringP("output", "o", "", "Output format: json, table")
@@ -63,9 +65,14 @@ keep this history yet, 4 not logged in or no access`,
 before the edit. The revert is itself recorded as an edit.
 
 --revision is the object's current revision, from its 'get' ('konvu company get',
-'konvu threat-model get', or 'konvu threat-profile get --repo <id>' for a
-repository's): if the data changed since, the revert is refused. Catalog and graph
-edits are undone by applying their document again, not here.
+'konvu threat-model get', 'konvu threat-profile get --repo <id>' for a
+repository's, or 'konvu threat-profile get --app <id>' for an app's), or for a
+note its REVISION from 'konvu knowledge note list': if the data changed since,
+the revert is refused, and for a note the refusal names its current revision.
+Reverting a note's removal brings the note back (a removal moved it one revision
+past the last one listed), reverting its addition removes it, and a field of a
+removed note is reverted only once the note is restored. Catalog and graph edits are
+undone by applying their document again, not here.
 
 Exit codes: 0 reverted, 1 the data changed since or another error, 2 invalid
 arguments or an edit that cannot be reverted, 3 no such edit or a server that

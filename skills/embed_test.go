@@ -326,7 +326,8 @@ func TestDecideSuggestionsWaitsForThePick(t *testing.T) {
 
 // The catalog skill rewrites a company's catalog: it must check setup, carry a trust boundary,
 // and dry-run and confirm before every apply.
-// konvu-clear changes code and records verdicts, so a risk is only ever accepted on the user's word.
+// konvu-clear changes code and records verdicts: it decides medium and low findings itself, but a
+// high or critical risk is only ever accepted on the user's word.
 func TestClearSkillAsksBeforeAcceptingRiskAndNeverForcePushes(t *testing.T) {
 	data, err := embedded.ReadFile("konvu-clear/SKILL.md")
 	if err != nil {
@@ -335,7 +336,8 @@ func TestClearSkillAsksBeforeAcceptingRiskAndNeverForcePushes(t *testing.T) {
 	body := string(data)
 	for _, want := range []string{
 		"Konvu Clear", "`decision` is null", "only on their explicit yes", "pr-check accept-risk",
-		"pr-check dismiss", "Never force-push", "Stop after 3 rounds",
+		"pr-check dismiss", "medium or low: decide yourself", "high, critical or null: never decide alone",
+		"Never force-push", "Stop after 3 rounds",
 		"an older check never makes the PR Konvu Clear", "skip the commit",
 	} {
 		if !strings.Contains(body, want) {

@@ -369,3 +369,101 @@ func TestThreatProfileOnAnOlderServer(t *testing.T) {
 		}
 	}
 }
+
+const appProfileDoc = `{"revision": "a2",
+	"attributes": {"internet_exposed": true, "data_classes": [], "handles_payments": null},
+	"provenance": {"internet_exposed": {"provenance": "computed"}, "data_classes": {"provenance": "asserted", "asserted_by": "alice@acme.com"}, "handles_payments": {"provenance": "computed"}},
+	"sources": {"internet_exposed": {"from": ["acme/api"], "unknown_on": ["acme/job"], "guessed": true}, "data_classes": {"from": ["acme/api"], "unknown_on": [], "guessed": false}, "handles_payments": {"from": [], "unknown_on": ["acme/api", "acme/job"], "guessed": false}},
+	"tier": "high", "score": 72}`
+
+func TestThreatProfileAppGetAndApply(t *testing.T) {
+	route := "/inventory/apps/" + testAppID + "/threat-profile"
+	_, calls := reviewServer(t, map[string][]invariantReply{
+		"GET /inventory/catalog": {{http.StatusOK, catalogFixture()}, {http.StatusOK, catalogFixture()}},
+		"GET " + route:           {{http.StatusOK, json.RawMessage(appProfileDoc)}, {http.StatusOK, json.RawMessage(appProfileDoc)}},
+		"PUT " + route: {
+			{http.StatusOK, map[string]any{"applied": false, "changes": []any{"Set internet_exposed: yes → no"}, "revision": "a2"}},
+			{http.StatusOK, map[string]any{"applied": true, "changes": []any{"Set internet_exposed: yes → no"}, "revision": "a3"}},
+		},
+	})
+	// A name, in any case, is looked up in the catalog.
+	out, err := runInvariants(newBookDataCmd(threatProfileData), "get", "--app", "billing")
+	if err != nil || !strings.Contains(out, `"unknown_on"`) || !strings.Contains(out, `"revision": "a2"`) {
+		t.Fatalf("get: %v\n%s", err, out)
+	}
+	out, err = runInvariants(newBookDataCmd(threatProfileData), "get", "--app", testAppID, "-o", "table")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"ATTRIBUTE", "internet_exposed  yes", "combined from repos    acme/api", "acme/job", "data_classes      none", "handles_payments  unknown", "person alice@acme.com", "tier high, score 72, revision a2"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table lacks %q:\n%s", want, out)
+		}
+	}
+	// The read-only keys are never sent: the server refuses unknown ones.
+	file := writeInvariants(t, strings.Replace(appProfileDoc, `"internet_exposed": true,`, `"internet_exposed": false,`, 1))
+	out, err = runInvariants(newBookDataCmd(threatProfileData), "apply", "--app", "Billing", "--file", file, "--dry-run", "-o", "table")
+	if err != nil || !strings.Contains(out, "Would apply 1 change") {
+		t.Fatalf("dry run: %v\n%s", err, out)
+	}
+	out, err = runInvariants(newBookDataCmd(threatProfileData), "apply", "--app", testAppID, "--file", file, "-o", "table")
+	if err != nil || !strings.Contains(out, "Now at revision a3") {
+		t.Fatalf("apply: %v\n%s", err, out)
+	}
+	var puts []invariantCall
+	for _, call := range calls() {
+		if call.method == "PUT" {
+			puts = append(puts, call)
+		}
+	}
+	if len(puts) != 2 || puts[0].query != "dry_run=true" || puts[1].query != "dry_run=false" {
+		t.Fatalf("PUTs = %v", puts)
+	}
+	for _, key := range []string{"provenance", "sources", "tier", "score"} {
+		if _, ok := puts[1].body[key]; ok {
+			t.Errorf("sent read-only %q: %v", key, puts[1].body)
+		}
+	}
+	if attributes, _ := puts[1].body["attributes"].(map[string]any); attributes["internet_exposed"] != false || puts[1].body["revision"] != "a2" {
+		t.Errorf("body = %v", puts[1].body)
+	}
+}
+
+func TestThreatProfileAppRefusals(t *testing.T) {
+	for _, args := range [][]string{
+		{"get"},
+		{"get", "--repo", "acme/api", "--app", "Billing"},
+		{"get", "--app", " "},
+		{"get", "--app", testAppID, "-o", "yaml"},
+		// A table is only for an app's profile.
+		{"get", "--repo", testRepoID, "-o", "table"},
+	} {
+		_, calls := reviewServer(t, map[string][]invariantReply{})
+		_, err := runInvariants(newBookDataCmd(threatProfileData), args...)
+		if cliErr := bookDataCLIError(t, err); cliErr.ExitCode != clierrors.ExitUsageError || len(calls()) != 0 {
+			t.Errorf("%v: error = %#v, calls %v", args, cliErr, calls())
+		}
+	}
+	// An unknown name suggests the close ones; nothing else is read.
+	_, calls := reviewServer(t, map[string][]invariantReply{"GET /inventory/catalog": {{http.StatusOK, catalogFixture()}}})
+	_, err := runInvariants(newBookDataCmd(threatProfileData), "get", "--app", "Bill")
+	if cliErr := bookDataCLIError(t, err); cliErr.Code != "NOT_FOUND" || cliErr.ExitCode != clierrors.ExitNotFound || !strings.Contains(cliErr.Suggestion, "Billing") || len(calls()) != 1 {
+		t.Errorf("unknown app: error = %#v, calls %v", cliErr, calls())
+	}
+	route := "/inventory/apps/" + testAppID + "/threat-profile"
+	for _, test := range []struct {
+		reply invariantReply
+		code  string
+	}{
+		{invariantReply{http.StatusNotFound, map[string]any{"detail": "App not found"}}, "NOT_FOUND"},
+		{invariantReply{http.StatusNotFound, map[string]any{"detail": "Not Found"}}, "DATA_EDITS_UNAVAILABLE"},
+		{invariantReply{http.StatusConflict, map[string]any{"detail": "The app's threat profile changed"}}, "DATA_CHANGED"},
+	} {
+		reviewServer(t, map[string][]invariantReply{"PUT " + route: {test.reply}})
+		file := writeInvariants(t, appProfileDoc)
+		_, err := runInvariants(newBookDataCmd(threatProfileData), "apply", "--app", testAppID, "--file", file, "-o", "table")
+		if cliErr := bookDataCLIError(t, err); cliErr.Code != test.code {
+			t.Errorf("%v: error = %#v", test.reply.body, cliErr)
+		}
+	}
+}

@@ -401,14 +401,14 @@ without the EDIT WITH column.
 | Company and infrastructure facts (`company.md`, `infrastructure.md`) | `konvu company get` / `apply` |
 | Threat model (`threat-model.md`) | `konvu threat-model get` / `apply` |
 | A repository's threat profile | `konvu threat-profile get` / `apply --repo <owner/name>` |
+| An app's threat profile: corrections on top of its repositories' profiles, kept on the app only | `konvu threat-profile get` / `apply --app <name or id>` |
 | A repository's endpoints (Inventory › Endpoints) | `konvu inventory endpoints get` / `apply --repo <owner/name>` |
 | A repository's data objects and their fields (Inventory › Data objects) | `konvu inventory data-objects get` / `apply --repo <owner/name>` |
 | Products, modules and apps (`products/...`) | `konvu inventory catalog get` / `apply` |
 | Connections between components, apps and products | `konvu inventory graph get` / `apply` |
 | Principles (`security-principles.md`) | `konvu principles` |
 | Triage instructions of a repository | `konvu knowledge triage-instructions` |
-| Notes: what your team knows that none of the data above holds (`context/<label>.md`) | `konvu knowledge note` |
-| Your team's own pages | `konvu knowledge edit` |
+| Notes: what your team knows that none of the data above holds (blended into a page, or `context/<page>.md`) | `konvu knowledge note` |
 
 Findings, scans, ratings and feedback, triage history, the repository list, the
 rest of the inventory graph (controls and their code), collected files, Konvu's sources and computed scores are not
@@ -423,9 +423,13 @@ konvu threat-model get > threat-model.json
 konvu threat-model apply --file threat-model.json --dry-run
 konvu threat-profile get --repo acme/api > api.json       # owner/name, a repository URL, or its Konvu id
 konvu threat-profile apply --repo acme/api --file api.json --dry-run
+konvu threat-profile get --app Billing -o table           # Per attribute: value, who set it, repos it comes from, repos with none, guessed
+konvu threat-profile get --app Billing > billing.json     # null clears a correction back to the combined value; [] means none
+konvu threat-profile apply --app Billing --file billing.json --dry-run
 konvu history                                             # Every edit, newest first: when, who, field, before → after, id
 konvu history --object threat-profile --key <repository-id> --limit 20
 konvu history revert <id> --revision <current revision>   # Undo one edit
+konvu history --object note --key <note-id>               # A note's adds, edits and removals
 konvu inventory endpoints get --repo acme/api > endpoints.json
 konvu inventory endpoints apply --repo acme/api --file endpoints.json --dry-run
 konvu inventory graph --help                             # Schema and editing workflow
@@ -478,47 +482,39 @@ revert is refused if the data changed since. A catalog edit is undone by
 applying the catalog again.
 
 A note holds what your team knows that none of the data above holds, such as
-how a service is deployed or who owns it. Each note has a label (`deployment`,
-`ownership`, `compliance`, `architecture` or `other`) and names the repositories
-it concerns; Konvu writes one read-only page per label, `context/<label>.md`,
-and rewrites it after a note is added or removed.
+how a service is deployed or who owns it. Each note has a label you choose (1 to
+40 lowercase letters, digits and dashes, such as `deployment` or `on-call`) and
+names the repositories it concerns. After each add, edit or removal, Konvu
+places the note in the book: it blends it into one of its pages, such as
+`infrastructure.md`, or writes a new page for it under `context/`, and rewrites
+that page. `note list` shows where each note went in its PLACEMENT column ("not
+placed yet" until Konvu has). People never write the pages: to change what a
+page says, edit the notes behind it.
 
 ```bash
 konvu knowledge note add --label deployment --repo acme/api --text "Deployed to EKS by Argo CD"
 konvu knowledge note add --label ownership --repo acme/api --repo acme/web --file owners.md
-konvu knowledge note list --label deployment --repo acme/api   # ID, LABEL, REPOS, AUTHOR, WHEN, TEXT
+konvu knowledge note list --label deployment --repo acme/api   # ID, LABEL, REPOS, AUTHOR, WHEN, REVISION, PLACEMENT, TEXT
+konvu knowledge note edit <id> --text "Deployed to EKS by Flux"  # What you leave out keeps its value
+konvu knowledge note edit <id> --label on-call --repo acme/api   # --repo replaces the whole list
+konvu knowledge note edit <id> --no-repos                        # About no repository in particular
 konvu knowledge note rm <id> --yes                             # --yes is required without a terminal
 ```
 
 `--repo` takes owner/name, a repository URL or a Konvu id, like `threat-profile`,
 and repeats. The text (`--text`, or `--file`, `-` for stdin) is UTF-8, at most
-20 000 characters, checked before anything is sent. A note has no edit: add the
-corrected one and remove the old one. An add that fails once sent exits `1`
-with `OUTCOME_UNKNOWN`: list the notes before adding it again.
+20 000 characters, checked before anything is sent. Every add, edit and removal
+of a note is in `konvu history --object note`, and `konvu history revert` undoes
+it, with the note's REVISION from `note list` as `--revision`: reverting a removal
+brings the note back (the removal moved it one revision past the last one
+listed, and a refused revert names the current one). A write that fails once sent exits
+`1` with `OUTCOME_UNKNOWN`: list the notes before trying again.
 
-`knowledge edit` saves the text of one of your team's own pages; it refuses
-Konvu's pages (`company.md`, `infrastructure.md`, `threat-model.md`, and the
-`context/<label>.md` pages written from notes) and names the command that edits
-their data instead.
+`konvu knowledge edit` was removed: the server no longer saves a page's text.
+Add a note instead, and Konvu places it on the page it fits.
 
-```bash
-konvu knowledge cat ops.md -o json > base.json                   # The page as you read it
-konvu knowledge edit ops.md --file ops.md --base base.json       # Save your text for it
-konvu knowledge edit runbook.md --file runbook.md --title Runbook   # A new page needs a title
-```
-
-`edit` replaces a page's text with the file (`--file -` reads stdin: UTF-8, at
-most 200 000 characters), and keeps its title unless you pass `--title`. Pass
-`--base` with the page as you read it, saved from `cat -o json`: the page keeps
-the sources you read, so your footnotes `[^n]` cite what you saw, and if the page
-changed since, nothing is saved and `edit` exits `1` with `PAGE_CHANGED`: read it
-again and redo your change. Without `--base`, an existing page keeps its sources
-as they are now, matched to your footnotes by number, and `edit` warns that a
-footnote can then cite another source.
-
-Exit codes: `1` data or a page that changed since you read it, or another error;
-`2` a malformed path, flag or file, a file the server refused, or an edit of one
-of Konvu's pages; `3` a missing page, repository, edit or note, or a server without
+Exit codes: `1` data that changed since you read it, or another error;
+`2` a malformed path, flag or file, or a file or note the server refused; `3` a missing page, repository, edit or note, or a server without
 the book or these commands yet; `4` not logged in, no access, a read-only key or
 the demo view. The `konvu-security-book` skill teaches your agent to read the
 book and change its data after you approve the dry run.
@@ -941,7 +937,7 @@ Principles, PR checks and the Security Book come as these skills:
 - `/konvu-decide-suggestions` — go through the principles Konvu suggested, checked against your code, then accept or decline the ones you pick
 - `/konvu-audit-principles` — read-only audit of your active principles (all, or the ids you give): where each is enforced, its gaps, agent steering and PR check outcomes
 - `/konvu-review-pr-checks` — read-only review of what Konvu's PR check found, on every analyzed PR or on one PR URL
-- `/konvu-clear <pr-url>` — make a PR Konvu Clear (no open findings): verifies each finding against the code, fixes the real ones in one commit, dismisses false positives with a reason, asks you before accepting a risk, then waits for the re-check
+- `/konvu-clear <pr-url>` — make a PR Konvu Clear (no open findings): verifies each finding against the code, fixes the real ones in one commit, dismisses false positives with a reason, decides medium and low findings itself, asks you before accepting a high or critical risk, then waits for the re-check
 - `/konvu-catalog` — explore and fix your products, apps and components, with a dry run before any change
 - `/konvu-security-book` — read your Security Book, and change the data behind it (company facts, infrastructure, threat model, threat profiles) after a dry run you approve; it lists what is editable and with which command, and how to revert an edit
 
