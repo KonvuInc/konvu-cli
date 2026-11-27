@@ -1,6 +1,6 @@
 ---
 name: konvu-shared
-version: 1.4.0
+version: 1.5.0
 description: "Konvu CLI: Auth setup, global flags, env vars, and common patterns."
 metadata:
   requires:
@@ -73,9 +73,10 @@ konvu company get > company.json             # Company and infrastructure facts 
 konvu company apply --file company.json [--dry-run]                  # Change them: prints one line per change
 konvu threat-model get / apply --file F [--dry-run]                  # The threat model, the same way
 konvu threat-profile get --repo <owner/name|id> / apply --repo R --file F [--dry-run]   # A repository's threat profile
+konvu threat-profile get --app <name|id> [-o table] / apply --app A --file F [--dry-run]   # An app's: corrections kept on the app, never on its repos
 konvu inventory endpoints get --repo <owner/name|id> / apply --repo R --file F|- [--dry-run]      # A repository's endpoints
 konvu inventory data-objects get --repo <owner/name|id> / apply --repo R --file F|- [--dry-run]   # A repository's data objects and their fields
-konvu history [--object company|threat-model|threat-profile|catalog|note] [--key ID] [--limit N] [--offset N]   # Every edit: when, who, before → after
+konvu history [--object company|threat-model|threat-profile|app-threat-profile|catalog|note] [--key ID] [--limit N] [--offset N]   # Every edit: when, who, before → after
 konvu history revert <id> --revision <current revision>              # Undo one edit; the revision is the object's 'get' one (a note's REVISION from note list)
 konvu knowledge note add --label L --repo R [--repo R2] --text T|--file F|-   # A note no other data holds; Konvu places it in the book
 konvu knowledge note list [--label L] [--repo R] [--limit N] [--offset N]      # Notes, newest first, with their revision and the page each was placed on

@@ -62,6 +62,10 @@ type bookDataObject struct {
 	shown string
 	// applyLong replaces apply's generic help when set.
 	applyLong string
+	// byApp is true for data kept per app, addressed with --app.
+	byApp bool
+	// app is the object --app edits instead, for a command that takes --repo or --app.
+	app *bookDataObject
 }
 
 var (
@@ -102,9 +106,14 @@ threat-model.md in your Security Book from this data, and rewrites it after a
 change. Every change is recorded: 'konvu history' lists them and
 'konvu history revert' undoes one.`,
 	}
+	appThreatProfileData = bookDataObject{
+		name: "app-threat-profile", command: "threat-profile", what: "app threat profile", required: []string{"attributes"},
+		readOnly: []string{"provenance", "sources", "tier", "score"}, byApp: true, history: true, shown: bookPagesRewritten,
+		notFound: "Run 'konvu inventory apps list' for your apps, their names and ids.",
+	}
 	threatProfileData = bookDataObject{
 		name: "threat-profile", what: "repository threat profile", required: []string{"attributes"}, readOnly: []string{"provenance"}, byRepo: true,
-		history: true, shown: bookPagesRewritten,
+		history: true, shown: bookPagesRewritten, app: &appThreatProfileData,
 		repoPath: func(id string) string { return threatProfileRepoPath + id + "/attributes" },
 		notFound: "Konvu keeps a threat profile once it has analyzed the repository: check it with 'konvu inventory show <repo>'.",
 		long: `One repository's threat profile attributes as one JSON document, such as
@@ -117,7 +126,19 @@ whether it is internet exposed or holds customer data:
 --repo is the repository as owner/name, a repository URL, or its Konvu id.
 Konvu recomputes the repository's score and rewrites the book's pages that show
 it after a change. Every change is recorded: 'konvu history' lists them and
-'konvu history revert' undoes one.`,
+'konvu history revert' undoes one.
+
+--app, in place of --repo, is an app by its name or Konvu id: its threat
+profile combines its repositories' profiles. Its document adds, read-only and
+never sent: "sources" (for each attribute, the repositories its combined value
+comes from, those with no value, and whether a value was guessed), "tier" and
+"score". "provenance" says per attribute whether it is combined from the
+repositories or set by a person, and who. A value you apply is a correction kept
+on the app only: it never changes the repositories, and their next analysis does
+not replace it. null clears it back to the combined value, [] says "none", and a
+value sent back unchanged changes nothing. 'konvu threat-profile get --app <app>
+-o table' prints it per attribute. Its changes are in
+'konvu history --object app-threat-profile'.`,
 	}
 )
 
@@ -139,9 +160,19 @@ func newBookDataCmd(object bookDataObject) *cobra.Command {
 		Use:   "get",
 		Short: fmt.Sprintf("Print your %s as a JSON document, ready to edit", object.what),
 		Args:  cobra.NoArgs,
-		RunE:  withJSONErrors(func(cmd *cobra.Command, _ []string) error { return runBookDataGet(cmd, object) }),
+		RunE: withJSONErrors(func(cmd *cobra.Command, _ []string) error {
+			target, err := bookDataTarget(cmd, object)
+			if err != nil {
+				return err
+			}
+			return runBookDataGet(cmd, target)
+		}),
 	}
-	get.Flags().StringP("output", "o", "", "Output format: json (the only one: get prints the document)")
+	getOutput := "Output format: json (the only one: get prints the document)"
+	if object.app != nil {
+		getOutput = "Output format: json (the document), or table with --app (one line per attribute)"
+	}
+	get.Flags().StringP("output", "o", "", getOutput)
 	apply := &cobra.Command{
 		Use:   "apply",
 		Short: fmt.Sprintf("Make your %s match a file", object.what),
@@ -164,7 +195,13 @@ logged in, no access, a read-only key or the demo view`, object.what, strings.Tr
   %[1]s apply%[2]s --file %[3]s.json
   %[1]s get%[2]s | jq '...' | %[1]s apply%[2]s --file - --dry-run`, command, repo, object.name),
 		Args: cobra.NoArgs,
-		RunE: withJSONErrors(func(cmd *cobra.Command, _ []string) error { return runBookDataApply(cmd, object) }),
+		RunE: withJSONErrors(func(cmd *cobra.Command, _ []string) error {
+			target, err := bookDataTarget(cmd, object)
+			if err != nil {
+				return err
+			}
+			return runBookDataApply(cmd, target)
+		}),
 	}
 	if object.applyLong != "" {
 		apply.Long = object.applyLong
@@ -173,7 +210,11 @@ logged in, no access, a read-only key or the demo view`, object.what, strings.Tr
 	apply.Flags().Bool("dry-run", false, "List the changes without writing anything")
 	apply.Flags().StringP("output", "o", "", "Output format: json, table")
 	for _, command := range []*cobra.Command{get, apply} {
-		if object.byRepo {
+		switch {
+		case object.byRepo && object.app != nil:
+			command.Flags().String("repo", "", "Repository: owner/name, a repository URL, or its Konvu id (this or --app)")
+			command.Flags().String("app", "", "App: its name or Konvu id (this or --repo)")
+		case object.byRepo:
 			command.Flags().String("repo", "", "Repository: owner/name, a repository URL, or its Konvu id (required)")
 		}
 	}
@@ -205,9 +246,29 @@ func quotedList(keys []string) string {
 	return strings.Join(quoted[:len(quoted)-1], ", ") + " and " + quoted[len(quoted)-1]
 }
 
+// bookDataTarget is the object a command edits: for one that takes --repo or --app, the one named,
+// exactly one of them.
+func bookDataTarget(cmd *cobra.Command, object bookDataObject) (bookDataObject, error) {
+	if object.app == nil {
+		return object, nil
+	}
+	repo, app := cmd.Flags().Changed("repo"), cmd.Flags().Changed("app")
+	if repo == app {
+		return object, bookDataUsage("pass exactly one of --repo and --app", "Name the repository with --repo owner/name, or the app with --app <name or id>.")
+	}
+	if app {
+		return *object.app, nil
+	}
+	return object, nil
+}
+
 func runBookDataGet(cmd *cobra.Command, object bookDataObject) error {
+	table := false
 	if explicit, _ := cmd.Flags().GetString("output"); explicit != "" && !strings.EqualFold(strings.TrimSpace(explicit), "json") {
-		return bookDataUsage(fmt.Sprintf("unsupported output format %q", explicit), "get prints the JSON document: pass -o json or leave -o out.")
+		if !object.byApp || !strings.EqualFold(strings.TrimSpace(explicit), "table") {
+			return bookDataUsage(fmt.Sprintf("unsupported output format %q", explicit), "get prints the JSON document: pass -o json or leave -o out.")
+		}
+		table = true
 	}
 	client := api.NewClient("", "")
 	defer client.Close()
@@ -228,6 +289,13 @@ func runBookDataGet(cmd *cobra.Command, object bookDataObject) error {
 	var indented bytes.Buffer
 	if err := json.Indent(&indented, []byte(raw), "", "  "); err != nil || !found || !strings.HasPrefix(strings.TrimSpace(raw), "{") {
 		return clierrors.NewAPIError(fmt.Sprintf("the server's answer is not your %s as a JSON object", object.what))
+	}
+	if table {
+		var doc map[string]any
+		if json.Unmarshal([]byte(raw), &doc) != nil {
+			return clierrors.NewAPIError(fmt.Sprintf("the server's answer is not your %s as a JSON object", object.what))
+		}
+		return output.WriteString(cmd.OutOrStdout(), appProfileTable(doc))
 	}
 	return output.WriteString(cmd.OutOrStdout(), terminalSafeJSON(indented.String())+"\n")
 }
@@ -396,8 +464,17 @@ func readBookDataFile(cmd *cobra.Command, file string, object bookDataObject) (m
 	return doc, nil
 }
 
-// bookDataRoute is the object's route; for a repository's data it resolves --repo first.
+// bookDataRoute is the object's route; for a repository's or an app's data it resolves --repo or
+// --app first.
 func bookDataRoute(cmd *cobra.Command, client *api.Client, object bookDataObject) (string, error) {
+	if object.byApp {
+		ref, _ := cmd.Flags().GetString("app")
+		id, err := bookDataApp(client, ref)
+		if err != nil {
+			return "", err
+		}
+		return inventoryAppsPath + url.PathEscape(id) + "/threat-profile", nil
+	}
 	if !object.byRepo {
 		return object.path, nil
 	}
@@ -407,6 +484,82 @@ func bookDataRoute(cmd *cobra.Command, client *api.Client, object bookDataObject
 		return "", err
 	}
 	return object.repoPath(url.PathEscape(id)), nil
+}
+
+// bookDataApp resolves --app to a Konvu app id: an id as given, else the app of that name, looked
+// up in the catalog like 'konvu inventory apps show'.
+func bookDataApp(client *api.Client, ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return "", bookDataUsage("--app is empty", "Pass the app's name or Konvu id, from 'konvu inventory apps list'.")
+	}
+	if id := hexID(ref); id != "" {
+		return id, nil
+	}
+	catalog, err := client.Get(inventoryCatalogPath, nil)
+	if err != nil {
+		return "", inventoryCatalogError(err)
+	}
+	return pickByName(getSlice(catalog, "apps"), ref, "app")
+}
+
+// appProfileTable prints an app's threat profile one attribute a line: its value, who set it, and
+// the repositories behind the combined value.
+func appProfileTable(doc map[string]any) string {
+	attributes, _ := doc["attributes"].(map[string]any)
+	provenance, _ := doc["provenance"].(map[string]any)
+	sources, _ := doc["sources"].(map[string]any)
+	keys := make([]string, 0, len(attributes))
+	for key := range attributes {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	rows := make([][]string, 0, len(keys))
+	for _, key := range keys {
+		set, _ := provenance[key].(map[string]any)
+		by := "combined from repos"
+		if getStr(set, "provenance") == "asserted" {
+			by = "person " + orDefault(getStr(set, "asserted_by"), "(unknown)")
+		}
+		source, _ := sources[key].(map[string]any)
+		guessed := "no"
+		if value, _ := getBool(source, "guessed"); value {
+			guessed = "yes"
+		}
+		rows = append(rows, []string{
+			clean(key), appProfileValue(attributes[key]), clean(by),
+			appProfileRepos(source["from"]), appProfileRepos(source["unknown_on"]), guessed,
+		})
+	}
+	text := alignedTable([]string{"ATTRIBUTE", "VALUE", "SET BY", "FROM", "NO VALUE ON", "GUESSED"}, rows)
+	var footer []string
+	if tier := getStr(doc, "tier"); tier != "" {
+		footer = append(footer, "tier "+clean(tier))
+	}
+	if score, ok := getFloat(doc, "score"); ok {
+		footer = append(footer, fmt.Sprintf("score %.0f", score))
+	}
+	footer = append(footer, "revision "+orDefault(revisionText(doc["revision"]), "-"))
+	return text + strings.Join(footer, ", ") + "\n"
+}
+
+// appProfileValue tells unknown (null) from a person's "none" ([]), which historyValue does not.
+func appProfileValue(value any) string {
+	if value == nil {
+		return "unknown"
+	}
+	if list, ok := value.([]any); ok && len(list) == 0 {
+		return "none"
+	}
+	return historyValue(value)
+}
+
+func appProfileRepos(value any) string {
+	names, _ := value.([]any)
+	if len(names) == 0 {
+		return "-"
+	}
+	return clean(strings.Join(stringsOf(names), ", "))
 }
 
 // bookDataRepository resolves --repo to a Konvu repository id: an id as given, else the one
@@ -494,6 +647,9 @@ func bookDataCommand(object bookDataObject) string {
 
 // bookDataGetCommand is the command that prints the object's document.
 func bookDataGetCommand(object bookDataObject) string {
+	if object.byApp {
+		return bookDataCommand(object) + " get --app <app>"
+	}
 	if object.byRepo {
 		return bookDataCommand(object) + " get --repo <repo>"
 	}
@@ -562,7 +718,7 @@ func bookDataError(err error, object bookDataObject, writing bool) error {
 		}
 	case apiErr.StatusCode == 404:
 		suggestion := "Run 'konvu whoami' to check your company."
-		if object.byRepo {
+		if object.byRepo || object.byApp {
 			suggestion = object.notFound
 		}
 		return &clierrors.CLIError{Code: "NOT_FOUND", Message: orDefault(detail, "not found"), Suggestion: suggestion, ExitCode: clierrors.ExitNotFound}

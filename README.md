@@ -401,6 +401,7 @@ without the EDIT WITH column.
 | Company and infrastructure facts (`company.md`, `infrastructure.md`) | `konvu company get` / `apply` |
 | Threat model (`threat-model.md`) | `konvu threat-model get` / `apply` |
 | A repository's threat profile | `konvu threat-profile get` / `apply --repo <owner/name>` |
+| An app's threat profile: corrections on top of its repositories' profiles, kept on the app only | `konvu threat-profile get` / `apply --app <name or id>` |
 | A repository's endpoints (Inventory › Endpoints) | `konvu inventory endpoints get` / `apply --repo <owner/name>` |
 | A repository's data objects and their fields (Inventory › Data objects) | `konvu inventory data-objects get` / `apply --repo <owner/name>` |
 | Products, modules and apps (`products/...`) | `konvu inventory catalog get` / `apply` |
@@ -421,6 +422,9 @@ konvu threat-model get > threat-model.json
 konvu threat-model apply --file threat-model.json --dry-run
 konvu threat-profile get --repo acme/api > api.json       # owner/name, a repository URL, or its Konvu id
 konvu threat-profile apply --repo acme/api --file api.json --dry-run
+konvu threat-profile get --app Billing -o table           # Per attribute: value, who set it, repos it comes from, repos with none, guessed
+konvu threat-profile get --app Billing > billing.json     # null clears a correction back to the combined value; [] means none
+konvu threat-profile apply --app Billing --file billing.json --dry-run
 konvu history                                             # Every edit, newest first: when, who, field, before → after, id
 konvu history --object threat-profile --key <repository-id> --limit 20
 konvu history revert <id> --revision <current revision>   # Undo one edit
