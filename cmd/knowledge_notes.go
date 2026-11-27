@@ -81,22 +81,26 @@ support notes yet, 4 not logged in, a read-only key or the demo view`,
 	add.Flags().StringP("output", "o", "", "Output format: json, table")
 
 	edit := &cobra.Command{
-		Use:   "edit <id> [--label <label>] [--text <text> | --file <path>|-] [--repo <repo> ...]",
+		Use:   "edit <id> [--label <label>] [--text <text> | --file <path>|-] [--repo <repo> ... | --no-repos]",
 		Short: "Edit a note",
 		Long: `Edit a note, by its id from 'konvu knowledge note list'. Pass what changes:
 --label, the text from --text or --file (or stdin with --file -), or --repo for
-each repository the note concerns, which replaces its whole list. What you leave
-out keeps its value. Konvu then places the note in the Security Book again and
-rewrites that page. Each edit moves the note's revision up by one, and
-'konvu history revert <id> --revision <revision>' undoes it.
+each repository the note concerns, which replaces its whole list, or --no-repos
+for a note about no repository in particular. What you leave out keeps its
+value. Konvu then places the note in the Security Book again and rewrites that
+page. Each edit moves the note's revision up by one, and
+'konvu history revert <id> --revision <revision>' undoes it. If someone else
+changed the note while you edited it, edit saves yours, then fails naming both
+revisions: what you left out was sent as it was before their change.
 
-Exit codes: 0 saved, 1 error, or a save that failed once sent and may have landed
-(list the notes to check), 2 invalid arguments or a note the server refused
+Exit codes: 0 saved, 1 error, a save that failed once sent and may have landed
+(list the notes to check), or one that landed over someone else's change, 2 invalid arguments or a note the server refused
 (every problem listed), 3 no such note, an unknown repository or a server that
 does not support editing notes yet, 4 not logged in, a read-only key or the demo
 view`,
 		Example: `  konvu knowledge note edit 0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b4 --text "Deployed to EKS by Flux"
   konvu knowledge note edit 0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b4 --label on-call --repo acme/api --repo acme/web
+  konvu knowledge note edit 0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b4 --no-repos
   konvu knowledge note edit 0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b4 --file runbook.md -o json`,
 		Args: cobra.ExactArgs(1),
 		RunE: withJSONErrors(runNoteEdit),
@@ -105,6 +109,7 @@ view`,
 	edit.Flags().StringArray("repo", nil, "A repository the note concerns, replacing the list: owner/name, a repository URL or its Konvu id; repeat for each")
 	edit.Flags().String("text", "", "The note's new text")
 	edit.Flags().String("file", "", "A file with the note's new text, or '-' for stdin")
+	edit.Flags().Bool("no-repos", false, "Make the note about no repository in particular, removing every one")
 	edit.Flags().StringP("output", "o", "", "Output format: json, table")
 
 	list := &cobra.Command{
@@ -219,8 +224,15 @@ func runNoteEdit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	noRepos, _ := cmd.Flags().GetBool("no-repos")
+	if noRepos && len(refs) > 0 {
+		return knowledgeUsage("pass --repo or --no-repos, not both", "Use --repo for each repository the note concerns, or --no-repos for none.")
+	}
+	if noRepos {
+		changes["repository_ids"] = []string{}
+	}
 	if len(changes) == 0 && len(refs) == 0 {
-		return knowledgeUsage("nothing to change", "Pass --label, --text or --file, or --repo for each repository the note concerns.")
+		return knowledgeUsage("nothing to change", "Pass --label, --text or --file, --repo for each repository the note concerns, or --no-repos.")
 	}
 	client := api.NewClient("", "")
 	defer client.Close()
@@ -247,7 +259,29 @@ func runNoteEdit(cmd *cobra.Command, args []string) error {
 		}
 		return noteError(err, "edit", id)
 	}
+	if err := noteEditRace(current, saved, id); err != nil {
+		return err
+	}
 	return printSavedNote(cmd, format, saved, id, list)
+}
+
+// noteEditRace is the error for an edit saved over someone else's change, made between the read of
+// the note and the PUT: the server moves a note one revision per change, and the PUT sent the
+// fields it did not change as read, so a revision more than one past the read means it may have
+// undone theirs. The server takes no revision to check, so this is found after the save.
+func noteEditRace(current, saved map[string]any, id string) error {
+	read, readOK := getFloat(current, "revision")
+	wrote, wroteOK := getFloat(saved, "revision")
+	if !readOK || !wroteOK || wrote <= read+1 {
+		return nil
+	}
+	return &clierrors.CLIError{
+		Code: "EDIT_CONFLICT",
+		Message: fmt.Sprintf("note %s was saved, but someone else changed it while you edited it (revision %.0f read, %.0f saved): "+
+			"what you left out was sent as it was at revision %.0f, so your edit may have undone their change", id, read, wrote, read),
+		Suggestion: fmt.Sprintf("Run 'konvu history --object note --key %s' to see both changes; 'konvu history revert <edit-id> --revision %.0f' undoes yours.", id, wrote),
+		ExitCode:   clierrors.ExitGeneralError,
+	}
 }
 
 // printSavedNote prints the note an add or edit (of note id) saved, once its answer shows it saved.

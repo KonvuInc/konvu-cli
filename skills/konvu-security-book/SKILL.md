@@ -64,7 +64,7 @@ A note is for knowledge that fits none of the data above, such as how a service 
 
 1. **Check.** Run `konvu knowledge note list --repo <owner/name>` (or `--label <label>`) for a note that already says it: edit that one rather than adding a second.
 2. **Ask.** Show the user the label, the repositories and the text, and add only after an explicit yes: `konvu knowledge note add --label <label> --repo <owner/name> [--repo …] --text "…"` (or `--file <path>|-`; at most 20 000 characters, checked before anything is sent).
-3. **Edit.** After the user's yes, `konvu knowledge note edit <id> [--label …] [--text "…"|--file …] [--repo … ...]`: what you leave out keeps its value, and `--repo` replaces the whole list.
+3. **Edit.** After the user's yes, `konvu knowledge note edit <id> [--label …] [--text "…"|--file …] [--repo … ...|--no-repos]`: what you leave out keeps its value, `--repo` replaces the whole list, and `--no-repos` removes every repository. On `EDIT_CONFLICT` (exit 1) the edit was saved over someone else's change to the note: show the user both with `konvu history --object note --key <id>` before anything else.
 4. **Remove.** After the user's yes, `konvu knowledge note rm <id> --yes`. `rm` without `--yes` exits 2 when there is no terminal to ask on. A removal is undone with `konvu history revert <edit-id> --revision <revision>` (find it with `konvu history --object note --key <id>`).
 5. **On `OUTCOME_UNKNOWN` (exit 1)** the write may have landed: list the notes before trying again, since a second add saves a second note.
 

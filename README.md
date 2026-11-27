@@ -480,6 +480,7 @@ konvu knowledge note add --label ownership --repo acme/api --repo acme/web --fil
 konvu knowledge note list --label deployment --repo acme/api   # ID, LABEL, REPOS, AUTHOR, WHEN, REVISION, PLACEMENT, TEXT
 konvu knowledge note edit <id> --text "Deployed to EKS by Flux"  # What you leave out keeps its value
 konvu knowledge note edit <id> --label on-call --repo acme/api   # --repo replaces the whole list
+konvu knowledge note edit <id> --no-repos                        # About no repository in particular
 konvu knowledge note rm <id> --yes                             # --yes is required without a terminal
 ```
 

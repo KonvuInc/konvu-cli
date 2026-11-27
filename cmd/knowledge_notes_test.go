@@ -384,6 +384,7 @@ func TestNoteEditRefusesBeforeAnyRequest(t *testing.T) {
 		{testNoteID, "--text", "x", "--file", noteFile(t, "y")},
 		{testNoteID, "--text", " "},
 		{testNoteID, "--repo", " "},
+		{testNoteID, "--repo", "acme/api", "--no-repos"},
 	} {
 		_, calls := reviewServer(t, map[string][]invariantReply{})
 		_, err := runInvariants(newKnowledgeNoteCmd(), append([]string{"edit", "-o", "table"}, args...)...)
@@ -424,5 +425,47 @@ func TestNoteEditServerAnswers(t *testing.T) {
 		if cliErr.Code != test.code || cliErr.ExitCode != test.exit || !strings.Contains(cliErr.Message, test.want) {
 			t.Errorf("%s: error = %#v", test.name, cliErr)
 		}
+	}
+}
+
+func TestNoteEditNoReposSendsAnEmptyList(t *testing.T) {
+	_, calls := reviewServer(t, map[string][]invariantReply{
+		notesGet: {{http.StatusOK, map[string]any{"items": []any{savedNote()}, "total": 1}}},
+		notePut:  {{http.StatusOK, savedNote()}},
+	})
+	if _, err := runInvariants(newKnowledgeNoteCmd(), "edit", testNoteID, "--no-repos", "-o", "json"); err != nil {
+		t.Fatal(err)
+	}
+	body := calls()[1].body
+	ids, isList := body["repository_ids"].([]any)
+	if !isList || len(ids) != 0 || body["label"] != "deployment" || body["text"] != savedNote()["text"] {
+		t.Errorf("body = %v", body)
+	}
+}
+
+func TestNoteEditFailsWhenSavedOverAnotherChange(t *testing.T) {
+	// Read at revision 3; another change made it 4 before the PUT, which made it 5.
+	raced := savedNote()
+	raced["revision"] = 5
+	reviewServer(t, map[string][]invariantReply{
+		notesGet: {{http.StatusOK, map[string]any{"items": []any{savedNote()}, "total": 1}}},
+		notePut:  {{http.StatusOK, raced}},
+	})
+	_, err := runInvariants(newKnowledgeNoteCmd(), "edit", testNoteID, "--label", "on-call", "-o", "table")
+	cliErr := bookDataCLIError(t, err)
+	if cliErr.Code != "EDIT_CONFLICT" || cliErr.ExitCode != clierrors.ExitGeneralError ||
+		!strings.Contains(cliErr.Message, "revision 3 read, 5 saved") || !strings.Contains(cliErr.Suggestion, "--revision 5") {
+		t.Errorf("error = %#v", cliErr)
+	}
+
+	// One revision past the read is this edit alone.
+	alone := savedNote()
+	alone["revision"] = 4
+	reviewServer(t, map[string][]invariantReply{
+		notesGet: {{http.StatusOK, map[string]any{"items": []any{savedNote()}, "total": 1}}},
+		notePut:  {{http.StatusOK, alone}},
+	})
+	if _, err := runInvariants(newKnowledgeNoteCmd(), "edit", testNoteID, "--label", "on-call", "-o", "table"); err != nil {
+		t.Errorf("edit alone: %v", err)
 	}
 }

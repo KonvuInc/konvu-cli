@@ -80,7 +80,7 @@ konvu history [--object company|threat-model|threat-profile|app-threat-profile|c
 konvu history revert <id> --revision <current revision>              # Undo one edit; the revision is the object's 'get' one (a note's REVISION from note list)
 konvu knowledge note add --label L --repo R [--repo R2] --text T|--file F|-   # A note no other data holds; Konvu places it in the book
 konvu knowledge note list [--label L] [--repo R] [--limit N] [--offset N]      # Notes, newest first, with their revision and the page each was placed on
-konvu knowledge note edit <id> [--label L] [--text T|--file F|-] [--repo R ...]  # Change a note; what is left out keeps its value
+konvu knowledge note edit <id> [--label L] [--text T|--file F|-] [--repo R ...|--no-repos]  # Change a note; what is left out keeps its value
 konvu knowledge note rm <id> [--yes]                                          # Remove a note (undo with history revert); --yes without a terminal
 ```
 
