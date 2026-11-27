@@ -320,10 +320,13 @@ func TestThreatProfileRepositoryRefusals(t *testing.T) {
 	}{
 		{"", "INVALID_ARGUMENTS", clierrors.ExitUsageError},
 		{"../../admin", "INVALID_ARGUMENTS", clierrors.ExitUsageError},
-		{"acme", "INVALID_ARGUMENTS", clierrors.ExitUsageError},
+		{"github:", "INVALID_ARGUMENTS", clierrors.ExitUsageError},
+		// A bare name is looked up like owner/name: no repository is named acme.
+		{"acme", "REPOSITORY_NOT_FOUND", clierrors.ExitNotFound},
 		{"acme/missing", "REPOSITORY_NOT_FOUND", clierrors.ExitNotFound},
 		// acme/web is on GitHub and on GitLab: only naming where it lives picks one.
-		{"acme/web", "INVALID_ARGUMENTS", clierrors.ExitUsageError},
+		{"acme/web", "AMBIGUOUS_REPOSITORY", clierrors.ExitUsageError},
+		{"web", "AMBIGUOUS_REPOSITORY", clierrors.ExitUsageError},
 		// acme/api is only on GitHub: a GitLab URL is not it.
 		{"https://gitlab.com/acme/api", "REPOSITORY_NOT_FOUND", clierrors.ExitNotFound},
 		{"gitlab:acme/api", "REPOSITORY_NOT_FOUND", clierrors.ExitNotFound},

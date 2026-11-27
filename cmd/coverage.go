@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/KonvuInc/konvu-cli/pkg/api"
@@ -51,7 +53,8 @@ sast), like a row of the dashboard's Coverage page:
   remediation   Remediation, on every severity
 
 Scopes are named; pass --product when an SCA and a SAST scope share a name.
-Repositories are identified by URL, id, or a unique URL substring.`,
+Repositories are identified by owner/name, URL, Konvu id, or a name only one
+repository has, like api for acme/api.`,
 }
 
 var coverageListCmd = &cobra.Command{
@@ -558,70 +561,23 @@ func resolveRepoIDsOrExit(repos []any, args []string, format output.OutputFormat
 	return ids
 }
 
-// resolveRepoIDs maps each arg (an id, a url, or a unique url substring) to its
-// repository_id, returning a friendly error on miss/ambiguity.
+// resolveRepoIDs maps each arg to its repository_id, as matchRepository resolves a --repo,
+// returning a friendly error on miss/ambiguity.
 func resolveRepoIDs(repos []any, args []string) ([]string, *clierrors.CLIError) {
-	byID := map[string]bool{}
-	byURL := map[string]string{}
-	type entry struct{ id, url string }
-	var all []entry
-	for _, r := range repos {
-		m, ok := r.(map[string]any)
-		if !ok {
-			continue
-		}
-		id, url := getStr(m, "id"), getStr(m, "url")
-		byID[id] = true
-		byURL[url] = id
-		all = append(all, entry{id, url})
-	}
-
-	seen := map[string]bool{}
+	byName := indexKonvuRepositories(repos)
+	lookup := func() (map[string][]konvuRepository, error) { return byName, nil }
 	var ids []string
-	add := func(id string) {
-		if !seen[id] {
-			seen[id] = true
-			ids = append(ids, id)
-		}
-	}
-
 	for _, arg := range args {
-		if byID[arg] {
-			add(arg)
-			continue
+		repo, err := matchRepository(arg, lookup)
+		if err != nil {
+			var cliErr *clierrors.CLIError
+			if errors.As(err, &cliErr) {
+				return nil, cliErr
+			}
+			return nil, clierrors.NewAPIError(err.Error())
 		}
-		if id, ok := byURL[arg]; ok {
-			add(id)
-			continue
-		}
-		needle := strings.ToLower(arg)
-		var matches []entry
-		for _, e := range all {
-			if strings.Contains(strings.ToLower(e.url), needle) {
-				matches = append(matches, e)
-			}
-		}
-		switch len(matches) {
-		case 1:
-			add(matches[0].id)
-		case 0:
-			return nil, &clierrors.CLIError{
-				Code:       "REPOSITORY_NOT_FOUND",
-				Message:    fmt.Sprintf("No repository matches %q.", arg),
-				Suggestion: "Run 'konvu coverage list' to see repository URLs and ids.",
-				ExitCode:   clierrors.ExitNotFound,
-			}
-		default:
-			urls := make([]string, len(matches))
-			for i, e := range matches {
-				urls[i] = e.url
-			}
-			return nil, &clierrors.CLIError{
-				Code:       "AMBIGUOUS_REPOSITORY",
-				Message:    fmt.Sprintf("%q matches multiple repositories: %s", arg, strings.Join(urls, ", ")),
-				Suggestion: "Use the full repository URL or id.",
-				ExitCode:   clierrors.ExitUsageError,
-			}
+		if !slices.Contains(ids, repo.id) {
+			ids = append(ids, repo.id)
 		}
 	}
 	return ids, nil
@@ -766,12 +722,12 @@ func handleCoverageError(err error, format output.OutputFormat) {
 }
 
 func init() {
-	coverageListCmd.Flags().StringP("repo", "r", "", "Only scopes covering this repository (URL, id or unique substring)")
+	coverageListCmd.Flags().StringP("repo", "r", "", "Only scopes covering this repository: owner/name, a URL, its Konvu id, or a name only one repository has")
 	coverageListCmd.Flags().StringP("output", "o", "", "Output format: json, table, csv")
 	coverageListCmd.Flags().BoolP("quiet", "q", false, "Print only scope names")
 
 	coverageCreateCmd.Flags().String("product", "", "Finding type: sca or sast")
-	coverageCreateCmd.Flags().StringSlice("repo", nil, "Repositories to cover")
+	coverageCreateCmd.Flags().StringSlice("repo", nil, "Repositories to cover: owner/name, a URL, a Konvu id, or a name only one repository has (repeatable)")
 	coverageCreateCmd.Flags().StringSlice("analysis", nil, "Run Exploitability analysis on these severities (or all)")
 	coverageCreateCmd.Flags().StringSlice("reproduction", nil, "Run Reproduction on these severities (or all)")
 	coverageCreateCmd.Flags().Bool("remediation", false, "Run Remediation")
@@ -791,7 +747,7 @@ func init() {
 
 	// Bare `konvu coverage` lists, matching the dismiss alias pattern.
 	coverageCmd.RunE = runCoverageList
-	coverageCmd.Flags().StringP("repo", "r", "", "Only scopes covering this repository (URL, id or unique substring)")
+	coverageCmd.Flags().StringP("repo", "r", "", "Only scopes covering this repository: owner/name, a URL, its Konvu id, or a name only one repository has")
 	coverageCmd.Flags().StringP("output", "o", "", "Output format: json, table, csv")
 	coverageCmd.Flags().BoolP("quiet", "q", false, "Print only scope names")
 

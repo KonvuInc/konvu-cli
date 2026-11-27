@@ -64,7 +64,8 @@ var prCheckCountsCmd = &cobra.Command{
 	Use:   "counts",
 	Short: "How many PRs were analyzed, by outcome and CI mode",
 	Example: `  konvu finding pr-check counts
-  konvu finding pr-check counts --repo acme/app --since 30d`,
+  konvu finding pr-check counts --repo acme/app --since 30d
+  konvu finding pr-check counts -r app`,
 	RunE: runPRCheckCounts,
 }
 
@@ -108,12 +109,9 @@ func prCheckUsageError(message, suggestion string) error {
 	}
 }
 
-// prCheckFilters reads the filters shared by counts and list.
+// prCheckFilters reads the filters shared by counts and list, all but --repo (prCheckRepoFilter).
 func prCheckFilters(cmd *cobra.Command) (map[string]any, error) {
 	params := map[string]any{"findings": prCheckFindingScope}
-	if repo, _ := cmd.Flags().GetString("repo"); repo != "" {
-		params["repository"] = repo
-	}
 	if since, _ := cmd.Flags().GetString("since"); since != "" {
 		t, err := parseClientDate(since)
 		if err != nil {
@@ -143,6 +141,9 @@ func runPRCheckCounts(cmd *cobra.Command, args []string) error {
 
 	client := api.NewClient("", "")
 	defer client.Close()
+	if err := prCheckRepoFilter(cmd, client, params); err != nil {
+		return err
+	}
 	resp, err := client.Get(prCheckReviewedPath, params)
 	if err != nil {
 		return prCheckRequestError(err)
@@ -230,6 +231,9 @@ func runPRCheckList(cmd *cobra.Command, args []string) error {
 
 	client := api.NewClient("", "")
 	defer client.Close()
+	if err := prCheckRepoFilter(cmd, client, params); err != nil {
+		return err
+	}
 	resp, err := client.Get(prCheckReviewedPath, params)
 	if err != nil {
 		return prCheckRequestError(err)
@@ -373,8 +377,42 @@ func prCheckReview(pr map[string]any, runs []any) findings.Row {
 	}
 }
 
+// prCheckRepoFilter adds --repo to the filters, once the other flags are checked: it can need
+// a lookup.
+func prCheckRepoFilter(cmd *cobra.Command, client *api.Client, params map[string]any) error {
+	repo, _ := cmd.Flags().GetString("repo")
+	if repo == "" {
+		return nil
+	}
+	name, err := prCheckRepository(client, repo)
+	if err != nil {
+		return err
+	}
+	params["repository"] = name
+	return nil
+}
+
+// prCheckRepository is the owner/name the PR check filters on: an owner/name or a repository URL
+// is read as given, since a repository Guardrails checks need not be one Konvu analyses; an id or
+// a bare name, like api, is looked up among Konvu's repositories.
+func prCheckRepository(client *api.Client, ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	name, _ := konvuRepositoryName(ref)
+	if name == "" && hexID(ref) == "" && strings.Contains(ref, "/") {
+		name = strings.Trim(ref, "/")
+		if !validRepositoryRef(name) {
+			return "", prCheckUsageError(fmt.Sprintf("--repo %q is not a repository", clean(ref)), repoRefHint)
+		}
+	}
+	if name != "" {
+		return name, nil
+	}
+	repo, err := findingRepository(client, ref)
+	return repo.name, err
+}
+
 func addPRCheckFilterFlags(c *cobra.Command) {
-	c.Flags().StringP("repo", "r", "", "Filter by repository full name (owner/repo)")
+	c.Flags().StringP("repo", "r", "", repoFlagUsage)
 	c.Flags().String("since", "", "Runs since: '7d', '30d', or ISO date")
 	c.Flags().StringP("output", "o", "", "Output format: json, table, csv")
 }

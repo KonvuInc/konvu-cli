@@ -39,6 +39,7 @@ The browser and list include untriaged detections; -q prints only investigation
 IDs that can be passed to get or rate.`,
 	Example: `  konvu finding sast list
   konvu finding sast list --severity critical -o table
+  konvu finding sast list --repo acme/web -o table
   konvu finding sast list -q | xargs -n1 konvu finding sast get`,
 	RunE: runSastList,
 }
@@ -195,7 +196,11 @@ func runSastList(cmd *cobra.Command, args []string) error {
 		params["severity"] = f.Severity
 	}
 	if len(f.Repository) > 0 {
-		params["where"] = f.Repository
+		ids, err := findingRepositoryIDs(client, f.Repository)
+		if err != nil {
+			return err
+		}
+		params["vcs_repository_id"] = ids
 	}
 	if len(f.Assessment) > 0 {
 		params["assessment_result"] = f.Assessment
@@ -326,7 +331,11 @@ func runSastCounts(cmd *cobra.Command, args []string) error {
 		params["severity"] = f.Severity
 	}
 	if len(f.Repository) > 0 {
-		params["where"] = f.Repository
+		ids, err := findingRepositoryIDs(client, f.Repository)
+		if err != nil {
+			return err
+		}
+		params["vcs_repository_id"] = ids
 	}
 	n, err := findings.CountByPagination(client, "/detections", params)
 	if err != nil {
@@ -338,7 +347,7 @@ func runSastCounts(cmd *cobra.Command, args []string) error {
 func addSastListFlags(cmd *cobra.Command) {
 	cmd.Flags().String("since", "", "Filter by created-after date (e.g. 7d, 2025-01-01)")
 	cmd.Flags().StringSlice("severity", nil, "Filter by severity: critical, high, medium, low")
-	cmd.Flags().StringSlice("repo", nil, "Filter by repository URL (repeatable)")
+	cmd.Flags().StringSliceP("repo", "r", nil, repoFlagUsage+" (repeatable)")
 	cmd.Flags().StringSlice("assessment", nil, "Filter by assessment (repeatable): exploitable, false_positive, inconclusive, not_assessed")
 	cmd.Flags().StringSlice("state", nil, "Filter by state: open, fixed, dismissed, auto_dismissed, muted")
 	cmd.Flags().Int("limit", 30, "Maximum rows to return (per_page)")
@@ -361,7 +370,7 @@ func init() {
 	sastRateCmd.Flags().StringP("output", "o", "", "Output format: json")
 
 	sastCountsCmd.Flags().StringSlice("severity", nil, "Filter by severity")
-	sastCountsCmd.Flags().StringSlice("repo", nil, "Filter by repository (repeatable)")
+	sastCountsCmd.Flags().StringSliceP("repo", "r", nil, repoFlagUsage+" (repeatable)")
 	sastCountsCmd.Flags().StringP("output", "o", "", "Output format: json, table")
 
 	sastCmd.AddCommand(sastListCmd, sastGetCmd, sastRateCmd, sastCountsCmd)

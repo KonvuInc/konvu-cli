@@ -5,11 +5,19 @@ import (
 	"testing"
 )
 
+const (
+	coverageRepoA = "0190aaaa-0000-0000-0000-00000000000a"
+	coverageRepoB = "0190aaaa-0000-0000-0000-00000000000b"
+	coverageRepoC = "0190aaaa-0000-0000-0000-00000000000c"
+	coverageRepoD = "0190aaaa-0000-0000-0000-00000000000d"
+)
+
 func coverageRepoFixture() []any {
 	return []any{
-		map[string]any{"id": "id-a", "url": "github:org/alpha"},
-		map[string]any{"id": "id-b", "url": "github:org/beta"},
-		map[string]any{"id": "id-c", "url": "gitlab:org/alpha-tools"},
+		map[string]any{"id": coverageRepoA, "url": "github:org/alpha"},
+		map[string]any{"id": coverageRepoB, "url": "github:org/beta"},
+		map[string]any{"id": coverageRepoC, "url": "gitlab:org/alpha-tools"},
+		map[string]any{"id": coverageRepoD, "url": "github:fork/beta"},
 	}
 }
 
@@ -19,22 +27,26 @@ func TestResolveRepoIDs(t *testing.T) {
 		name string
 		args []string
 		want []string
-		err  bool
+		code string
 	}{
-		{"by id", []string{"id-b"}, []string{"id-b"}, false},
-		{"by exact url", []string{"github:org/beta"}, []string{"id-b"}, false},
-		{"by unique substring", []string{"beta"}, []string{"id-b"}, false},
-		{"multiple", []string{"id-a", "github:org/beta"}, []string{"id-a", "id-b"}, false},
-		{"dedup", []string{"id-a", "github:org/alpha"}, []string{"id-a"}, false},
-		{"ambiguous substring", []string{"alpha"}, nil, true},
-		{"missing", []string{"nope"}, nil, true},
+		{"by id", []string{coverageRepoB}, []string{coverageRepoB}, ""},
+		{"by exact url", []string{"github:org/beta"}, []string{coverageRepoB}, ""},
+		{"by https url", []string{"https://gitlab.com/org/alpha-tools"}, []string{coverageRepoC}, ""},
+		{"by owner/name", []string{"ORG/Beta"}, []string{coverageRepoB}, ""},
+		// alpha is one repository's name even though alpha-tools contains it.
+		{"by short name", []string{"alpha"}, []string{coverageRepoA}, ""},
+		{"multiple", []string{coverageRepoA, "github:org/beta"}, []string{coverageRepoA, coverageRepoB}, ""},
+		{"dedup", []string{coverageRepoA, "github:org/alpha"}, []string{coverageRepoA}, ""},
+		{"ambiguous short name", []string{"beta"}, nil, "AMBIGUOUS_REPOSITORY"},
+		{"substring is not a name", []string{"alp"}, nil, "REPOSITORY_NOT_FOUND"},
+		{"missing", []string{"nope"}, nil, "REPOSITORY_NOT_FOUND"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			got, err := resolveRepoIDs(repos, c.args)
-			if c.err {
-				if err == nil {
-					t.Fatal("expected error, got nil")
+			if c.code != "" {
+				if err == nil || err.Code != c.code {
+					t.Fatalf("error = %#v, want %s", err, c.code)
 				}
 				return
 			}
