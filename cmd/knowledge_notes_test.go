@@ -346,6 +346,7 @@ func TestNoteEditKeepsWhatItDoesNotChange(t *testing.T) {
 	put := calls()[2]
 	ids, _ := put.body["repository_ids"].([]any)
 	if put.path != notesRoute+"/"+testNoteHex || put.body["label"] != "deployment" || put.body["text"] != "Deployed by Flux\n" ||
+		put.body["revision"] != float64(3) ||
 		len(ids) != 2 || ids[0] != testRepoID || ids[1] != otherTestRepoID {
 		t.Errorf("PUT %s %v", put.path, put.body)
 	}
@@ -443,29 +444,31 @@ func TestNoteEditNoReposSendsAnEmptyList(t *testing.T) {
 	}
 }
 
-func TestNoteEditFailsWhenSavedOverAnotherChange(t *testing.T) {
-	// Read at revision 3; another change made it 4 before the PUT, which made it 5.
-	raced := savedNote()
-	raced["revision"] = 5
+func TestNoteEditChangedMeanwhileSavesNothing(t *testing.T) {
 	reviewServer(t, map[string][]invariantReply{
 		notesGet: {{http.StatusOK, map[string]any{"items": []any{savedNote()}, "total": 1}}},
-		notePut:  {{http.StatusOK, raced}},
+		notePut: {{http.StatusConflict, map[string]any{
+			"detail": "The note is at revision 4, not 3. Read it again before editing.",
+		}}},
 	})
 	_, err := runInvariants(newKnowledgeNoteCmd(), "edit", testNoteID, "--label", "on-call", "-o", "table")
 	cliErr := bookDataCLIError(t, err)
-	if cliErr.Code != "EDIT_CONFLICT" || cliErr.ExitCode != clierrors.ExitGeneralError ||
-		!strings.Contains(cliErr.Message, "revision 3 read, 5 saved") || !strings.Contains(cliErr.Suggestion, "--revision 5") {
+	if cliErr.Code != "DATA_CHANGED" || cliErr.ExitCode != clierrors.ExitGeneralError ||
+		!strings.Contains(cliErr.Message, "revision 4, not 3") || !strings.Contains(cliErr.Suggestion, "konvu knowledge note list") {
 		t.Errorf("error = %#v", cliErr)
 	}
 
-	// One revision past the read is this edit alone.
-	alone := savedNote()
-	alone["revision"] = 4
-	reviewServer(t, map[string][]invariantReply{
-		notesGet: {{http.StatusOK, map[string]any{"items": []any{savedNote()}, "total": 1}}},
-		notePut:  {{http.StatusOK, alone}},
+	// An older server's note has no revision, and its PUT refuses a field it does not know.
+	older := savedNote()
+	delete(older, "revision")
+	_, calls := reviewServer(t, map[string][]invariantReply{
+		notesGet: {{http.StatusOK, map[string]any{"items": []any{older}, "total": 1}}},
+		notePut:  {{http.StatusOK, older}},
 	})
 	if _, err := runInvariants(newKnowledgeNoteCmd(), "edit", testNoteID, "--label", "on-call", "-o", "table"); err != nil {
-		t.Errorf("edit alone: %v", err)
+		t.Fatal(err)
+	}
+	if _, sent := calls()[1].body["revision"]; sent {
+		t.Errorf("body = %v", calls()[1].body)
 	}
 }

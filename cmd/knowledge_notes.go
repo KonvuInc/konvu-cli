@@ -90,12 +90,11 @@ for a note about no repository in particular. What you leave out keeps its
 value. Konvu then places the note in the Security Book again and rewrites that
 page. Each edit moves the note's revision up by one, and
 'konvu history revert <id> --revision <revision>' undoes it. If someone else
-changed the note while you edited it, edit saves yours, then fails naming both
-revisions: what you left out was sent as it was before their change.
+changed the note while you edited it, nothing is saved.
 
-Exit codes: 0 saved, 1 error, a save that failed once sent and may have landed
-(list the notes to check), or one that landed over someone else's change, 2 invalid arguments or a note the server refused
-(every problem listed), 3 no such note, an unknown repository or a server that
+Exit codes: 0 saved, 1 error, a note someone else changed meanwhile (nothing
+saved), or a save that failed once sent and may have landed (list the notes to
+check), 2 invalid arguments or a note the server refused (every problem listed), 3 no such note, an unknown repository or a server that
 does not support editing notes yet, 4 not logged in, a read-only key or the demo
 view`,
 		Example: `  konvu knowledge note edit 0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b4 --text "Deployed to EKS by Flux"
@@ -251,6 +250,11 @@ func runNoteEdit(cmd *cobra.Command, args []string) error {
 	for key, value := range changes {
 		body[key] = value
 	}
+	// The server refuses the edit (409) once the note moved past the revision read; an older
+	// server has no revision, and refuses a field it does not know.
+	if revision, ok := getFloat(current, "revision"); ok {
+		body["revision"] = int64(revision)
+	}
 	list := "konvu knowledge note list"
 	saved, err := client.Put(knowledgeNotesPath+"/"+url.PathEscape(id), body)
 	if err != nil {
@@ -259,29 +263,7 @@ func runNoteEdit(cmd *cobra.Command, args []string) error {
 		}
 		return noteError(err, "edit", id)
 	}
-	if err := noteEditRace(current, saved, id); err != nil {
-		return err
-	}
 	return printSavedNote(cmd, format, saved, id, list)
-}
-
-// noteEditRace is the error for an edit saved over someone else's change, made between the read of
-// the note and the PUT: the server moves a note one revision per change, and the PUT sent the
-// fields it did not change as read, so a revision more than one past the read means it may have
-// undone theirs. The server takes no revision to check, so this is found after the save.
-func noteEditRace(current, saved map[string]any, id string) error {
-	read, readOK := getFloat(current, "revision")
-	wrote, wroteOK := getFloat(saved, "revision")
-	if !readOK || !wroteOK || wrote <= read+1 {
-		return nil
-	}
-	return &clierrors.CLIError{
-		Code: "EDIT_CONFLICT",
-		Message: fmt.Sprintf("note %s was saved, but someone else changed it while you edited it (revision %.0f read, %.0f saved): "+
-			"what you left out was sent as it was at revision %.0f, so your edit may have undone their change", id, read, wrote, read),
-		Suggestion: fmt.Sprintf("Run 'konvu history --object note --key %s' to see both changes; 'konvu history revert <edit-id> --revision %.0f' undoes yours.", id, wrote),
-		ExitCode:   clierrors.ExitGeneralError,
-	}
 }
 
 // printSavedNote prints the note an add or edit (of note id) saved, once its answer shows it saved.
@@ -681,6 +663,13 @@ func noteError(err error, action, id string) error {
 			Code: "FORBIDDEN", Message: orDefault(detail, "Konvu refused the request"),
 			Suggestion: "Run 'konvu whoami' to check who you are signed in as, and for which company.",
 			ExitCode:   clierrors.ExitAuthFailed,
+		}
+	case apiErr.StatusCode == 409 && action == "edit":
+		return &clierrors.CLIError{
+			Code:       "DATA_CHANGED",
+			Message:    withDetail(fmt.Sprintf("someone else changed note %s while you edited it", id), detail),
+			Suggestion: "Nothing was saved. Run 'konvu knowledge note list' to see the note as it is now, then run the edit again.",
+			ExitCode:   clierrors.ExitGeneralError,
 		}
 	case apiErr.StatusCode == 422 && (action == "add" || action == "edit"):
 		return &clierrors.CLIError{
