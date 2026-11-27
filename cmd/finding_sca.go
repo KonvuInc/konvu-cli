@@ -35,7 +35,11 @@ Note: --since / --until filter by FIRST-SEEN date (when the finding first appear
 not by when it changed state. To scope by when a finding was closed, use
 --dismissed-since / --dismissed-before (dismissed findings only).
 
-Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
+--repo takes owner/name, a repository URL, its Konvu id, or a name only one
+repository has; one naming no repository, or several, is an error.
+
+Exit codes: 0 success, 1 general error, 2 invalid arguments or an ambiguous --repo,
+3 no repository matches --repo, 4 auth failed`,
 	Example: `  # This week's exploitable findings (by first-seen date)
   konvu finding list --since 7d --assessment exploitable
 
@@ -50,6 +54,10 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 
   # Report: exploitable findings now fixed, with fix attribution (patcheus/unknown)
   konvu finding list --assessment exploitable --state fixed --output csv > report.csv
+
+  # One repository's findings: owner/name, a URL, or a name only one repository has
+  konvu finding list --repo acme/web
+  konvu finding list -r web
 
   # Group exploitable findings by repo to prioritize (counts cover the full result set)
   konvu finding list --assessment exploitable --group-by repository
@@ -144,7 +152,12 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			filterParams["has_fix"] = hasFix
 		}
 		if repo != "" {
-			filterParams["vcs_repository_url"] = []string{repo}
+			repository, err := findingRepository(client, repo)
+			if err != nil {
+				handleFindingError(err, format)
+				return nil
+			}
+			filterParams["vcs_repository_id"] = []string{repository.id}
 		}
 		if cve != "" {
 			filterParams["cve"] = []string{cve}
@@ -1042,8 +1055,13 @@ var scaCountsCmd = &cobra.Command{
 	Short: "Show assessment counts",
 	Long: `Show assessment counts (exploitable, false-positive, etc.).
 
-Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
+--repo takes owner/name, a repository URL, its Konvu id, or a name only one
+repository has; one naming no repository, or several, is an error.
+
+Exit codes: 0 success, 1 general error, 2 invalid arguments or an ambiguous --repo,
+3 no repository matches --repo, 4 auth failed`,
 	Example: `  konvu finding counts
+  konvu finding counts --repo acme/web
   konvu finding counts --since 7d
   konvu finding counts --severity critical --output json
   konvu finding counts --group-by severity
@@ -1088,7 +1106,12 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
 			baseParams["source_state"] = state
 		}
 		if repo != "" {
-			baseParams["vcs_repository_url"] = []string{repo}
+			repository, err := findingRepository(client, repo)
+			if err != nil {
+				handleFindingError(err, format)
+				return nil
+			}
+			baseParams["vcs_repository_id"] = []string{repository.id}
 		}
 		if source != "" {
 			baseParams["source"] = []string{source}
@@ -1260,7 +1283,7 @@ func addSCAListFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSliceP("assessment", "a", nil, "Filter: exploitable,false-positive,inconclusive,not-assessed")
 	cmd.Flags().StringSlice("state", nil, "Filter: open,dismissed,fixed,muted")
 	cmd.Flags().String("has-fix", "", "Filter: fixed, no_fix")
-	cmd.Flags().StringP("repo", "r", "", "Filter by repository URL or name")
+	cmd.Flags().StringP("repo", "r", "", repoFlagUsage)
 	cmd.Flags().String("cve", "", "Filter by CVE ID")
 	cmd.Flags().String("ghsa", "", "Filter by advisory ID (GHSA, CVE, or OSV)")
 	cmd.Flags().StringP("dependency", "d", "", "Filter by dependency name")
@@ -1297,7 +1320,7 @@ func init() {
 	scaCountsCmd.Flags().StringSliceP("severity", "s", nil, "Filter: critical,high,moderate,low")
 	scaCountsCmd.Flags().StringSliceP("assessment", "a", nil, "Filter: exploitable,false-positive,inconclusive,not-assessed")
 	scaCountsCmd.Flags().StringSlice("state", nil, "Filter: open,dismissed,fixed,muted")
-	scaCountsCmd.Flags().StringP("repo", "r", "", "Filter by repository URL or name")
+	scaCountsCmd.Flags().StringP("repo", "r", "", repoFlagUsage)
 	scaCountsCmd.Flags().String("source", "", "Filter by scanner source, incl. a label submitted via 'finding submit'")
 	scaCountsCmd.Flags().StringP("group-by", "g", "", "Break down by: severity, week, month")
 	scaCountsCmd.Flags().StringP("output", "o", "", "Output format: json, table")

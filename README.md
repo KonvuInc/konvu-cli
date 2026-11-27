@@ -273,6 +273,8 @@ konvu finding list --assessment exploitable -q | xargs -I {} konvu finding get {
 
 **Filters:** `--severity`, `--assessment`, `--state`, `--has-fix`, `--repo`, `--cve`, `--dependency`, `--source`, `--dependabot-alert`, `--since`, `--until`
 
+`--repo` (`-r`) takes owner/name, a repository URL (`github:acme/web` or `https://github.com/acme/web`), its Konvu id, or a name only one repository has (`web`); the same holds for `finding counts`, `finding sast list|counts`, `finding pr-check`, `dismiss` and `coverage`. A `--repo` naming no repository exits `3` with the close matches, and one naming several exits `2` with each candidate, rather than listing nothing.
+
 **Grouping:** `--group-by repository|dependency|severity|assessment`
 
 **Output:** `--output json|table|csv`, `--quiet` (IDs only), `--count` (total only), `--fields` (select fields)
@@ -284,7 +286,7 @@ konvu finding sca assess <finding-id>
 konvu finding sast assess <detection-id>
 ```
 
-These commands request one assessment and return the API response. SAST uses `detection_id` from `finding sast list`. Normal assessment eligibility and credit limits apply. Use `-o json` for the raw response; bare `finding assess` is an SCA alias.
+These commands request one assessment and return the API response. SAST uses `detection_id` from `finding sast list`. Normal assessment eligibility and credit limits apply: a finding Konvu will not assess exits `1` with a non-retryable error, `NOT_COVERED` when no coverage scope runs analysis on its repository (see `konvu coverage`). Use `-o json` for the raw response; bare `finding assess` is an SCA alias.
 
 ### Dismiss or reopen a finding
 
@@ -426,9 +428,9 @@ konvu threat-profile apply --repo acme/api --file api.json --dry-run
 konvu threat-profile get --app Billing -o table           # Per attribute: value, who set it, repos it comes from, repos with none, guessed
 konvu threat-profile get --app Billing > billing.json     # null clears a correction back to the combined value; [] means none
 konvu threat-profile apply --app Billing --file billing.json --dry-run
-konvu history                                             # Every edit, newest first: when, who, field, before → after, id
+konvu history                                             # Every edit, newest first: when, who, field, before → after, id start
 konvu history --object threat-profile --key <repository-id> --limit 20
-konvu history revert <id> --revision <current revision>   # Undo one edit
+konvu history revert <id> --revision <current revision>   # Undo one edit; <id> whole or as the ID column shows it
 konvu history --object note --key <note-id>               # A note's adds, edits and removals
 konvu inventory endpoints get --repo acme/api > endpoints.json
 konvu inventory endpoints apply --repo acme/api --file endpoints.json --dry-run
@@ -478,8 +480,12 @@ was sent (a server error or a lost connection) exits `1` with `OUTCOME_UNKNOWN`:
 the change may have landed, so check `konvu history` before trying again. `--dry-run` lists the changes
 without writing anything. `history revert` puts a field back to its value before
 the edit; `--revision` is the object's current revision from its `get`, and the
-revert is refused if the data changed since. A catalog edit is undone by
-applying the catalog again.
+revert is refused if the data changed since. The ID column of `konvu history`
+shows the start of each id, long enough to tell the listed edits apart, and
+`history revert` takes it. A revert the server fails is checked against the
+history: one that landed is reported as done, and one that did not is sent once
+more, so a revert is safe to repeat. A catalog edit is undone by applying the
+catalog again.
 
 A note holds what your team knows that none of the data above holds, such as
 how a service is deployed or who owns it. Each note has a label you choose (1 to
@@ -501,8 +507,8 @@ konvu knowledge note edit <id> --no-repos                        # About no repo
 konvu knowledge note rm <id> --yes                             # --yes is required without a terminal
 ```
 
-`--repo` takes owner/name, a repository URL or a Konvu id, like `threat-profile`,
-and repeats. The text (`--text`, or `--file`, `-` for stdin) is UTF-8, at most
+`--repo` takes owner/name, a repository URL, a Konvu id or a name only one
+repository has, like `threat-profile`, and repeats. The text (`--text`, or `--file`, `-` for stdin) is UTF-8, at most
 20 000 characters, checked before anything is sent. Every add, edit and removal
 of a note is in `konvu history --object note`, and `konvu history revert` undoes
 it, with the note's REVISION from `note list` as `--revision`: reverting a removal
@@ -735,7 +741,7 @@ konvu remediate brief <plan-id> --output json
 
 ### `konvu coverage` — Configure which repositories Konvu covers
 
-Mirrors the dashboard's Coverage page. A scope runs tasks on a set of repositories for one finding type (`sca` or `sast`): `analysis` (Exploitability analysis), `reproduction`, and `remediation`. Scopes are named; pass `--product` when an SCA and a SAST scope share a name. Repositories are identified by URL, id, or a unique URL substring.
+Mirrors the dashboard's Coverage page. A scope runs tasks on a set of repositories for one finding type (`sca` or `sast`): `analysis` (Exploitability analysis), `reproduction`, and `remediation`. Scopes are named; pass `--product` when an SCA and a SAST scope share a name. Repositories are identified by owner/name, URL, Konvu id, or a name only one repository has (`api` for `org/api`); one naming no repository exits `3` with the close matches.
 
 ```bash
 # List scopes and their tasks (bare `konvu coverage` also lists)

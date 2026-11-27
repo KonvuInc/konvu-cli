@@ -589,8 +589,7 @@ func appProfileRepos(value any) string {
 }
 
 // bookDataRepository resolves --repo to a Konvu repository id: an id as given, else the one
-// repository whose owner/name it is, exactly (any case). A name of several repositories, such as
-// a GitHub and a GitLab one, is refused unless --repo names where it lives.
+// repository it names (see matchRepository).
 func bookDataRepository(client *api.Client, ref string) (string, error) {
 	return repositoryByRef(ref, func() (map[string][]konvuRepository, error) {
 		return konvuRepositoriesByName(client, repositoryLookupTimeout)
@@ -607,44 +606,8 @@ func repositoryByRef(ref string, lookup func() (map[string][]konvuRepository, er
 	if uuidRe.MatchString(ref) {
 		return strings.ToLower(ref), nil
 	}
-	name, _ := konvuRepositoryName(ref)
-	if name == "" {
-		name = strings.Trim(ref, "/")
-	}
-	if len(name) > maxRepositoryChars || !repositoryNamePattern.MatchString(name) || slices.ContainsFunc(strings.Split(name, "/"), isDotSegment) {
-		return "", bookDataUsage(fmt.Sprintf("--repo %q is not a repository", clean(ref)), "Pass the repository as owner/name, such as acme/api, a repository URL, or its Konvu id.")
-	}
-	byName, err := lookup()
-	if err != nil {
-		var authErr *api.AuthenticationError
-		if errors.As(err, &authErr) {
-			return "", clierrors.NewAuthError(clean(authErr.Message))
-		}
-		return "", clierrors.NewAPIError(fmt.Sprintf("could not look up repository %s (%s)", clean(name), lookupReason(err)))
-	}
-	matches := byName[strings.ToLower(name)]
-	// A --repo that names where the repository lives matches only there.
-	where := name
-	if host := repositoryHost(ref); host != "" {
-		matches = slices.DeleteFunc(slices.Clone(matches), func(match konvuRepository) bool { return match.host != host })
-		where = host + "/" + name
-	}
-	switch len(matches) {
-	case 1:
-		return matches[0].id, nil
-	case 0:
-		return "", &clierrors.CLIError{
-			Code:       "REPOSITORY_NOT_FOUND",
-			Message:    fmt.Sprintf("none of your Konvu repositories is %s", clean(where)),
-			Suggestion: "Run 'konvu coverage list' to see your repositories and their ids.",
-			ExitCode:   clierrors.ExitNotFound,
-		}
-	}
-	found := make([]string, len(matches))
-	for i, match := range matches {
-		found[i] = match.label + " (id " + match.id + ")"
-	}
-	return "", bookDataUsage(fmt.Sprintf("%d Konvu repositories are %s: %s", len(matches), clean(name), strings.Join(found, ", ")), "Pass the id of the one you mean with --repo.")
+	repo, err := matchRepository(ref, lookup)
+	return repo.id, err
 }
 
 func isDotSegment(segment string) bool { return segment == "." || segment == ".." }

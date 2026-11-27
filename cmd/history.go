@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -23,7 +25,12 @@ const (
 	historyMaxLimit = 200
 	// The object_key of an object the company has one of, such as its facts.
 	historyCompanyKey = "company"
+	// The fewest characters of an edit id the table shows.
+	historyShortID = 8
 )
+
+// historyIDPrefix is an edit id or the start of one, as the table's ID column shows it.
+var historyIDPrefix = regexp.MustCompile(`^[0-9a-fA-F][0-9a-fA-F-]{3,35}$`)
 
 // The objects whose edits Konvu records, as --object takes them.
 var historyObjects = []string{"company", "threat-model", "threat-profile", "app-threat-profile", "catalog", "note"}
@@ -42,7 +49,8 @@ Every edit is recorded, from the CLI ('konvu company apply',
 Graph edits appear under --object catalog. Undo catalog or graph edits by applying
 that document again; 'konvu history revert <id>' undoes other edits. A note's
 edits are keyed by its id: --object note --key <note-id>. Values are shortened in
-the table; -o json has them whole.
+the table; -o json has them whole. The ID column shows the start of each id, long
+enough to tell the listed edits apart; 'konvu history revert' takes it as is.
 
 Exit codes: 0 success, 1 error, 2 invalid arguments, 3 a server that does not
 keep this history yet, 4 not logged in or no access`,
@@ -61,8 +69,9 @@ keep this history yet, 4 not logged in or no access`,
 	revert := &cobra.Command{
 		Use:   "revert <id>",
 		Short: "Undo one edit of the data behind your Security Book",
-		Long: `Undo one edit, by its id from 'konvu history': its field goes back to its value
-before the edit. The revert is itself recorded as an edit.
+		Long: `Undo one edit, by its id from 'konvu history', whole or as the ID column shows
+its start: its field goes back to its value before the edit. The revert is itself
+recorded as an edit.
 
 --revision is the object's current revision, from its 'get' ('konvu company get',
 'konvu threat-model get', 'konvu threat-profile get --repo <id>' for a
@@ -74,12 +83,18 @@ past the last one listed), reverting its addition removes it, and a field of a
 removed note is reverted only once the note is restored. Catalog and graph edits are
 undone by applying their document again, not here.
 
+A revert the server fails (a 5xx or a lost connection) may still have landed: the
+history is read again to tell, and a revert that did not land is sent once more,
+which is safe since --revision refuses it once the data changed.
+
 Exit codes: 0 reverted, 1 the data changed since or another error, 2 invalid
-arguments or an edit that cannot be reverted, 3 no such edit or a server that
-does not support this yet, 4 not logged in, a read-only key or the demo view`,
-		Example: `  konvu history revert 0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b4 --revision <revision>`,
-		Args:    cobra.ExactArgs(1),
-		RunE:    withJSONErrors(runHistoryRevert),
+arguments, an id start several edits share, or an edit that cannot be reverted,
+3 no such edit or a server that does not support this yet, 4 not logged in, a
+read-only key or the demo view`,
+		Example: `  konvu history revert 0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b4 --revision <revision>
+  konvu history revert 0193a1b2 --revision <revision>`,
+		Args: cobra.ExactArgs(1),
+		RunE: withJSONErrors(runHistoryRevert),
 	}
 	revert.Flags().String("revision", "", "The object's current revision, from its 'get' (required); the revert is refused if it changed")
 	revert.Flags().StringP("output", "o", "", "Output format: json, table")
@@ -140,8 +155,14 @@ func runHistory(cmd *cobra.Command, _ []string) error {
 		}
 		return output.WriteString(cmd.OutOrStdout(), "No edits yet.\n")
 	}
+	ids := make([]string, len(items))
+	for i, item := range items {
+		edit, _ := item.(map[string]any)
+		ids[i] = getStr(edit, "id")
+	}
+	shortIDs := historyShortIDs(ids)
 	rows := make([][]string, 0, len(items))
-	for _, item := range items {
+	for i, item := range items {
 		edit, _ := item.(map[string]any)
 		object := getStr(edit, "object")
 		if key := getStr(edit, "object_key"); key != "" && key != historyCompanyKey {
@@ -157,7 +178,7 @@ func runHistory(cmd *cobra.Command, _ []string) error {
 			clean(object),
 			clean(getStr(edit, "field")),
 			historyValue(edit["before"]) + " → " + historyValue(edit["after"]),
-			clean(getStr(edit, "id")),
+			clean(shortIDs[i]),
 		})
 	}
 	text := alignedTable([]string{"WHEN", "WHO", "OBJECT", "FIELD", "BEFORE → AFTER", "ID"}, rows)
@@ -173,7 +194,7 @@ func runHistoryRevert(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	id := strings.TrimSpace(args[0])
-	if !uuidRe.MatchString(id) {
+	if !uuidRe.MatchString(id) && !historyIDPrefix.MatchString(id) {
 		return bookDataUsage(fmt.Sprintf("invalid edit id %q", clean(args[0])), "Use an id from the ID column of 'konvu history'.")
 	}
 	revision, _ := cmd.Flags().GetString("revision")
@@ -182,11 +203,39 @@ func runHistoryRevert(cmd *cobra.Command, args []string) error {
 	}
 	client := api.NewClient("", "")
 	defer client.Close()
-	result, err := client.Post(dataEditsPath+"/"+url.PathEscape(id)+"/revert", map[string]any{"revision": revision})
-	if err != nil {
-		if outcomeUnknown(err) {
-			return writeOutcomeUnknown(err, "the revert", "konvu history")
+	// The edit, once read: a revert's outcome is checked against its field's history.
+	var edit map[string]any
+	if !uuidRe.MatchString(id) {
+		if edit, err = historyEditByPrefix(client, id); err != nil {
+			return err
 		}
+		id = getStr(edit, "id")
+	}
+	path := dataEditsPath + "/" + url.PathEscape(id) + "/revert"
+	body := map[string]any{"revision": revision}
+	result, err := client.Post(path, body)
+	// A revert the server failed may have landed: the newest edit of its field tells. One that
+	// did not is sent once more, which cannot apply it twice: a landed revert changed the revision.
+	if err != nil && outcomeUnknown(err) {
+		if revert := historyRevertOf(client, id, &edit); revert != nil {
+			return writeRevertLanded(cmd, format, id, revert, err)
+		}
+		result, err = client.Post(path, body)
+		if err != nil && outcomeUnknown(err) {
+			if revert := historyRevertOf(client, id, &edit); revert != nil {
+				return writeRevertLanded(cmd, format, id, revert, err)
+			}
+			return revertUnconfirmed(err)
+		}
+	}
+	// A repeat of a revert that landed is refused as stale: the history says it landed.
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusConflict {
+		if revert := historyRevertOf(client, id, &edit); revert != nil {
+			return writeRevertLanded(cmd, format, id, revert, err)
+		}
+	}
+	if err != nil {
 		return historyError(err, id)
 	}
 	// Only an answer that says so is a revert: an empty one, such as a proxy's, is not.
@@ -210,6 +259,170 @@ func runHistoryRevert(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(&b, "Now at revision %s. Konvu rewrites the Security Book's pages that show this data.\n", revision)
 	}
 	return output.WriteString(cmd.OutOrStdout(), b.String())
+}
+
+// historyShortIDs is each id cut to its first historyShortID characters, or more where another
+// listed id starts the same way: edit ids start with their time, so edits made together share
+// a long start.
+func historyShortIDs(ids []string) []string {
+	short := make([]string, len(ids))
+	for i, id := range ids {
+		n := historyShortID
+		for j, other := range ids {
+			if j != i && !strings.EqualFold(other, id) {
+				n = max(n, commonPrefixLen(strings.ToLower(id), strings.ToLower(other))+1)
+			}
+		}
+		if n < len(id) && id[n-1] == '-' {
+			n++
+		}
+		short[i] = id[:min(n, len(id))]
+	}
+	return short
+}
+
+func commonPrefixLen(a, b string) int {
+	n := 0
+	for n < len(a) && n < len(b) && a[n] == b[n] {
+		n++
+	}
+	return n
+}
+
+// historyScan reads the history params select, newest first, page by page, and passes each edit
+// to visit once, even when new edits shift the pages, until visit returns true.
+func historyScan(client *api.Client, params map[string]any, visit func(edit map[string]any) bool) error {
+	seen := map[string]bool{}
+	for offset := 0; ; offset += historyMaxLimit {
+		query := map[string]any{"limit": historyMaxLimit, "offset": offset}
+		for key, value := range params {
+			query[key] = value
+		}
+		page, err := client.Get(dataEditsPath, query)
+		if err != nil {
+			return err
+		}
+		items := getSlice(page, "items")
+		for _, item := range items {
+			edit, _ := item.(map[string]any)
+			id := hexID(getStr(edit, "id"))
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			if visit(edit) {
+				return nil
+			}
+		}
+		total, hasTotal := getFloat(page, "total")
+		if len(items) < historyMaxLimit || (hasTotal && float64(offset+len(items)) >= total) {
+			return nil
+		}
+	}
+}
+
+// historyEditByPrefix is the one edit whose id starts with prefix, read from the whole history.
+func historyEditByPrefix(client *api.Client, prefix string) (map[string]any, error) {
+	prefix = strings.ToLower(prefix)
+	var matches []map[string]any
+	err := historyScan(client, nil, func(edit map[string]any) bool {
+		if strings.HasPrefix(strings.ToLower(getStr(edit, "id")), prefix) {
+			matches = append(matches, edit)
+		}
+		return false
+	})
+	if err != nil {
+		return nil, historyError(err, "")
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return nil, &clierrors.CLIError{
+			Code:       "NOT_FOUND",
+			Message:    fmt.Sprintf("no edit id starts with %s", clean(prefix)),
+			Suggestion: "Run 'konvu history' for the edits and their ids.",
+			ExitCode:   clierrors.ExitNotFound,
+		}
+	}
+	ids := make([]string, 0, 5)
+	for _, match := range matches[:min(len(matches), 5)] {
+		ids = append(ids, getStr(match, "id"))
+	}
+	return nil, bookDataUsage(
+		fmt.Sprintf("%d edit ids start with %s: %s", len(matches), clean(prefix), clean(strings.Join(ids, ", "))),
+		"Pass more of the id, or all of it, from 'konvu history -o json'.",
+	)
+}
+
+// historyRevertOf is the revert of edit id that is in effect: the newest revert of it, when no
+// later edit of the object changed its field or the edit's (a note's revert can write another
+// field than the edit). A revert later undone is not; nil also when the history cannot be read.
+// edit is the edit when known, and is looked up otherwise.
+func historyRevertOf(client *api.Client, id string, edit *map[string]any) map[string]any {
+	if *edit == nil {
+		_ = historyScan(client, nil, func(row map[string]any) bool {
+			if hexID(getStr(row, "id")) == hexID(id) {
+				*edit = row
+				return true
+			}
+			return false
+		})
+		if *edit == nil {
+			return nil
+		}
+	}
+	changed := map[string]bool{}
+	var revert map[string]any
+	params := map[string]any{"object": getStr(*edit, "object"), "object_key": getStr(*edit, "object_key")}
+	err := historyScan(client, params, func(row map[string]any) bool {
+		if hexID(getStr(row, "reverted_edit_id")) == hexID(id) {
+			if !changed[getStr(row, "field")] && !changed[getStr(*edit, "field")] {
+				revert = row
+			}
+			return true
+		}
+		if hexID(getStr(row, "id")) == hexID(id) {
+			return true
+		}
+		changed[getStr(row, "field")] = true
+		return false
+	})
+	if err != nil {
+		return nil
+	}
+	return revert
+}
+
+// revertUnconfirmed is a revert the server failed twice, with no revert of the edit in its history.
+func revertUnconfirmed(err error) error {
+	reason := clean(err.Error())
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) {
+		reason = orDefault(invariantDetail(apiErr), fmt.Sprintf("Konvu answered %d", apiErr.StatusCode))
+	}
+	return &clierrors.CLIError{
+		Code:       "OUTCOME_UNKNOWN",
+		Message:    fmt.Sprintf("the revert failed twice (%s), and Konvu's history does not show it yet", reason),
+		Suggestion: "Run the same command again in a minute: it says so if the revert landed, and never applies it twice.",
+		Retryable:  true,
+		ExitCode:   clierrors.ExitGeneralError,
+	}
+}
+
+// writeRevertLanded reports a revert the server failed but its history shows.
+func writeRevertLanded(cmd *cobra.Command, format output.OutputFormat, id string, revert map[string]any, sendErr error) error {
+	if format == output.JSON {
+		return output.WriteString(cmd.OutOrStdout(), terminalJSON(map[string]any{"applied": true, "confirmed_from_history": true, "edit": revert})+"\n")
+	}
+	reason := clean(sendErr.Error())
+	var apiErr *api.APIError
+	if errors.As(sendErr, &apiErr) {
+		reason = fmt.Sprintf("Konvu answered %d", apiErr.StatusCode)
+	}
+	text := fmt.Sprintf("Edit %s is reverted: %s, but the history shows its revert, edit %s by %s at %s.\n",
+		id, reason, clean(getStr(revert, "id")), clean(getStr(revert, "actor")), historyWhen(getStr(revert, "created_at")))
+	return output.WriteString(cmd.OutOrStdout(), text+"Run the object's 'get' for its revision now.\n")
 }
 
 // historyError maps a refused history read (id "") or revert of edit id.

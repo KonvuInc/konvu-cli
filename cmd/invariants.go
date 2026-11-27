@@ -713,9 +713,9 @@ func withRepositoryIDs(stderr io.Writer, client *api.Client, invariants []any) (
 	return sent, lookedUp
 }
 
-// konvuRepository is one of the company's Konvu repositories: its id, where it lives, like
-// github:acme/api, and its host, like github.com.
-type konvuRepository struct{ id, label, host string }
+// konvuRepository is one of the company's Konvu repositories: its id, its owner/name, where it
+// lives, like github:acme/api, and its host, like github.com.
+type konvuRepository struct{ id, name, label, host string }
 
 // konvuRepositoriesByName lists the company's Konvu repositories (the ones coverage lists) by
 // lowercased owner/name: a GitHub and a GitLab repository can share one. A lookup that takes
@@ -743,6 +743,12 @@ func konvuRepositoriesByName(client *api.Client, timeout time.Duration) (map[str
 	if !ok {
 		return nil, errors.New("Konvu sent no repository list")
 	}
+	return indexKonvuRepositories(repos), nil
+}
+
+// indexKonvuRepositories indexes coverage's repository list by lowercased owner/name, skipping
+// entries with no id or no readable URL.
+func indexKonvuRepositories(repos []any) map[string][]konvuRepository {
 	byName := map[string][]konvuRepository{}
 	seen := map[string]bool{}
 	for _, item := range repos {
@@ -754,17 +760,21 @@ func konvuRepositoriesByName(client *api.Client, timeout time.Duration) (map[str
 		}
 		seen[id] = true
 		key := strings.ToLower(name)
-		byName[key] = append(byName[key], konvuRepository{id: id, label: label, host: repositoryHost(getStr(repo, "url"))})
+		byName[key] = append(byName[key], konvuRepository{id: id, name: name, label: label, host: repositoryHost(getStr(repo, "url"))})
 	}
 	for _, matches := range byName {
-		sort.Slice(matches, func(a, b int) bool {
-			if matches[a].label != matches[b].label {
-				return matches[a].label < matches[b].label
-			}
-			return matches[a].id < matches[b].id
-		})
+		sortKonvuRepositories(matches)
 	}
-	return byName, nil
+	return byName
+}
+
+func sortKonvuRepositories(repos []konvuRepository) {
+	sort.Slice(repos, func(a, b int) bool {
+		if repos[a].label != repos[b].label {
+			return repos[a].label < repos[b].label
+		}
+		return repos[a].id < repos[b].id
+	})
 }
 
 // konvuRepositoryName reads a Konvu repository URL, like github:acme/api or

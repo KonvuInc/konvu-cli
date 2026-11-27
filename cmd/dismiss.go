@@ -22,7 +22,8 @@ var dismissRunCmd = &cobra.Command{
 	Short: "Dismiss security issues",
 	Long: `Dismiss security issues.
 
-Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
+Exit codes: 0 success, 1 general error, 2 invalid arguments or an ambiguous --repo,
+3 no repository matches --repo, 4 auth failed`,
 	Example: `  # Preview dismissals
   konvu dismiss run --assessment false-positive --dry-run
 
@@ -30,7 +31,7 @@ Exit codes: 0 success, 1 general error, 2 invalid arguments, 4 auth failed`,
   konvu dismiss run --issues id1,id2 --reason "Not applicable"
 
   # Dismiss all false positives in a repo
-  konvu dismiss run --assessment false-positive --repo github:org/repo`,
+  konvu dismiss run --assessment false-positive --repo org/repo`,
 	RunE: runDismiss,
 }
 
@@ -151,7 +152,11 @@ func runDismiss(cmd *cobra.Command, args []string) error {
 		}
 
 		if repo != "" {
-			params["vcs_repository_url"] = []string{repo}
+			repository, err := findingRepository(client, repo)
+			if err != nil {
+				return err
+			}
+			params["vcs_repository_id"] = []string{repository.id}
 		}
 
 		params["source_state"] = []string{"open"}
@@ -315,7 +320,7 @@ func addDismissFlags(cmd *cobra.Command) {
 	cmd.Flags().String("issues", "", "Comma-separated list of issue IDs to dismiss")
 	cmd.Flags().StringArrayP("assessment", "a", nil, "Filter: dismiss all with this assessment (e.g., false-positive)")
 	cmd.Flags().StringArrayP("severity", "s", nil, "Filter by severity")
-	cmd.Flags().StringP("repo", "r", "", "Filter by repository")
+	cmd.Flags().StringP("repo", "r", "", repoFlagUsage)
 	cmd.Flags().String("reason", "Dismissed via Konvu CLI", "Reason for dismissal")
 	cmd.Flags().String("comment", "", "Comment for dismissal (auto-generated if empty)")
 	cmd.Flags().String("external-reference", "", "External tracking reference, such as a Jira ticket")
