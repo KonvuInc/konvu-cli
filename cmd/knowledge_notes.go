@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"slices"
+	"regexp"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -23,35 +23,46 @@ const (
 	noteMaxChars = 20000
 	// How much of a note's text the list's TEXT column shows.
 	noteTextRunes = 60
+	// The most notes the server lists in one answer.
+	noteListMaxLimit = 200
+	noteLabelRule    = "a label is 1 to 40 lowercase letters, digits and dashes, starting with a letter or digit, such as deployment or on-call"
+	// What Konvu does with a note after any change to it.
+	notePlacedHint = "Konvu places it in the Security Book and rewrites that page: 'konvu knowledge note list' shows where.\n"
 )
 
-// The labels a note takes: Konvu writes one page per label, at context/<label>.md.
-var noteLabels = []string{"deployment", "ownership", "compliance", "architecture", "other"}
+// The same rule the server checks for a note's label.
+var noteLabelPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
 
 func newKnowledgeNoteCmd() *cobra.Command {
 	note := &cobra.Command{
 		Use:   "note",
-		Short: "Add, list and remove notes: what your team knows that no other data of the book holds",
+		Short: "Add, edit, list and remove notes: what your team knows that no other data of the book holds",
 		Long: `A note is something your team knows that none of the data behind the Security
 Book holds (company facts, threat model, threat profiles, endpoints, data
 objects, catalog, principles), such as how a service is deployed or who owns it.
-Each note has a label (deployment, ownership, compliance, architecture or other)
-and names the repositories it concerns.
+Each note has a label you choose, such as deployment or ownership, and names the
+repositories it concerns.
 
-Konvu writes one page per label, context/<label>.md, from the notes with that
-label, and rewrites it after a note is added or removed. The page is read-only:
-'konvu book read context/deployment.md' prints it.`,
+After a note is added, edited or removed, Konvu places it in the book: it blends
+it into one of its pages, such as infrastructure.md, or writes a new page for it
+under context/. 'konvu knowledge note list' shows where each note went. People
+never write the pages: to change what a page says, edit the notes behind it.
+
+Every change to a note is in 'konvu history --object note', and
+'konvu history revert <id>' undoes it.`,
 		Example: `  konvu knowledge note add --label deployment --repo acme/api --text "Deployed to EKS by Argo CD from the deploy repo"
   konvu knowledge note list --label deployment
+  konvu knowledge note edit 0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b4 --text "Deployed to EKS by Flux"
   konvu knowledge note rm 0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b4 --yes`,
 	}
 	add := &cobra.Command{
 		Use:   "add --label <label> (--text <text> | --file <path>|-) [--repo <repo> ...]",
 		Short: "Add a note",
 		Long: `Add a note with --label and its text, from --text or from --file (or stdin
-with --file -): UTF-8, at most 20 000 characters. --repo names a repository the
-note concerns, as owner/name, a repository URL or its Konvu id; repeat it for
-each one. Konvu then rewrites context/<label>.md from the notes with that label.
+with --file -): UTF-8, at most 20 000 characters. The label is yours to choose:
+1 to 40 lowercase letters, digits and dashes. --repo names a repository the note
+concerns, as owner/name, a repository URL or its Konvu id; repeat it for each
+one. Konvu then places the note in the Security Book and rewrites that page.
 
 Exit codes: 0 saved, 1 error, or a save that failed once sent and may have landed
 (list the notes before adding it again), 2 invalid arguments or a note the server
@@ -63,18 +74,51 @@ support notes yet, 4 not logged in, a read-only key or the demo view`,
 		Args: cobra.NoArgs,
 		RunE: withJSONErrors(runNoteAdd),
 	}
-	add.Flags().String("label", "", "The note's label: "+strings.Join(noteLabels, ", ")+" (required)")
+	add.Flags().String("label", "", "The note's label, such as deployment or ownership (required)")
 	add.Flags().StringArray("repo", nil, "A repository the note concerns: owner/name, a repository URL or its Konvu id; repeat for each")
 	add.Flags().String("text", "", "The note's text")
 	add.Flags().String("file", "", "A file with the note's text, or '-' for stdin")
 	add.Flags().StringP("output", "o", "", "Output format: json, table")
 
+	edit := &cobra.Command{
+		Use:   "edit <id> [--label <label>] [--text <text> | --file <path>|-] [--repo <repo> ... | --no-repos]",
+		Short: "Edit a note",
+		Long: `Edit a note, by its id from 'konvu knowledge note list'. Pass what changes:
+--label, the text from --text or --file (or stdin with --file -), or --repo for
+each repository the note concerns, which replaces its whole list, or --no-repos
+for a note about no repository in particular. What you leave out keeps its
+value. Konvu then places the note in the Security Book again and rewrites that
+page. Each edit moves the note's revision up by one, and
+'konvu history revert <id> --revision <revision>' undoes it. If someone else
+changed the note while you edited it, nothing is saved.
+
+Exit codes: 0 saved, 1 error, a note someone else changed meanwhile (nothing
+saved), or a save that failed once sent and may have landed (list the notes to
+check), 2 invalid arguments or a note the server refused (every problem listed), 3 no such note, an unknown repository or a server that
+does not support editing notes yet, 4 not logged in, a read-only key or the demo
+view`,
+		Example: `  konvu knowledge note edit 0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b4 --text "Deployed to EKS by Flux"
+  konvu knowledge note edit 0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b4 --label on-call --repo acme/api --repo acme/web
+  konvu knowledge note edit 0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b4 --no-repos
+  konvu knowledge note edit 0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b4 --file runbook.md -o json`,
+		Args: cobra.ExactArgs(1),
+		RunE: withJSONErrors(runNoteEdit),
+	}
+	edit.Flags().String("label", "", "The note's new label")
+	edit.Flags().StringArray("repo", nil, "A repository the note concerns, replacing the list: owner/name, a repository URL or its Konvu id; repeat for each")
+	edit.Flags().String("text", "", "The note's new text")
+	edit.Flags().String("file", "", "A file with the note's new text, or '-' for stdin")
+	edit.Flags().Bool("no-repos", false, "Make the note about no repository in particular, removing every one")
+	edit.Flags().StringP("output", "o", "", "Output format: json, table")
+
 	list := &cobra.Command{
 		Use:   "list",
 		Short: "List your team's notes, newest first",
 		Long: `List your team's notes, newest first: id, label, the repositories each one
-concerns, its author, when it was added, and its text on one line, shortened.
--o json prints the server's answer, with the texts whole.
+concerns, its author, when it was last changed, its revision (what
+'konvu history revert' takes as --revision), the page of the Security Book Konvu
+placed it on ("not placed yet" until Konvu has), and its text on one line,
+shortened. -o json prints the server's answer, with the texts whole.
 
 Exit codes: 0 success, 1 error, 2 invalid arguments, 3 an unknown repository or
 a server that does not support notes yet, 4 not logged in or no access`,
@@ -84,7 +128,7 @@ a server that does not support notes yet, 4 not logged in or no access`,
 		Args: cobra.NoArgs,
 		RunE: withJSONErrors(runNoteList),
 	}
-	list.Flags().String("label", "", "Only notes with this label: "+strings.Join(noteLabels, ", "))
+	list.Flags().String("label", "", "Only notes with this label")
 	list.Flags().String("repo", "", "Only notes about this repository: owner/name, a repository URL or its Konvu id")
 	list.Flags().Int("limit", 0, "How many notes to list (default: the server's)")
 	list.Flags().Int("offset", 0, "How many of the newest notes to skip")
@@ -94,8 +138,10 @@ a server that does not support notes yet, 4 not logged in or no access`,
 		Use:   "rm <id>",
 		Short: "Remove a note",
 		Long: `Remove a note, by its id from 'konvu knowledge note list'. Konvu then rewrites
-the page of its label without it. There is no undo: add the note again to
-restore it.
+the page it was placed on without it. 'konvu history --object note --key <id>'
+lists the removal, and 'konvu history revert <edit-id> --revision <revision>'
+brings the note back: the removal moved the note one revision past the one
+'note list' showed.
 
 rm asks before removing the note. Without a terminal to ask on (a script or a
 coding agent), --yes is required.
@@ -111,7 +157,7 @@ the demo view`,
 	}
 	rm.Flags().BoolP("yes", "y", false, "Remove without asking")
 	rm.Flags().StringP("output", "o", "", "Output format: json, table")
-	note.AddCommand(add, list, rm)
+	note.AddCommand(add, edit, list, rm)
 	return note
 }
 
@@ -121,7 +167,7 @@ func runNoteAdd(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if !cmd.Flags().Changed("label") {
-		return knowledgeUsage("--label is required", "Pass one of: "+strings.Join(noteLabels, ", ")+".")
+		return knowledgeUsage("--label is required", "Pass a label for the note, such as deployment or ownership.")
 	}
 	value, _ := cmd.Flags().GetString("label")
 	label, err := noteLabel(value)
@@ -132,11 +178,9 @@ func runNoteAdd(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	refs, _ := cmd.Flags().GetStringArray("repo")
-	for _, ref := range refs {
-		if strings.TrimSpace(ref) == "" {
-			return noteEmptyRepo()
-		}
+	refs, err := noteRepoFlags(cmd)
+	if err != nil {
+		return err
 	}
 	client := api.NewClient("", "")
 	defer client.Close()
@@ -152,19 +196,89 @@ func runNoteAdd(cmd *cobra.Command, _ []string) error {
 		}
 		return noteError(err, "add", "")
 	}
-	// Only an answer naming the new note shows it saved: an empty one, such as a proxy's, does not.
-	if id, _ := saved["id"].(string); strings.TrimSpace(id) == "" {
+	return printSavedNote(cmd, format, saved, "", listLabel)
+}
+
+func runNoteEdit(cmd *cobra.Command, args []string) error {
+	format, err := findingDispositionOutputFormat(cmd)
+	if err != nil {
+		return err
+	}
+	id, err := noteID(args[0])
+	if err != nil {
+		return err
+	}
+	changes := map[string]any{}
+	if value, _ := cmd.Flags().GetString("label"); cmd.Flags().Changed("label") {
+		if changes["label"], err = noteLabel(value); err != nil {
+			return err
+		}
+	}
+	if cmd.Flags().Changed("text") || cmd.Flags().Changed("file") {
+		if changes["text"], err = noteText(cmd); err != nil {
+			return err
+		}
+	}
+	refs, err := noteRepoFlags(cmd)
+	if err != nil {
+		return err
+	}
+	noRepos, _ := cmd.Flags().GetBool("no-repos")
+	if noRepos && len(refs) > 0 {
+		return knowledgeUsage("pass --repo or --no-repos, not both", "Use --repo for each repository the note concerns, or --no-repos for none.")
+	}
+	if noRepos {
+		changes["repository_ids"] = []string{}
+	}
+	if len(changes) == 0 && len(refs) == 0 {
+		return knowledgeUsage("nothing to change", "Pass --label, --text or --file, --repo for each repository the note concerns, or --no-repos.")
+	}
+	client := api.NewClient("", "")
+	defer client.Close()
+	if len(refs) > 0 {
+		if changes["repository_ids"], err = noteRepositories(client, refs); err != nil {
+			return err
+		}
+	}
+	// The PUT replaces the whole note, so what is not changed is sent as it is now.
+	current, err := findNote(client, id)
+	if err != nil {
+		return err
+	}
+	id = getStr(current, "id")
+	body := map[string]any{"label": getStr(current, "label"), "text": getStr(current, "text"), "repository_ids": noteRepositoryIDs(current)}
+	for key, value := range changes {
+		body[key] = value
+	}
+	// The server refuses the edit (409) once the note moved past the revision read; an older
+	// server has no revision, and refuses a field it does not know.
+	if revision, ok := getFloat(current, "revision"); ok {
+		body["revision"] = int64(revision)
+	}
+	list := "konvu knowledge note list"
+	saved, err := client.Put(knowledgeNotesPath+"/"+url.PathEscape(id), body)
+	if err != nil {
+		if outcomeUnknown(err) {
+			return noteOutcomeUnknown(err, "the edit", fmt.Sprintf("Run '%s' to see whether note %s changed before editing it again.", list, id))
+		}
+		return noteError(err, "edit", id)
+	}
+	return printSavedNote(cmd, format, saved, id, list)
+}
+
+// printSavedNote prints the note an add or edit (of note id) saved, once its answer shows it saved.
+func printSavedNote(cmd *cobra.Command, format output.OutputFormat, saved map[string]any, id, list string) error {
+	// Only an answer naming the note shows it saved: an empty one, such as a proxy's, does not.
+	if got := strings.TrimSpace(getStr(saved, "id")); got == "" || id != "" && hexID(got) != hexID(id) {
 		return &clierrors.CLIError{
 			Code:       "UNEXPECTED_ANSWER",
 			Message:    "the server's answer does not show the note saved",
-			Suggestion: fmt.Sprintf("Check KONVU_API_URL, then run '%s' to see whether it was.", listLabel),
+			Suggestion: fmt.Sprintf("Check KONVU_API_URL, then run '%s' to see whether it was.", list),
 			ExitCode:   clierrors.ExitGeneralError,
 		}
 	}
-	page := "context/" + label + ".md"
-	rewrite := fmt.Sprintf("Konvu will rewrite %s from your notes labeled %s: 'konvu book read %s' prints it.\n", page, label, page)
 	if format == output.JSON {
-		if err := output.WriteString(cmd.ErrOrStderr(), rewrite); err != nil {
+		if err := output.WriteString(cmd.ErrOrStderr(), notePlacedHint); err != nil {
 			return err
 		}
 		return output.WriteString(cmd.OutOrStdout(), terminalJSON(saved)+"\n")
@@ -174,9 +288,97 @@ func runNoteAdd(cmd *cobra.Command, _ []string) error {
 	fmt.Fprintf(&b, "  label    %s\n", clean(getStr(saved, "label")))
 	fmt.Fprintf(&b, "  repos    %s\n", noteRepos(saved))
 	fmt.Fprintf(&b, "  author   %s\n", noteAuthor(saved["author"]))
-	fmt.Fprintf(&b, "  created  %s\n\n", historyWhen(getStr(saved, "created_at")))
-	b.WriteString(terminalText(getStr(saved, "text")) + "\n" + rewrite)
+	fmt.Fprintf(&b, "  changed  %s\n\n", historyWhen(noteWhen(saved)))
+	b.WriteString(terminalText(getStr(saved, "text")) + "\n" + notePlacedHint)
 	return output.WriteString(cmd.OutOrStdout(), b.String())
+}
+
+// findNote is note id as the list has it, read page by page: the server has no read of one note.
+func findNote(client *api.Client, id string) (map[string]any, error) {
+	for offset := 0; ; {
+		result, err := client.Get(knowledgeNotesPath, map[string]any{"limit": noteListMaxLimit, "offset": offset})
+		if err != nil {
+			return nil, noteError(err, "list", "")
+		}
+		items, ok := result["items"].([]any)
+		if !ok {
+			return nil, clierrors.NewAPIError("the server's answer is not a list of notes")
+		}
+		for _, item := range items {
+			// The server sends ids as hex without dashes; a UUID with them names the same note.
+			if note, _ := item.(map[string]any); hexID(getStr(note, "id")) == hexID(id) {
+				return note, nil
+			}
+		}
+		offset += len(items)
+		total, hasTotal := getFloat(result, "total")
+		if len(items) == 0 || hasTotal && offset >= int(total) || !hasTotal && len(items) < noteListMaxLimit {
+			return nil, noteNotFound(id, "")
+		}
+	}
+}
+
+func noteNotFound(id, detail string) error {
+	return &clierrors.CLIError{
+		Code: "NOT_FOUND", Message: withDetail("no note "+id, detail),
+		Suggestion: "Run 'konvu knowledge note list' for the notes and their ids.", ExitCode: clierrors.ExitNotFound,
+	}
+}
+
+// noteRepositoryIDs is the ids of the repositories a note concerns, as a PUT takes them.
+func noteRepositoryIDs(note map[string]any) []string {
+	ids := []string{}
+	for _, item := range getSlice(note, "repositories") {
+		if repo, _ := item.(map[string]any); getStr(repo, "id") != "" {
+			ids = append(ids, getStr(repo, "id"))
+		}
+	}
+	return ids
+}
+
+// noteRepoFlags is the --repo values, refused when one is blank.
+func noteRepoFlags(cmd *cobra.Command) ([]string, error) {
+	refs, _ := cmd.Flags().GetStringArray("repo")
+	for _, ref := range refs {
+		if strings.TrimSpace(ref) == "" {
+			return nil, noteEmptyRepo()
+		}
+	}
+	return refs, nil
+}
+
+// noteWhen is when a note last changed: older servers send only when it was added.
+func noteWhen(note map[string]any) string {
+	return orDefault(getStr(note, "updated_at"), getStr(note, "created_at"))
+}
+
+// noteRevision is a note's revision, which 'konvu history revert' takes; "-" from an older server.
+func noteRevision(note map[string]any) string {
+	if revision, ok := getFloat(note, "revision"); ok {
+		return fmt.Sprintf("%.0f", revision)
+	}
+	return "-"
+}
+
+// notePlacement is the page Konvu placed a note on; "-" from a server that does not place notes.
+func notePlacement(note map[string]any) string {
+	placement, ok := note["placement"]
+	switch {
+	case !ok:
+		return "-"
+	case placement == nil:
+		return "not placed yet"
+	}
+	text, _ := placement.(string)
+	return orDefault(clean(text), "not placed yet")
+}
+
+func noteID(value string) (string, error) {
+	id := strings.TrimSpace(value)
+	if !uuidRe.MatchString(id) {
+		return "", knowledgeUsage(fmt.Sprintf("invalid note id %q", clean(value)), "Use an id from the ID column of 'konvu knowledge note list'.")
+	}
+	return id, nil
 }
 
 func runNoteList(cmd *cobra.Command, _ []string) error {
@@ -248,11 +450,13 @@ func runNoteList(cmd *cobra.Command, _ []string) error {
 			clean(getStr(note, "label")),
 			noteRepos(note),
 			noteAuthor(note["author"]),
-			historyWhen(getStr(note, "created_at")),
+			historyWhen(noteWhen(note)),
+			noteRevision(note),
+			notePlacement(note),
 			noteOneLine(getStr(note, "text")),
 		})
 	}
-	text := alignedTable([]string{"ID", "LABEL", "REPOS", "AUTHOR", "WHEN", "TEXT"}, rows)
+	text := alignedTable([]string{"ID", "LABEL", "REPOS", "AUTHOR", "WHEN", "REVISION", "PLACEMENT", "TEXT"}, rows)
 	if hasTotal && int(total) > offset+len(items) {
 		text += fmt.Sprintf("Showing notes %d to %d of %.0f, newest first. Pass --offset %d to see the next ones.\n", offset+1, offset+len(items), total, offset+len(items))
 	}
@@ -264,9 +468,9 @@ func runNoteRm(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	id := strings.TrimSpace(args[0])
-	if !uuidRe.MatchString(id) {
-		return knowledgeUsage(fmt.Sprintf("invalid note id %q", clean(args[0])), "Use an id from the ID column of 'konvu knowledge note list'.")
+	id, err := noteID(args[0])
+	if err != nil {
+		return err
 	}
 	if yes, _ := cmd.Flags().GetBool("yes"); !yes {
 		if !deleteCanPrompt() {
@@ -277,7 +481,7 @@ func runNoteRm(cmd *cobra.Command, args []string) error {
 				ExitCode:   clierrors.ExitUsageError,
 			}
 		}
-		if !deleteConfirm(fmt.Sprintf("Remove note %s? Konvu rewrites the page of its label without it.", id), false) {
+		if !deleteConfirm(fmt.Sprintf("Remove note %s? Konvu rewrites the page it was placed on without it.", id), false) {
 			return &clierrors.CLIError{Code: "NOT_CONFIRMED", Message: "not removed: note " + id, Suggestion: "Nothing was written.", ExitCode: clierrors.ExitGeneralError}
 		}
 	}
@@ -292,14 +496,14 @@ func runNoteRm(cmd *cobra.Command, args []string) error {
 	if format == output.JSON {
 		return output.WriteString(cmd.OutOrStdout(), terminalJSON(map[string]any{"id": id, "deleted": true})+"\n")
 	}
-	return output.WriteString(cmd.OutOrStdout(), fmt.Sprintf("Removed note %s. Konvu rewrites the page of its label without it.\n", id))
+	return output.WriteString(cmd.OutOrStdout(), fmt.Sprintf("Removed note %s. Konvu rewrites the page it was placed on without it.\n'konvu history --object note --key %s' lists the removal; 'konvu history revert <edit-id> --revision <revision>' undoes it.\n", id, id))
 }
 
 // noteLabel is a label as the server takes it, in lowercase.
 func noteLabel(value string) (string, error) {
 	label := strings.ToLower(strings.TrimSpace(value))
-	if !slices.Contains(noteLabels, label) {
-		return "", knowledgeUsage(fmt.Sprintf("unknown --label %q", clean(value)), "Use one of: "+strings.Join(noteLabels, ", ")+".")
+	if !noteLabelPattern.MatchString(label) {
+		return "", knowledgeUsage(fmt.Sprintf("invalid --label %q: %s", clean(value), noteLabelRule), "Pass a label such as deployment, ownership or on-call.")
 	}
 	return label, nil
 }
@@ -417,7 +621,7 @@ func noteOutcomeUnknown(err error, write, suggestion string) error {
 	}
 }
 
-// noteError maps a refused add, list or rm (of note id) whose outcome is known: nothing was written.
+// noteError maps a refused add, list, edit or rm (of note id) whose outcome is known: nothing was written.
 func noteError(err error, action, id string) error {
 	var authErr *api.AuthenticationError
 	if errors.As(err, &authErr) {
@@ -430,17 +634,18 @@ func noteError(err error, action, id string) error {
 	detail := invariantDetail(apiErr)
 	switch {
 	case bookDataUnsupported(apiErr):
+		message := "this Konvu server doesn't support knowledge notes yet"
+		if action == "edit" {
+			message = "this Konvu server doesn't support editing notes yet"
+		}
 		return &clierrors.CLIError{
 			Code:       "NOTES_UNAVAILABLE",
-			Message:    "this Konvu server doesn't support knowledge notes yet",
+			Message:    message,
 			Suggestion: "Check KONVU_API_URL, or try again once your Konvu server is up to date.",
 			ExitCode:   clierrors.ExitNotFound,
 		}
-	case apiErr.StatusCode == 404 && action == "rm":
-		return &clierrors.CLIError{
-			Code: "NOT_FOUND", Message: withDetail("no note "+id, detail),
-			Suggestion: "Run 'konvu knowledge note list' for the notes and their ids.", ExitCode: clierrors.ExitNotFound,
-		}
+	case apiErr.StatusCode == 404 && (action == "rm" || action == "edit"):
+		return noteNotFound(id, detail)
 	case apiErr.StatusCode == 404:
 		return &clierrors.CLIError{
 			Code: "NOT_FOUND", Message: orDefault(detail, "not found"),
@@ -459,11 +664,18 @@ func noteError(err error, action, id string) error {
 			Suggestion: "Run 'konvu whoami' to check who you are signed in as, and for which company.",
 			ExitCode:   clierrors.ExitAuthFailed,
 		}
-	case apiErr.StatusCode == 422 && action == "add":
+	case apiErr.StatusCode == 409 && action == "edit":
+		return &clierrors.CLIError{
+			Code:       "DATA_CHANGED",
+			Message:    withDetail(fmt.Sprintf("someone else changed note %s while you edited it", id), detail),
+			Suggestion: "Nothing was saved. Run 'konvu knowledge note list' to see the note as it is now, then run the edit again.",
+			ExitCode:   clierrors.ExitGeneralError,
+		}
+	case apiErr.StatusCode == 422 && (action == "add" || action == "edit"):
 		return &clierrors.CLIError{
 			Code:       "INVALID_DATA",
 			Message:    fmt.Sprintf("Konvu refused the note, nothing was saved:\n  %s", strings.Join(validationProblems(apiErr), "\n  ")),
-			Suggestion: "Fix them and add the note again.",
+			Suggestion: "Fix them and run the same command again.",
 			ExitCode:   clierrors.ExitUsageError,
 		}
 	case apiErr.StatusCode == 422:
