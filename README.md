@@ -405,6 +405,7 @@ without the EDIT WITH column.
 | A repository's endpoints (Inventory › Endpoints) | `konvu inventory endpoints get` / `apply --repo <owner/name>` |
 | A repository's data objects and their fields (Inventory › Data objects) | `konvu inventory data-objects get` / `apply --repo <owner/name>` |
 | Products, modules and apps (`products/...`) | `konvu inventory catalog get` / `apply` |
+| Connections between components, apps and products | `konvu inventory graph get` / `apply` |
 | Principles (`security-principles.md`) | `konvu principles` |
 | Triage instructions of a repository | `konvu knowledge triage-instructions` |
 | Notes: what your team knows that none of the data above holds (blended into a page, or `context/<page>.md`) | `konvu knowledge note` |
@@ -431,9 +432,25 @@ konvu history revert <id> --revision <current revision>   # Undo one edit
 konvu history --object note --key <note-id>               # A note's adds, edits and removals
 konvu inventory endpoints get --repo acme/api > endpoints.json
 konvu inventory endpoints apply --repo acme/api --file endpoints.json --dry-run
+konvu inventory graph --help                             # Schema and editing workflow
+konvu inventory graph get --level app > graph.json
+konvu inventory graph apply --file graph.json --dry-run
+konvu inventory graph apply --file graph.json
 konvu inventory data-objects get --repo acme/api | jq '.data_objects += [{"name": "Invoice", "fields": ["amount"]}]' \
   | konvu inventory data-objects apply --repo acme/api --file - --dry-run
 ```
+
+`inventory graph` edits connections at one level: `component` (the default),
+`app` or `product`. Keep the returned `revision` and `level`, and edit the
+`edges` list using ids from the read-only `nodes` lookup. Apply replaces only
+that level: additions and edits are kept across mapping runs, and omitted
+connections stay hidden. Add the same source, target and kind back to restore
+one. Hiding an app or product connection preserves its underlying component
+evidence. Use `inventory catalog` to assemble products, apps and their members;
+`inventory graph --help` describes the connection schema. A stale revision
+writes nothing: get the same level again, then redo the edit. Graph edits appear
+in `konvu history --object catalog`; undo one by reading the current graph and
+reapplying the earlier connections, rather than using `history revert`.
 
 `inventory endpoints` and `inventory data-objects` edit what Konvu's mapping
 found in a repository. `get` prints `revision`, the list (an endpoint is

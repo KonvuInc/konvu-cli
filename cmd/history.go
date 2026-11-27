@@ -37,10 +37,12 @@ changed which field of which object, when, and its value before and after.
 
 Every edit is recorded, from the CLI ('konvu company apply',
 'konvu threat-model apply', 'konvu threat-profile apply' (--repo or --app),
-'konvu inventory catalog apply', 'konvu knowledge note add', 'edit' and 'rm')
-or from Konvu's web app, and 'konvu history revert <id>' undoes one. A note's
-edits are keyed by its id: --object note --key <note-id>. Values are shortened in the table; -o json
-has them whole.
+'konvu inventory catalog apply', 'konvu inventory graph apply',
+'konvu knowledge note add', 'edit' and 'rm') or from Konvu's web app.
+Graph edits appear under --object catalog. Undo catalog or graph edits by applying
+that document again; 'konvu history revert <id>' undoes other edits. A note's
+edits are keyed by its id: --object note --key <note-id>. Values are shortened in
+the table; -o json has them whole.
 
 Exit codes: 0 success, 1 error, 2 invalid arguments, 3 a server that does not
 keep this history yet, 4 not logged in or no access`,
@@ -69,8 +71,8 @@ note its REVISION from 'konvu knowledge note list': if the data changed since,
 the revert is refused, and for a note the refusal names its current revision.
 Reverting a note's removal brings the note back (a removal moved it one revision
 past the last one listed), reverting its addition removes it, and a field of a
-removed note is reverted only once the note is restored. A catalog edit is
-undone by applying the catalog again, not here.
+removed note is reverted only once the note is restored. Catalog and graph edits are
+undone by applying their document again, not here.
 
 Exit codes: 0 reverted, 1 the data changed since or another error, 2 invalid
 arguments or an edit that cannot be reverted, 3 no such edit or a server that

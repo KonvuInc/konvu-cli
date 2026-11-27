@@ -41,7 +41,8 @@ Use 'inventory map history' to browse its stored runs.
 
 'inventory list' and 'inventory show' are about repositories. Your products, apps
 and components are under 'inventory catalog', 'inventory apps' and
-'inventory components'. A repository's endpoints and data objects, which you can
+'inventory components'. Read and edit their connections with 'inventory graph'.
+A repository's endpoints and data objects, which you can
 edit, are under 'inventory endpoints' and 'inventory data-objects'.`,
 	Example: `  konvu inventory
   konvu inventory list -o json

@@ -62,6 +62,8 @@ type bookDataObject struct {
 	shown string
 	// applyLong replaces apply's generic help when set.
 	applyLong string
+	// maxBytes overrides the ordinary fact-document bound for larger documents.
+	maxBytes int64
 	// byApp is true for data kept per app, addressed with --app.
 	byApp bool
 	// app is the object --app edits instead, for a command that takes --repo or --app.
@@ -278,7 +280,8 @@ func runBookDataGet(cmd *cobra.Command, object bookDataObject) error {
 	}
 	// Read as text and only indented, so every value prints exactly as Konvu holds it: apply then
 	// sends back unchanged what the person did not edit.
-	raw, err := client.GetText(route, nil, bookDataMaxBytes)
+	limit := bookDataByteLimit(object)
+	raw, err := client.GetText(route, nil, limit)
 	if err != nil {
 		return bookDataError(err, object, false)
 	}
@@ -297,7 +300,25 @@ func runBookDataGet(cmd *cobra.Command, object bookDataObject) error {
 		}
 		return output.WriteString(cmd.OutOrStdout(), appProfileTable(doc))
 	}
-	return output.WriteString(cmd.OutOrStdout(), terminalSafeJSON(indented.String())+"\n")
+	text := terminalSafeJSON(indented.String())
+	if object.maxBytes > 0 && int64(len(text))+1 > limit {
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, []byte(raw)); err != nil {
+			return clierrors.NewAPIError("the server's answer is not valid JSON")
+		}
+		text = terminalSafeJSON(compact.String())
+		if int64(len(text))+1 > limit {
+			return clierrors.NewAPIError("the server's answer exceeds the editable document limit")
+		}
+	}
+	return output.WriteString(cmd.OutOrStdout(), text+"\n")
+}
+
+func bookDataByteLimit(object bookDataObject) int64 {
+	if object.maxBytes > 0 {
+		return object.maxBytes
+	}
+	return bookDataMaxBytes
 }
 
 func runBookDataApply(cmd *cobra.Command, object bookDataObject) error {
@@ -314,6 +335,10 @@ func runBookDataApply(cmd *cobra.Command, object bookDataObject) error {
 	if err != nil {
 		return err
 	}
+	return applyBookDataDocument(cmd, object, doc, format, dryRun)
+}
+
+func applyBookDataDocument(cmd *cobra.Command, object bookDataObject, doc map[string]any, format output.OutputFormat, dryRun bool) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 	route, err := bookDataRoute(cmd, client, object)
@@ -424,12 +449,13 @@ func readBookDataFile(cmd *cobra.Command, file string, object bookDataObject) (m
 		defer opened.Close()
 		reader = opened
 	}
-	data, err := io.ReadAll(io.LimitReader(reader, bookDataMaxBytes+1))
+	limit := bookDataByteLimit(object)
+	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
 	if err != nil {
 		return nil, bookDataInvalid(fmt.Sprintf("cannot read %s", clean(file)), "Pass a readable JSON file, or '-' for stdin.")
 	}
-	if len(data) > bookDataMaxBytes {
-		return nil, bookDataInvalid("the file is over 4 MiB", start)
+	if int64(len(data)) > limit {
+		return nil, bookDataInvalid(fmt.Sprintf("the file is over %d MiB", limit>>20), start)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
