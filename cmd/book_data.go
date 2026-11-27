@@ -246,6 +246,10 @@ func runBookDataApply(cmd *cobra.Command, object bookDataObject) error {
 	if err != nil {
 		return err
 	}
+	return applyBookDataDocument(cmd, object, doc, format, dryRun)
+}
+
+func applyBookDataDocument(cmd *cobra.Command, object bookDataObject, doc map[string]any, format output.OutputFormat, dryRun bool) error {
 	client := api.NewClient("", "")
 	defer client.Close()
 	route, err := bookDataRoute(cmd, client, object)

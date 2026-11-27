@@ -37,9 +37,10 @@ changed which field of which object, when, and its value before and after.
 
 Every edit is recorded, from the CLI ('konvu company apply',
 'konvu threat-model apply', 'konvu threat-profile apply',
-'konvu inventory catalog apply') or from Konvu's web app, and
-'konvu history revert <id>' undoes one. Values are shortened in the table; -o json
-has them whole.
+'konvu inventory catalog apply', 'konvu inventory graph apply') or from Konvu's
+web app. Graph edits appear under --object catalog. Undo catalog or graph edits
+by applying that document again; 'konvu history revert <id>' undoes other edits.
+Values are shortened in the table; -o json has them whole.
 
 Exit codes: 0 success, 1 error, 2 invalid arguments, 3 a server that does not
 keep this history yet, 4 not logged in or no access`,
@@ -63,8 +64,8 @@ before the edit. The revert is itself recorded as an edit.
 
 --revision is the object's current revision, from its 'get' ('konvu company get',
 'konvu threat-model get', or 'konvu threat-profile get --repo <id>' for a
-repository's): if the data changed since, the revert is refused. A catalog edit
-is undone by applying the catalog again, not here.
+repository's): if the data changed since, the revert is refused. Catalog and graph
+edits are undone by applying their document again, not here.
 
 Exit codes: 0 reverted, 1 the data changed since or another error, 2 invalid
 arguments or an edit that cannot be reverted, 3 no such edit or a server that

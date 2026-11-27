@@ -38,6 +38,8 @@ The Security Book is what Konvu knows about the company, as markdown pages. Konv
 | Notes: what the team knows that none of the data above holds | `context/<label>.md` | `konvu knowledge note add` / `list` / `rm` |
 | The team's own pages | their path | `konvu knowledge edit` |
 
+Connections between components, apps and products are editable with `konvu inventory graph`: run `konvu inventory graph --help` for its schema and level-scoped get/apply workflow. Use the catalog for membership and product/module names. Graph edits survive rebuilds, and omitted connections stay rejected until restored.
+
 Not book data, so never changed through these commands: findings, scans, ratings and feedback, triage history, the repository list, the rest of the inventory graph (its controls and the code that implements them), collected files, Konvu's sources, and computed scores (a repository's score and tier follow from its threat profile). When the user wants the book to show one of these differently, say it is not editable here and, when it applies, which data above drives it. Rating or dismissing a finding is not a book edit: it keeps its own `konvu finding` commands. Never edit a book page's text to change what it shows: `konvu knowledge edit` refuses Konvu's pages.
 
 ## Change data
