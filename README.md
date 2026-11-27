@@ -473,7 +473,7 @@ page says, edit the notes behind it.
 ```bash
 konvu knowledge note add --label deployment --repo acme/api --text "Deployed to EKS by Argo CD"
 konvu knowledge note add --label ownership --repo acme/api --repo acme/web --file owners.md
-konvu knowledge note list --label deployment --repo acme/api   # ID, LABEL, REPOS, AUTHOR, WHEN, PLACEMENT, TEXT
+konvu knowledge note list --label deployment --repo acme/api   # ID, LABEL, REPOS, AUTHOR, WHEN, REVISION, PLACEMENT, TEXT
 konvu knowledge note edit <id> --text "Deployed to EKS by Flux"  # What you leave out keeps its value
 konvu knowledge note edit <id> --label on-call --repo acme/api   # --repo replaces the whole list
 konvu knowledge note rm <id> --yes                             # --yes is required without a terminal
@@ -483,7 +483,9 @@ konvu knowledge note rm <id> --yes                             # --yes is requir
 and repeats. The text (`--text`, or `--file`, `-` for stdin) is UTF-8, at most
 20 000 characters, checked before anything is sent. Every add, edit and removal
 of a note is in `konvu history --object note`, and `konvu history revert` undoes
-it: reverting a removal brings the note back. A write that fails once sent exits
+it, with the note's REVISION from `note list` as `--revision`: reverting a removal
+brings the note back (the removal moved it one revision past the last one
+listed, and a refused revert names the current one). A write that fails once sent exits
 `1` with `OUTCOME_UNKNOWN`: list the notes before trying again.
 
 `konvu knowledge edit` was removed: the server no longer saves a page's text.

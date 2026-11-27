@@ -64,10 +64,11 @@ before the edit. The revert is itself recorded as an edit.
 
 --revision is the object's current revision, from its 'get' ('konvu company get',
 'konvu threat-model get', or 'konvu threat-profile get --repo <id>' for a
-repository's), or for a note its updated_at from
-'konvu knowledge note list -o json': if the data changed since, the revert is
-refused. Reverting a note's removal brings the note back; reverting its addition
-removes it. A catalog edit is undone by applying the catalog again, not here.
+repository's), or for a note its REVISION from 'konvu knowledge note list': if
+the data changed since, the revert is refused, and for a note the refusal names
+its current revision. Reverting a note's removal brings the note back (a removal
+moved it one revision past the last one listed), reverting its addition removes
+it, and a field of a removed note is reverted only once the note is restored. A catalog edit is undone by applying the catalog again, not here.
 
 Exit codes: 0 reverted, 1 the data changed since or another error, 2 invalid
 arguments or an edit that cannot be reverted, 3 no such edit or a server that

@@ -87,7 +87,8 @@ support notes yet, 4 not logged in, a read-only key or the demo view`,
 --label, the text from --text or --file (or stdin with --file -), or --repo for
 each repository the note concerns, which replaces its whole list. What you leave
 out keeps its value. Konvu then places the note in the Security Book again and
-rewrites that page. 'konvu history revert <id>' undoes the edit.
+rewrites that page. Each edit moves the note's revision up by one, and
+'konvu history revert <id> --revision <revision>' undoes it.
 
 Exit codes: 0 saved, 1 error, or a save that failed once sent and may have landed
 (list the notes to check), 2 invalid arguments or a note the server refused
@@ -110,8 +111,9 @@ view`,
 		Use:   "list",
 		Short: "List your team's notes, newest first",
 		Long: `List your team's notes, newest first: id, label, the repositories each one
-concerns, its author, when it was last changed, the page of the Security Book
-Konvu placed it on ("not placed yet" until Konvu has), and its text on one line,
+concerns, its author, when it was last changed, its revision (what
+'konvu history revert' takes as --revision), the page of the Security Book Konvu
+placed it on ("not placed yet" until Konvu has), and its text on one line,
 shortened. -o json prints the server's answer, with the texts whole.
 
 Exit codes: 0 success, 1 error, 2 invalid arguments, 3 an unknown repository or
@@ -133,7 +135,9 @@ a server that does not support notes yet, 4 not logged in or no access`,
 		Short: "Remove a note",
 		Long: `Remove a note, by its id from 'konvu knowledge note list'. Konvu then rewrites
 the page it was placed on without it. 'konvu history --object note --key <id>'
-lists the removal, and 'konvu history revert <edit-id>' brings the note back.
+lists the removal, and 'konvu history revert <edit-id> --revision <revision>'
+brings the note back: the removal moved the note one revision past the one
+'note list' showed.
 
 rm asks before removing the note. Without a terminal to ask on (a script or a
 coding agent), --yes is required.
@@ -249,7 +253,7 @@ func runNoteEdit(cmd *cobra.Command, args []string) error {
 // printSavedNote prints the note an add or edit (of note id) saved, once its answer shows it saved.
 func printSavedNote(cmd *cobra.Command, format output.OutputFormat, saved map[string]any, id, list string) error {
 	// Only an answer naming the note shows it saved: an empty one, such as a proxy's, does not.
-	if got := strings.TrimSpace(getStr(saved, "id")); got == "" || id != "" && !strings.EqualFold(got, id) {
+	if got := strings.TrimSpace(getStr(saved, "id")); got == "" || id != "" && hexID(got) != hexID(id) {
 		return &clierrors.CLIError{
 			Code:       "UNEXPECTED_ANSWER",
 			Message:    "the server's answer does not show the note saved",
@@ -285,7 +289,8 @@ func findNote(client *api.Client, id string) (map[string]any, error) {
 			return nil, clierrors.NewAPIError("the server's answer is not a list of notes")
 		}
 		for _, item := range items {
-			if note, _ := item.(map[string]any); strings.EqualFold(getStr(note, "id"), id) {
+			// The server sends ids as hex without dashes; a UUID with them names the same note.
+			if note, _ := item.(map[string]any); hexID(getStr(note, "id")) == hexID(id) {
 				return note, nil
 			}
 		}
@@ -329,6 +334,14 @@ func noteRepoFlags(cmd *cobra.Command) ([]string, error) {
 // noteWhen is when a note last changed: older servers send only when it was added.
 func noteWhen(note map[string]any) string {
 	return orDefault(getStr(note, "updated_at"), getStr(note, "created_at"))
+}
+
+// noteRevision is a note's revision, which 'konvu history revert' takes; "-" from an older server.
+func noteRevision(note map[string]any) string {
+	if revision, ok := getFloat(note, "revision"); ok {
+		return fmt.Sprintf("%.0f", revision)
+	}
+	return "-"
 }
 
 // notePlacement is the page Konvu placed a note on; "-" from a server that does not place notes.
@@ -422,11 +435,12 @@ func runNoteList(cmd *cobra.Command, _ []string) error {
 			noteRepos(note),
 			noteAuthor(note["author"]),
 			historyWhen(noteWhen(note)),
+			noteRevision(note),
 			notePlacement(note),
 			noteOneLine(getStr(note, "text")),
 		})
 	}
-	text := alignedTable([]string{"ID", "LABEL", "REPOS", "AUTHOR", "WHEN", "PLACEMENT", "TEXT"}, rows)
+	text := alignedTable([]string{"ID", "LABEL", "REPOS", "AUTHOR", "WHEN", "REVISION", "PLACEMENT", "TEXT"}, rows)
 	if hasTotal && int(total) > offset+len(items) {
 		text += fmt.Sprintf("Showing notes %d to %d of %.0f, newest first. Pass --offset %d to see the next ones.\n", offset+1, offset+len(items), total, offset+len(items))
 	}
@@ -466,7 +480,7 @@ func runNoteRm(cmd *cobra.Command, args []string) error {
 	if format == output.JSON {
 		return output.WriteString(cmd.OutOrStdout(), terminalJSON(map[string]any{"id": id, "deleted": true})+"\n")
 	}
-	return output.WriteString(cmd.OutOrStdout(), fmt.Sprintf("Removed note %s. Konvu rewrites the page it was placed on without it.\n'konvu history --object note --key %s' lists the removal; 'konvu history revert <edit-id>' undoes it.\n", id, id))
+	return output.WriteString(cmd.OutOrStdout(), fmt.Sprintf("Removed note %s. Konvu rewrites the page it was placed on without it.\n'konvu history --object note --key %s' lists the removal; 'konvu history revert <edit-id> --revision <revision>' undoes it.\n", id, id))
 }
 
 // noteLabel is a label as the server takes it, in lowercase.

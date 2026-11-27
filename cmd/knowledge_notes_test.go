@@ -14,6 +14,7 @@ import (
 
 const (
 	testNoteID   = "0193a1b2-c3d4-e5f6-a7b8-c9d0e1f2a3b4"
+	testNoteHex  = "0193a1b2c3d4e5f6a7b8c9d0e1f2a3b4"
 	notesRoute   = "/knowledge/notes"
 	noteDelete   = "DELETE " + notesRoute + "/" + testNoteID
 	notePost     = "POST " + notesRoute
@@ -23,7 +24,7 @@ const (
 
 func savedNote() map[string]any {
 	return map[string]any{
-		"id": testNoteID, "label": "deployment", "text": "Deployed by Argo CD\u001b[2J\nfrom the deploy repo",
+		"id": testNoteHex, "label": "deployment", "revision": 3, "text": "Deployed by Argo CD\u001b[2J\nfrom the deploy repo",
 		"repositories": []any{
 			map[string]any{"id": testRepoID, "name": "acme/api"},
 			map[string]any{"id": otherTestRepoID, "name": "acme/web\u009b2J"},
@@ -61,7 +62,7 @@ func TestNoteAddSendsTheNoteAndLooksRepositoriesUpOnce(t *testing.T) {
 	if body["label"] != "deployment" || body["text"] != "Deployed by Argo CD\nfrom the deploy repo" || len(ids) != 2 || ids[0] != testRepoID || ids[1] != otherTestRepoID {
 		t.Errorf("body = %v", body)
 	}
-	for _, want := range []string{"Saved note " + testNoteID, "acme/api, acme/web 2J", "alice@acme.com", "2026-11-25 10:00", "Konvu places it in the Security Book"} {
+	for _, want := range []string{"Saved note " + testNoteHex, "acme/api, acme/web 2J", "alice@acme.com", "2026-11-25 10:00", "Konvu places it in the Security Book"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("out lacks %q:\n%s", want, out)
 		}
@@ -85,7 +86,7 @@ func TestNoteAddReadsAFileOrStdin(t *testing.T) {
 		t.Fatal(err)
 	}
 	var printed map[string]any
-	if err := json.Unmarshal([]byte(out), &printed); err != nil || printed["id"] != testNoteID {
+	if err := json.Unmarshal([]byte(out), &printed); err != nil || printed["id"] != testNoteHex {
 		t.Errorf("out is not the saved note: %v\n%s", err, out)
 	}
 	first, second := calls()[0].body, calls()[1].body
@@ -262,7 +263,7 @@ func TestNoteRmRefusals(t *testing.T) {
 		code  string
 		exit  int
 	}{
-		{invariantReply{http.StatusNotFound, map[string]any{"detail": "Note not found"}}, "NOT_FOUND", clierrors.ExitNotFound},
+		{invariantReply{http.StatusNotFound, map[string]any{"detail": "Context note not found"}}, "NOT_FOUND", clierrors.ExitNotFound},
 		{invariantReply{http.StatusNotFound, map[string]any{"detail": "Not Found"}}, "NOTES_UNAVAILABLE", clierrors.ExitNotFound},
 		{invariantReply{http.StatusMethodNotAllowed, map[string]any{"detail": "Method Not Allowed"}}, "NOTES_UNAVAILABLE", clierrors.ExitNotFound},
 		{invariantReply{http.StatusForbidden, map[string]any{"detail": "Demo view"}}, "FORBIDDEN", clierrors.ExitAuthFailed},
@@ -276,7 +277,7 @@ func TestNoteRmRefusals(t *testing.T) {
 	}
 }
 
-const notePut = "PUT " + notesRoute + "/" + testNoteID
+const notePut = "PUT " + notesRoute + "/" + testNoteHex
 
 func TestNoteLabelIsAnySlug(t *testing.T) {
 	for value, want := range map[string]string{
@@ -311,7 +312,8 @@ func TestNoteListShowsWhereEachNoteWasPlaced(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(out, "\n")
-	if !strings.Contains(lines[0], "PLACEMENT") || !strings.Contains(lines[1], "infrastructure.md") || !strings.Contains(lines[1], "2026-11-26 08:30") ||
+	if !strings.Contains(lines[0], "REVISION") || !strings.Contains(lines[1], " 3 ") ||
+		!strings.Contains(lines[0], "PLACEMENT") || !strings.Contains(lines[1], "infrastructure.md") || !strings.Contains(lines[1], "2026-11-26 08:30") ||
 		!strings.Contains(lines[2], "not placed yet") || strings.Contains(lines[3], "not placed yet") {
 		t.Errorf("table:\n%s", out)
 	}
@@ -343,11 +345,11 @@ func TestNoteEditKeepsWhatItDoesNotChange(t *testing.T) {
 	}
 	put := calls()[2]
 	ids, _ := put.body["repository_ids"].([]any)
-	if put.path != notesRoute+"/"+testNoteID || put.body["label"] != "deployment" || put.body["text"] != "Deployed by Flux\n" ||
+	if put.path != notesRoute+"/"+testNoteHex || put.body["label"] != "deployment" || put.body["text"] != "Deployed by Flux\n" ||
 		len(ids) != 2 || ids[0] != testRepoID || ids[1] != otherTestRepoID {
 		t.Errorf("PUT %s %v", put.path, put.body)
 	}
-	for _, want := range []string{"Saved note " + testNoteID, "changed  2026-11-26 08:30", "Deployed by Flux", "konvu knowledge note list"} {
+	for _, want := range []string{"Saved note " + testNoteHex, "changed  2026-11-26 08:30", "Deployed by Flux", "konvu knowledge note list"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("out lacks %q:\n%s", want, out)
 		}
@@ -364,7 +366,7 @@ func TestNoteEditKeepsWhatItDoesNotChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	var printed map[string]any
-	if json.Unmarshal([]byte(out), &printed) != nil || printed["id"] != testNoteID {
+	if json.Unmarshal([]byte(out), &printed) != nil || printed["id"] != testNoteHex {
 		t.Errorf("out is not the saved note:\n%s", out)
 	}
 	body := calls()[2].body
@@ -406,7 +408,7 @@ func TestNoteEditServerAnswers(t *testing.T) {
 		exit  int
 		want  string
 	}{
-		{"removed meanwhile", invariantReply{http.StatusNotFound, map[string]any{"detail": "Note not found"}}, "NOT_FOUND", clierrors.ExitNotFound, "no note " + testNoteID},
+		{"removed meanwhile", invariantReply{http.StatusNotFound, map[string]any{"detail": "Context note not found"}}, "NOT_FOUND", clierrors.ExitNotFound, "no note " + testNoteHex},
 		{"older server", invariantReply{http.StatusNotFound, map[string]any{"detail": "Not Found"}}, "NOTES_UNAVAILABLE", clierrors.ExitNotFound, "editing notes"},
 		{"no PUT", invariantReply{http.StatusMethodNotAllowed, map[string]any{"detail": "Method Not Allowed"}}, "NOTES_UNAVAILABLE", clierrors.ExitNotFound, "editing notes"},
 		{"refused", invariantReply{http.StatusUnprocessableEntity, map[string]any{"detail": []any{
