@@ -22,18 +22,25 @@ func TestFindingAssess(t *testing.T) {
 		}
 		os.Exit(0)
 	}
+	triggered := `{"status":"triggered"}`
 	for _, tc := range []struct {
 		name, resource, format string
 		status, exitCode       int
 		errorCode              string
+		body                   string
+		retryable              bool
 	}{
-		{"sca", "sca_findings", "json", 200, 0, ""},
-		{"sast", "detections", "json", 200, 0, ""},
-		{"table", "sca_findings", "table", 200, 0, ""},
-		{"authentication", "sca_findings", "json", 401, 4, "AUTH_FAILED"},
-		{"ineligible", "detections", "json", 422, 1, "API_ERROR"},
-		{"typo", "sca_findings", "jsno", 200, 2, ""},
-		{"unsupported", "detections", "csv", 200, 2, ""},
+		{"sca", "sca_findings", "json", 200, 0, "", triggered, false},
+		{"sast", "detections", "json", 200, 0, "", triggered, false},
+		{"table", "sca_findings", "table", 200, 0, "", triggered, false},
+		{"authentication", "sca_findings", "json", 401, 4, "AUTH_FAILED", triggered, false},
+		{"ineligible", "detections", "json", 422, 1, "NOT_ASSESSABLE", `{"detail":"Finding is not open (current state: fixed)."}`, false},
+		// What Konvu said of a repository it does not assess, before and after it named coverage.
+		{"disabled", "sca_findings", "json", 422, 1, "NOT_COVERED", `{"detail":"Assessment is disabled."}`, false},
+		{"not covered", "sca_findings", "json", 422, 1, "NOT_COVERED", `{"detail":"No coverage scope runs analysis on this repository."}`, false},
+		{"server error", "sca_findings", "json", 502, 1, "API_ERROR", `{"detail":"upstream"}`, true},
+		{"typo", "sca_findings", "jsno", 200, 2, "", triggered, false},
+		{"unsupported", "detections", "csv", 200, 2, "", triggered, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var requests atomic.Int32
@@ -43,7 +50,7 @@ func TestFindingAssess(t *testing.T) {
 					t.Errorf("request = %s %s", r.Method, r.URL.Path)
 				}
 				w.WriteHeader(tc.status)
-				_, _ = w.Write([]byte(`{"status":"triggered"}`))
+				_, _ = w.Write([]byte(tc.body))
 			}))
 			defer server.Close()
 			t.Setenv("KONVU_API_URL", server.URL)
@@ -71,8 +78,12 @@ func TestFindingAssess(t *testing.T) {
 					t.Fatalf("invalid JSON: %s", out)
 				}
 				if tc.errorCode != "" {
-					if getStr(getMap(response, "error"), "code") != tc.errorCode {
+					answer := getMap(response, "error")
+					if getStr(answer, "code") != tc.errorCode || answer["retryable"] != tc.retryable {
 						t.Fatalf("wrong error: %s", out)
+					}
+					if tc.errorCode == "NOT_COVERED" && !strings.Contains(getStr(answer, "suggestion"), "konvu coverage") {
+						t.Fatalf("no coverage suggestion: %s", out)
 					}
 				} else if getStr(response, "status") != "triggered" {
 					t.Fatalf("wrong response: %s", out)
