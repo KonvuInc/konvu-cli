@@ -751,7 +751,6 @@ func catalogCallError(err error, applying bool) error {
 	if !errors.As(err, &apiErr) {
 		return clierrors.NewAPIError(err.Error())
 	}
-	body := []byte(strings.TrimPrefix(apiErr.Message, "API error: "))
 	switch apiErr.StatusCode {
 	case 403:
 		return &clierrors.CLIError{
@@ -783,26 +782,9 @@ func catalogCallError(err error, applying bool) error {
 				ExitCode:   clierrors.ExitUsageError,
 			}
 		}
-		var payload struct {
-			Detail []any `json:"detail"`
-		}
-		problems := []string{}
-		if json.Unmarshal(body, &payload) == nil {
-			for _, d := range payload.Detail {
-				switch v := d.(type) {
-				case string:
-					problems = append(problems, clean(v))
-				case map[string]any:
-					problems = append(problems, clean(fmt.Sprintf("%v: %v", v["loc"], v["msg"])))
-				}
-			}
-		}
-		if len(problems) == 0 {
-			problems = append(problems, invariantDetail(apiErr))
-		}
 		return &clierrors.CLIError{
 			Code:       "INVALID_CATALOG",
-			Message:    "the catalog has problems, nothing was written:\n  " + strings.Join(problems, "\n  "),
+			Message:    "the catalog has problems, nothing was written:\n  " + strings.Join(validationProblems(apiErr), "\n  "),
 			Suggestion: "Fix them in the file and apply again; 'konvu inventory catalog get -o json' shows the current catalog.",
 			ExitCode:   clierrors.ExitUsageError,
 		}

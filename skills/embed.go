@@ -106,8 +106,8 @@ var skillDirs = []SkillDir{
 		EmbedName:   "konvu-security-book",
 		InstallName: "konvu-security-book",
 		Pitch: []string{
-			"  Read your Security Book: what Konvu knows about your company, its",
-			"  infrastructure and threat model, and your team's pages. Run it with: /konvu-security-book",
+			"  Read your Security Book, and change the data behind it (company facts,",
+			"  threat model, threat profiles) with a dry run first. Run it with: /konvu-security-book",
 		},
 	},
 }

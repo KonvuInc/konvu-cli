@@ -22,6 +22,7 @@ const (
 type invariantCall struct {
 	method string
 	path   string
+	query  string
 	body   map[string]any
 }
 
@@ -41,7 +42,7 @@ func reviewServer(t *testing.T, replies map[string][]invariantReply) (*httptest.
 	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Method + " " + r.URL.Path
-		call := invariantCall{method: r.Method, path: r.URL.Path}
+		call := invariantCall{method: r.Method, path: r.URL.Path, query: r.URL.RawQuery}
 		if r.ContentLength > 0 {
 			if err := json.NewDecoder(r.Body).Decode(&call.body); err != nil {
 				t.Errorf("%s: body is not JSON: %v", key, err)
